@@ -23,15 +23,13 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 // Kode kesehatan finansial (sama dengan clientsStore.tsx CODE_TO_STATUS).
 const HEALTH: Record<string, { label: string; cls: string }> = {
   healthy: { label: 'Healthy', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' },
-  stable: { label: 'Stable', cls: 'bg-blue-50 text-blue-700 ring-blue-600/20' },
+  stable: { label: 'Stable', cls: 'bg-neutral-100 text-neutral-700 ring-neutral-400/40' },
   attention: { label: 'Attention Required', cls: 'bg-amber-50 text-amber-700 ring-amber-600/20' },
   critical: { label: 'Critical', cls: 'bg-red-50 text-red-700 ring-red-600/20' },
 };
 
-const inputCls =
-  'w-full text-sm rounded-lg border border-border bg-card px-3 py-2.5 text-foreground placeholder:text-slate-400 ' +
-  'transition-shadow focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100';
-const labelCls = 'block text-xs font-semibold text-foreground mb-1.5';
+const inputCls = 'w-full rounded-lg border-2 border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:bg-neutral-50';
+const labelCls = 'block text-xs font-semibold text-neutral-900 mb-1.5';
 
 type Form = Record<string, string>;
 type Field = {
@@ -125,7 +123,7 @@ function tampil(fld: Field, c: CompanyDetail, akuntan: Accountant[]): React.Reac
     if (v == null) return null;
     return v
       ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700"><BadgeCheck size={12} /> PKP</span>
-      : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">Non-PKP</span>;
+      : <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-600">Non-PKP</span>;
   }
   if (v == null || v === '') return null;
   if (fld.key === 'status') {
@@ -142,7 +140,7 @@ function tampil(fld: Field, c: CompanyDetail, akuntan: Accountant[]): React.Reac
   }
   if (fld.type === 'accountant') {
     const a = akuntan.find(x => x.id === v);
-    return a ? <>{a.name} <span className="text-muted-foreground">· {a.role_label}</span></> : String(v);
+    return a ? <>{a.name} <span className="text-neutral-500">· {a.role_label}</span></> : String(v);
   }
   return String(v);
 }
@@ -220,10 +218,10 @@ export default function CompanySettings() {
   }
 
   if (loading && !company) {
-    return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-40 animate-pulse rounded-2xl bg-slate-100" />)}</div>;
+    return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-40 animate-pulse rounded-lg bg-neutral-100" />)}</div>;
   }
   if (error && !company) {
-    return <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
+    return <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
   }
   if (!company) return null;
 
@@ -233,24 +231,24 @@ export default function CompanySettings() {
   return (
     <div className={`space-y-5 ${edit ? 'pb-20' : ''}`}>
       {/* Kartu identitas */}
-      <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="h-20 bg-gradient-to-r from-blue-600 via-blue-500 to-violet-500" />
+      <section className="relative rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800 overflow-hidden">
+        <div className="h-20 rounded-t-lg bg-gradient-to-r from-neutral-900 via-neutral-800 to-neutral-600" />
         <div className="flex flex-col gap-4 px-6 pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-end gap-4">
             <div className="relative -mt-10">
-              <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border-4 border-card bg-slate-100 shadow-md">
+              <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border-4 border-card bg-neutral-100 shadow-md">
                 {logoTampil
                   // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={logoTampil} alt="Company logo" className="h-full w-full object-contain" />
-                  : <span className="text-2xl font-bold text-slate-400">{company.nama_client.slice(0, 1).toUpperCase()}</span>}
+                  : <span className="text-2xl font-bold text-neutral-400">{company.nama_client.slice(0, 1).toUpperCase()}</span>}
               </div>
               {edit && (
                 <div className="absolute -bottom-1 -right-1 flex gap-1">
-                  <button type="button" onClick={() => fileRef.current?.click()} title="Change logo" className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-white shadow ring-2 ring-card hover:bg-blue-800">
+                  <button type="button" onClick={() => fileRef.current?.click()} title="Change logo" className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-800 text-white shadow ring-2 ring-card hover:bg-neutral-700">
                     <Camera size={13} />
                   </button>
                   {logoTampil && (
-                    <button type="button" onClick={() => setLogo(null)} title="Remove logo" className="flex h-7 w-7 items-center justify-center rounded-full bg-card text-slate-500 shadow ring-2 ring-card hover:text-red-600">
+                    <button type="button" onClick={() => setLogo(null)} title="Remove logo" className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-neutral-500 shadow ring-2 ring-card hover:text-red-600">
                       <ImageOff size={13} />
                     </button>
                   )}
@@ -259,8 +257,8 @@ export default function CompanySettings() {
               <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { pilihLogo(e.target.files?.[0]); e.target.value = ''; }} />
             </div>
             <div className="pb-1">
-              <h2 className="text-lg font-bold text-foreground">{company.nama_client}</h2>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <h2 className="text-lg font-bold text-neutral-900">{company.nama_client}</h2>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
                 {company.client_code && <span className="font-mono">{company.client_code}</span>}
                 {company.industry && <span>· {company.industry}</span>}
                 {health && <span className={`rounded-full px-2 py-0.5 font-semibold ring-1 ring-inset ${health.cls}`}>{health.label}</span>}
@@ -269,12 +267,12 @@ export default function CompanySettings() {
           </div>
           <div className="flex items-center gap-2">
             {company.edited_at && !edit && (
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1 text-[11px] text-neutral-500">
                 <CalendarDays size={12} /> Updated {fmtTanggal.format(new Date(company.edited_at))}
               </span>
             )}
             {!edit && (
-              <button onClick={mulaiEdit} className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 transition-colors hover:bg-blue-800">
+              <button onClick={mulaiEdit} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-3.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700">
                 <Pencil size={14} /> Edit company
               </button>
             )}
@@ -285,12 +283,12 @@ export default function CompanySettings() {
       {SECTIONS.map(sec => {
         const Icon = sec.icon;
         return (
-          <section key={sec.title} className="rounded-2xl border border-border bg-card shadow-sm">
-            <header className="flex items-start gap-3 border-b border-border px-6 py-4">
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-primary ring-1 ring-blue-100"><Icon size={16} /></span>
+          <section key={sec.title} className="relative rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800">
+            <header className="flex items-start gap-3 rounded-t-lg border-b border-neutral-300 bg-neutral-50 px-6 py-3.5">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Icon size={16} /></span>
               <div>
-                <h3 className="text-sm font-semibold text-foreground">{sec.title}</h3>
-                <p className="text-xs text-muted-foreground">{sec.subtitle}</p>
+                <h3 className="text-sm font-semibold text-neutral-900">{sec.title}</h3>
+                <p className="text-xs text-neutral-500">{sec.subtitle}</p>
               </div>
             </header>
             <div className="grid grid-cols-1 gap-x-6 gap-y-4 px-6 py-5 sm:grid-cols-3">
@@ -299,10 +297,10 @@ export default function CompanySettings() {
                   {edit && fld.readOnly ? (
                     <>
                       <label className={labelCls}>{fld.label}</label>
-                      <div className={`flex h-[38px] items-center rounded-lg border border-border bg-slate-50 px-3 text-sm text-slate-600 ${fld.mono ? 'font-mono' : ''}`}>
+                      <div className={`flex h-[38px] items-center rounded-lg border border-neutral-300 bg-neutral-50 px-3 text-sm text-neutral-600 ${fld.mono ? 'font-mono' : ''}`}>
                         {tampil(fld, company, akuntan) ?? '—'}
                       </div>
-                      <p className="mt-1 text-[11px] text-muted-foreground">{fld.readOnly}</p>
+                      <p className="mt-1 text-[11px] text-neutral-500">{fld.readOnly}</p>
                     </>
                   ) : edit ? (
                     <>
@@ -311,9 +309,9 @@ export default function CompanySettings() {
                     </>
                   ) : (
                     <>
-                      <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{fld.label}</p>
-                      <div className={`mt-1 text-sm ${fld.mono ? 'font-mono' : ''} text-foreground`}>
-                        {tampil(fld, company, akuntan) ?? <span className="text-slate-300">Not set</span>}
+                      <p className="text-[11px] font-medium uppercase tracking-wider text-neutral-500">{fld.label}</p>
+                      <div className={`mt-1 text-sm ${fld.mono ? 'font-mono' : ''} text-neutral-900`}>
+                        {tampil(fld, company, akuntan) ?? <span className="text-neutral-300">Not set</span>}
                       </div>
                     </>
                   )}
@@ -325,17 +323,17 @@ export default function CompanySettings() {
       })}
 
       {edit && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-300 bg-white shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
           <div className="mx-auto flex max-w-screen-2xl items-center justify-between gap-3 px-6 py-3">
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-neutral-500">
               {jumlahBerubah ? <span className="font-medium text-amber-700">{jumlahBerubah} unsaved change{jumlahBerubah > 1 ? 's' : ''}</span> : 'No changes yet'}
               <span className="hidden sm:inline"> · Saving requires Tahap 5 (Partner) access.</span>
             </p>
             <div className="flex items-center gap-2">
-              <button onClick={batal} disabled={saving} className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-slate-50 disabled:opacity-50">
+              <button onClick={batal} disabled={saving} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
                 <X size={14} /> Cancel
               </button>
-              <button onClick={simpan} disabled={saving} className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 hover:bg-blue-800 disabled:opacity-50">
+              <button onClick={simpan} disabled={saving} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-4 text-sm font-semibold text-white shadow-sm hover:bg-neutral-700 disabled:opacity-50">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save changes
               </button>
             </div>
@@ -355,9 +353,9 @@ function Input({ fld, value, onChange, akuntan, industries }: { fld: Field; valu
       return <input type="date" value={value} onChange={e => onChange(e.target.value)} className={cls} />;
     case 'pkp':
       return (
-        <div className="inline-flex rounded-xl bg-slate-100 p-1">
+        <div className="inline-flex rounded-lg border border-neutral-300 bg-white p-0.5">
           {([['', 'Not set'], ['true', 'PKP'], ['false', 'Non-PKP']] as const).map(([v, l]) => (
-            <button key={l} type="button" onClick={() => onChange(v)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${value === v ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{l}</button>
+            <button key={l} type="button" onClick={() => onChange(v)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${value === v ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}>{l}</button>
           ))}
         </div>
       );

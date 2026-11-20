@@ -33,12 +33,17 @@ import {
   type OpeningBalanceDetail,
 } from '@/lib/openingBalanceStore';
 import { useClientsList } from '@/lib/clientsStore';
+import { useActiveClient } from '@/lib/activeClient';
+import { fetchOpeningBalances } from '@/lib/openingBalanceStore';
+import { ObClientSwitcher, ObMissingNotice } from './ObClientSwitcher';
 import { labelClassification, themeOf } from '../../components/coaTheme';
 import OpeningBalanceImportTab from './OpeningBalanceImportTab';
 import { ControlStatusBanner } from './importUi';
 import { fetchImportOverview, type ImportControlStatus } from '@/lib/openingBalanceImportStore';
 import { exportOpeningBalanceXlsx } from './obExport';
 import { StatusBadge, SuspenseSelect, branchLabel, formatDate } from './obUi';
+import { btnOutline, btnPrimary, tabBarCls, tabCls, tabListCls } from '@/components/arap/arapSalesUi';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const NERACA = new Set(['ASSET', 'LIABILITY', 'EQUITY']);
@@ -51,8 +56,10 @@ const NERACA = new Set(['ASSET', 'LIABILITY', 'EQUITY']);
 const KODE_LABA_BERJALAN = 'std_equity_current_period_earnings';
 const isLabaBerjalan = (a: CoaAccount) => (a.standard_account_code ?? '').trim().toLowerCase() === KODE_LABA_BERJALAN;
 const inputCls =
-  'w-full text-sm rounded-lg border border-border bg-card px-3 py-2 text-foreground placeholder:text-slate-400 ' +
-  'transition-shadow focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100 disabled:bg-slate-50 disabled:text-slate-500';
+  'w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 ' +
+  'transition-shadow focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:bg-neutral-50 disabled:text-neutral-500';
+const labelCls = 'mb-1.5 block text-xs font-semibold text-neutral-600';
+const hintCls = 'mt-1 text-[11px] text-neutral-500';
 
 type Nilai = { debit: string; credit: string };
 type Tab = 'import' | 'detail';
@@ -97,6 +104,33 @@ export default function OpeningBalanceEditorClient() {
   // Saldo akun kontrol yang masih sementara (detail subledger belum diimpor) / beda dengan file COA.
   const [kontrol, setKontrol] = useState<ImportControlStatus[]>([]);
   const { clients } = useClientsList();
+  const { setActiveClient } = useActiveClient();
+
+  // Ganti client langsung dari halaman ini: kalau client tujuan punya opening balance -> buka;
+  // kalau belum -> tampilkan pemberitahuan (tanpaOb), tanpa perlu keluar ke halaman COA.
+  const [tanpaOb, setTanpaOb] = useState<{ id: string; name: string } | null>(null);
+  const [beralih, setBeralih] = useState(false);
+  const gantiClient = async (clientId: string) => {
+    const c = clients.find(x => x.id === clientId);
+    if (!c || beralih) return;
+    if (clientId === ob?.client_id) { setTanpaOb(null); return; }
+    setBeralih(true);
+    try {
+      const daftar = await fetchOpeningBalances(clientId);
+      setActiveClient(c.id, c.companyName);
+      if (daftar.length > 0) {
+        const tujuan = [...daftar].sort((a, b) => b.fiscal_year - a.fiscal_year)[0];
+        setTanpaOb(null);
+        router.push(`/coa/opening-balances/${tujuan.id}`);
+      } else {
+        setTanpaOb({ id: c.id, name: c.companyName });
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to switch client.');
+    } finally {
+      setBeralih(false);
+    }
+  };
 
   const { accounts, loading: loadingCoa } = useClientCoa(ob?.client_id ?? null);
 
@@ -329,11 +363,11 @@ Provisional balances — subledger detail still required for: ${pending.map(k =>
   if (loadError) {
     return (
       <div className="min-h-screen bg-background px-6 py-16">
-        <div className="mx-auto max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
+        <div className="mx-auto max-w-md rounded-lg border border-neutral-300 bg-white p-8 text-center shadow-sm">
           <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-600"><Inbox size={18} /></div>
-          <h2 className="text-sm font-semibold text-foreground">Opening balance not found</h2>
-          <p className="mt-1 text-xs text-muted-foreground">{loadError}</p>
-          <Link href="/coa/opening-balances" className="mt-5 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-slate-50">
+          <h2 className="text-sm font-semibold text-neutral-900">Opening balance not found</h2>
+          <p className="mt-1 text-xs text-neutral-500">{loadError}</p>
+          <Link href="/coa/opening-balances" className="mt-5 inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50">
             <ArrowLeft size={14} /> Back to opening balances
           </Link>
         </div>
@@ -343,63 +377,67 @@ Provisional balances — subledger detail still required for: ${pending.map(k =>
 
   if (!ob) {
     return (
-      <div className="flex min-h-screen items-center justify-center gap-2 bg-background text-sm text-muted-foreground">
+      <div className="flex min-h-screen items-center justify-center gap-2 bg-background text-sm text-neutral-500">
         <Loader2 size={16} className="animate-spin" /> Loading opening balance…
       </div>
     );
   }
 
-  const tombolSekunder = 'flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50';
+  const jumlahTampil = grup.reduce((n, [, daftar]) => n + daftar.length, 0);
 
   return (
-    <div className={`min-h-screen bg-background ${tab === 'detail' ? 'pb-32' : 'pb-10'}`}>
-      {/* Header */}
-      <div className="pb-2">
-        <div className="mx-auto max-w-screen-2xl">
-          <nav className="mb-3 flex items-center gap-1 text-xs text-muted-foreground">
+    <div className={`${salesFont.className} min-h-screen bg-background ${tab === 'detail' ? 'pb-32' : 'pb-10'}`}>
+      {/* Header: gaya Sales (monokrom) */}
+      <div>
+        <div className="mx-auto max-w-screen-2xl px-6 pt-5 lg:px-8 xl:px-10">
+          <nav className="mb-3 flex items-center gap-1 text-xs font-medium text-neutral-500">
             <ListTree size={13} />
-            <Link href="/coa" className="hover:text-foreground">Chart of Accounts</Link>
+            <Link href="/coa" className="hover:text-neutral-900">Chart of Accounts</Link>
             <ChevronRight size={12} />
-            <Link href="/coa/opening-balances" className="hover:text-foreground">Opening balances</Link>
+            <Link href="/coa/opening-balances" className="hover:text-neutral-900">Opening balances</Link>
             <ChevronRight size={12} />
-            <span className="font-medium text-foreground">FY {ob.fiscal_year} · {branchLabel(ob.branch)}</span>
+            <span className="font-semibold text-neutral-900">{tanpaOb ? tanpaOb.name : `FY ${ob.fiscal_year} · ${branchLabel(ob.branch)}`}</span>
           </nav>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
-              <Link href="/coa/opening-balances" title="Back" className="flex h-9 w-9 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-slate-50 hover:text-foreground">
-                <ArrowLeft size={16} />
+              <Link href="/coa/opening-balances" title="Back" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900">
+                <ArrowLeft size={18} />
               </Link>
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-2xl font-bold tracking-tight text-foreground">Opening Balance FY {ob.fiscal_year}</h1>
-                  <StatusBadge status={ob.status} />
-                  {ob.revision > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">Rev {ob.revision}</span>}
+                  <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">{tanpaOb ? 'Opening Balance' : `Opening Balance FY ${ob.fiscal_year}`}</h1>
+                  {!tanpaOb && <StatusBadge status={ob.status} />}
+                  {!tanpaOb && ob.revision > 0 && <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-700 ring-1 ring-neutral-200">Rev {ob.revision}</span>}
                 </div>
-                <p className="text-sm text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-3">
+                {tanpaOb ? (
+                  <p className="mt-1 text-sm font-medium text-neutral-500">{tanpaOb.name} · not created yet</p>
+                ) : (
+                <p className="mt-1 flex flex-wrap items-center gap-x-3 text-sm font-medium text-neutral-500">
                   <span className="inline-flex items-center gap-1"><GitBranch size={12} /> {branchLabel(ob.branch)}</span>
                   <span>As of {formatDate(ob.as_of_date)} · {ob.is_year_start ? 'Start of year' : 'Mid-year cut-off'}</span>
                   {ob.journal && <span className="inline-flex items-center gap-1"><FileText size={12} /> <span className="font-mono">{ob.journal.je_number}</span></span>}
                 </p>
+                )}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className={`flex flex-wrap items-center gap-2 ${tanpaOb ? 'hidden' : ''}`}>
               {draft && (
-                <button onClick={onDelete} disabled={!!aksi} className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50">
+                <button onClick={onDelete} disabled={!!aksi} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 shadow-sm transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50">
                   {aksi === 'delete' ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Delete
                 </button>
               )}
               {ob.status === 'posted' && (
                 <>
-                  <button onClick={onRevise} disabled={!!aksi} className={tombolSekunder}>
+                  <button onClick={onRevise} disabled={!!aksi} className={btnOutline}>
                     {aksi === 'revise' ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Revise
                   </button>
-                  <button onClick={onLock} disabled={!!aksi} className="flex h-9 items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:opacity-50">
+                  <button onClick={onLock} disabled={!!aksi} className={btnPrimary}>
                     {aksi === 'lock' ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />} Lock
                   </button>
                 </>
               )}
               {ob.status === 'locked' && (
-                <button onClick={onUnlock} disabled={!!aksi} className={tombolSekunder}>
+                <button onClick={onUnlock} disabled={!!aksi} className={btnOutline}>
                   {aksi === 'unlock' ? <Loader2 size={14} className="animate-spin" /> : <LockOpen size={14} />} Unlock
                 </button>
               )}
@@ -407,30 +445,52 @@ Provisional balances — subledger detail still required for: ${pending.map(k =>
           </div>
         </div>
         {/* Tab: Import Data | Detail */}
-        <div className="mx-auto flex max-w-screen-2xl gap-1 px-6">
-          {([['import', 'Import Data', Upload], ['detail', 'Detail', Table2]] as const).map(([k, label, Icon]) => (
-            <button
-              key={k}
-              onClick={() => setTab(k)}
-              className={`-mb-px flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${tab === k ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-            >
-              <Icon size={15} /> {label}
-            </button>
-          ))}
+        <div className={`mx-auto mt-5 max-w-screen-2xl px-6 lg:px-8 xl:px-10 ${tanpaOb ? 'hidden' : ''}`}>
+          <div className={tabBarCls}>
+            <div className={tabListCls}>
+              {([['import', 'Import Data', Upload], ['detail', 'Detail', Table2]] as const).map(([k, label, Icon]) => (
+                <button key={k} type="button" onClick={() => setTab(k)} className={tabCls(tab === k)}>
+                  <Icon size={15} /> {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
-      {tab === 'import' && (
-        <div className="mx-auto max-w-screen-2xl pt-4 pb-6">
-          <OpeningBalanceImportTab ob={ob} clientName={clients.find(c => c.id === ob.client_id)?.companyName ?? ''} />
+      {tanpaOb && (
+        <div className="mx-auto max-w-screen-2xl space-y-5 px-6 pt-5 pb-6 lg:px-8 xl:px-10">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-tight text-neutral-900">Opening Balance</h2>
+              <p className="mt-1 text-sm font-medium text-neutral-500">Import opening data and templates for new client onboarding.</p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(240px,1fr)_180px]">
+              <div>
+                <p className="mb-1 text-xs font-semibold text-neutral-600">Client</p>
+                <ObClientSwitcher value={tanpaOb.id} onChange={gantiClient} disabled={beralih} />
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-semibold text-neutral-600">Period</p>
+                <div className="flex h-10 w-full items-center rounded-lg border border-neutral-400 bg-white px-3.5 text-sm font-semibold text-neutral-400 shadow-sm">—</div>
+              </div>
+            </div>
+          </div>
+          <ObMissingNotice clientName={tanpaOb.name} />
         </div>
       )}
 
-      {tab === 'detail' && <>
-      <div className="mx-auto max-w-screen-2xl space-y-5 pt-4 pb-6">
+      {!tanpaOb && tab === 'import' && (
+        <div className="mx-auto max-w-screen-2xl px-6 pt-5 pb-6 lg:px-8 xl:px-10">
+          <OpeningBalanceImportTab ob={ob} clientName={clients.find(c => c.id === ob.client_id)?.companyName ?? ''} onGantiClient={gantiClient} beralih={beralih} />
+        </div>
+      )}
+
+      {!tanpaOb && tab === 'detail' && <>
+      <div className="mx-auto max-w-screen-2xl space-y-5 px-6 pt-5 pb-6 lg:px-8 xl:px-10">
         {/* Banner status */}
         {!draft && Math.abs(ob.difference) > 0.004 && ob.suspense_account && (
-          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
             <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
             <p className="text-xs leading-relaxed text-amber-900">
               The balances were <span className="font-semibold">{formatAmount(Math.abs(ob.difference))}</span> out of balance. The difference is parked in{' '}
@@ -441,9 +501,9 @@ Provisional balances — subledger detail still required for: ${pending.map(k =>
         )}
         <ControlStatusBanner items={kontrol} obId={ob.id} />
         {!draft && (
-          <div className="flex items-start gap-3 rounded-2xl border border-border bg-slate-50 px-4 py-3">
-            {ob.status === 'locked' ? <Lock size={16} className="mt-0.5 shrink-0 text-slate-500" /> : <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" />}
-            <p className="text-xs leading-relaxed text-slate-700">
+          <div className="flex items-start gap-3 rounded-lg border border-neutral-300 bg-neutral-50 px-4 py-3">
+            {ob.status === 'locked' ? <Lock size={16} className="mt-0.5 shrink-0 text-neutral-700" /> : <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" />}
+            <p className="text-xs font-medium leading-relaxed text-neutral-700">
               {ob.status === 'locked'
                 ? 'This opening balance is locked and read-only. Unlocking requires Tahap 5 or above.'
                 : <>Posted as journal <span className="font-mono font-semibold">{ob.journal?.je_number}</span> — it is already reflected in the financial statements. Use <span className="font-semibold">Revise</span> to change the balances.</>}
@@ -452,191 +512,233 @@ Provisional balances — subledger detail still required for: ${pending.map(k =>
         )}
 
         {/* Pengaturan header */}
-        <section className="grid grid-cols-1 gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm md:grid-cols-2 xl:grid-cols-4">
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-foreground">Cut-off date</label>
-            <input
-              type="date"
-              value={header.asOf}
-              min={`${ob.fiscal_year - 1}-12-31`}
-              max={`${ob.fiscal_year}-12-30`}
-              disabled={!draft}
-              onChange={e => setHeader(h => ({ ...h, asOf: e.target.value }))}
-              className={inputCls}
-            />
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              {awalTahun ? 'Start of year — balance sheet accounts only.' : 'Mid-year — P&L year-to-date allowed.'}
-            </p>
-          </div>
-          <div ref={penampungRef} className={`rounded-xl transition-shadow ${sorotPenampung ? 'ring-4 ring-amber-200' : ''}`}>
-            <label className="mb-1.5 block text-xs font-semibold text-foreground">Suspense account</label>
-            <SuspenseSelect
-              accounts={accounts}
-              value={header.suspenseId}
-              onChange={v => { setHeader(h => ({ ...h, suspenseId: v })); setSorotPenampung(false); }}
-              disabled={!draft}
-              className={inputCls}
-            />
-            <p className="mt-1 text-[11px] text-muted-foreground">Receives any debit/credit difference on posting.</p>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-foreground">Reference</label>
-            <input value={header.reference} onChange={e => setHeader(h => ({ ...h, reference: e.target.value }))} disabled={!draft} placeholder="Audited balance sheet" className={inputCls} />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-foreground">Notes</label>
-            <input value={header.notes} onChange={e => setHeader(h => ({ ...h, notes: e.target.value }))} disabled={!draft} placeholder="Optional" className={inputCls} />
+        <section className="relative overflow-hidden rounded-lg border border-neutral-300 bg-white p-5 pt-6 shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-neutral-800">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <label className={labelCls}>Cut-off date</label>
+              <input
+                type="date"
+                value={header.asOf}
+                min={`${ob.fiscal_year - 1}-12-31`}
+                max={`${ob.fiscal_year}-12-30`}
+                disabled={!draft}
+                onChange={e => setHeader(h => ({ ...h, asOf: e.target.value }))}
+                className={inputCls}
+              />
+              <p className={hintCls}>
+                {awalTahun ? 'Start of year — balance sheet accounts only.' : 'Mid-year — P&L year-to-date allowed.'}
+              </p>
+            </div>
+            <div ref={penampungRef} className={`rounded-lg transition-shadow ${sorotPenampung ? 'ring-4 ring-amber-200' : ''}`}>
+              <label className={labelCls}>Suspense account</label>
+              <SuspenseSelect
+                accounts={accounts}
+                value={header.suspenseId}
+                onChange={v => { setHeader(h => ({ ...h, suspenseId: v })); setSorotPenampung(false); }}
+                disabled={!draft}
+                className={inputCls}
+              />
+              <p className={hintCls}>Receives any debit/credit difference on posting.</p>
+            </div>
+            <div>
+              <label className={labelCls}>Reference</label>
+              <input value={header.reference} onChange={e => setHeader(h => ({ ...h, reference: e.target.value }))} disabled={!draft} placeholder="Audited balance sheet" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Notes</label>
+              <input value={header.notes} onChange={e => setHeader(h => ({ ...h, notes: e.target.value }))} disabled={!draft} placeholder="Optional" className={inputCls} />
+            </div>
           </div>
         </section>
 
         {/* Tabel saldo per akun */}
-        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-          <div className="flex flex-col gap-2 border-b border-border p-4 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search ACC No, account name, head, or sub…"
-                className="w-full rounded-xl border border-border bg-slate-50 py-2.5 pl-10 pr-9 text-sm text-foreground placeholder:text-slate-400 transition-shadow focus:border-blue-400 focus:bg-card focus:outline-none focus:ring-4 focus:ring-blue-100"
-              />
-              {search && (
-                <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-foreground" aria-label="Clear search"><X size={14} /></button>
-              )}
+        <div className="relative overflow-hidden rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:z-20 before:h-0.5 before:bg-neutral-800">
+          {/* Toolbar */}
+          <div className="border-b border-neutral-300 bg-neutral-50 px-5 pb-4 pt-5">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="relative flex-1">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search ACC No, account name, head, or sub…"
+                  className="w-full rounded-lg border border-neutral-300 bg-white py-2 pl-10 pr-9 text-sm text-neutral-900 placeholder:text-neutral-400 transition-shadow focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
+                />
+                {search && (
+                  <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-neutral-400 hover:text-neutral-900" aria-label="Clear search"><X size={14} /></button>
+                )}
+              </div>
+              <div className="inline-flex shrink-0 rounded-lg border border-neutral-300 bg-white p-0.5">
+                {([[false, 'All accounts'], [true, `Filled (${totals.count})`]] as const).map(([v, label]) => (
+                  <button
+                    key={String(v)}
+                    onClick={() => setHanyaTerisi(v)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      hanyaTerisi === v ? 'bg-neutral-800 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button onClick={onExport} disabled={mengekspor || akunTampil.length === 0} className={btnOutline}>
+                {mengekspor ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Export
+              </button>
             </div>
-            <div className="inline-flex shrink-0 rounded-xl bg-slate-100 p-1">
-              {([[false, 'All accounts'], [true, `Filled (${totals.count})`]] as const).map(([v, label]) => (
-                <button
-                  key={String(v)}
-                  onClick={() => setHanyaTerisi(v)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${hanyaTerisi === v ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={onExport}
-              disabled={mengekspor || akunTampil.length === 0}
-              className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
-            >
-              {mengekspor ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Export
-            </button>
+            {awalTahun && (
+              <p className="mt-3 flex items-center gap-1.5 text-[11px] font-medium text-neutral-500">
+                <span className="h-1 w-1 shrink-0 rounded-full bg-neutral-400" />
+                P&amp;L accounts are hidden for a start-of-year cut-off — last year&apos;s profit belongs in retained earnings.
+              </p>
+            )}
           </div>
 
-          {awalTahun && (
-            <p className="border-b border-border bg-slate-50 px-5 py-2 text-[11px] text-muted-foreground">
-              P&amp;L accounts are hidden for a start-of-year cut-off — last year&apos;s profit belongs in retained earnings.
-            </p>
-          )}
-
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-50">
-              <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                <th className="px-5 py-3">Account</th>
-                <th className="w-20 px-4 py-3 text-center">Normal</th>
-                <th className="w-56 px-4 py-3 text-right">Debit</th>
-                <th className="w-56 px-4 py-3 text-right">Credit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loadingCoa && accounts.length === 0 ? (
-                <tr><td colSpan={4} className="py-14 text-center text-sm text-muted-foreground"><Loader2 size={16} className="mr-2 inline animate-spin" />Loading accounts…</td></tr>
-              ) : grup.length === 0 ? (
-                <tr><td colSpan={4} className="py-14 text-center text-sm text-muted-foreground">
-                  {akunTampil.length === 0 ? 'This client has no chart of accounts yet.' : hanyaTerisi ? 'No balances filled in yet.' : 'No accounts match your search.'}
-                </td></tr>
-              ) : grup.map(([kls, daftar]) => {
-                const t = themeOf(kls);
-                const tutup = tertutup.has(kls);
-                const dijurnal = daftar.filter(a => !isLabaBerjalan(a));
-                const subD = dijurnal.reduce((s, a) => s + parseAmount(nilai[a.id]?.debit ?? ''), 0);
-                const subK = dijurnal.reduce((s, a) => s + parseAmount(nilai[a.id]?.credit ?? ''), 0);
-                return (
-                  <React.Fragment key={kls}>
-                    <tr className="cursor-pointer border-y border-border bg-slate-50 hover:bg-slate-100" onClick={() => toggleGrup(kls)}>
-                      <td className="px-5 py-2" colSpan={2}>
-                        <span className="inline-flex items-center gap-2 text-xs font-semibold text-foreground">
-                          {tutup ? <ChevronRight size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
-                          <span className={`h-2 w-2 rounded-full ${t.dot}`} />
-                          {labelClassification(kls)}
-                          <span className="rounded-md bg-slate-200 px-1.5 text-[10px] font-semibold text-slate-600">{daftar.length}</span>
-                        </span>
+          {/* Tabel */}
+          <div className="max-h-[62vh] overflow-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:shadow-[inset_0_1px_0_0_#262626,inset_0_-1px_0_0_#262626] [&>th]:font-bold">
+                  <th className="px-5 py-3">Account</th>
+                  <th className="w-20 px-4 py-3 text-center">Normal</th>
+                  <th className="w-56 px-4 py-3 text-right">Debit</th>
+                  <th className="w-56 px-4 py-3 text-right">Credit</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-400">
+                {loadingCoa && accounts.length === 0 ? (
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={i}>
+                      <td colSpan={4} className="px-5 py-3.5">
+                        <div className="h-4 animate-pulse rounded-md bg-neutral-100" style={{ width: `${60 + ((i * 7) % 35)}%` }} />
                       </td>
-                      <td className="px-4 py-2 text-right font-mono text-xs font-semibold tabular-nums text-slate-600">{subD ? formatAmount(subD) : ''}</td>
-                      <td className="px-4 py-2 text-right font-mono text-xs font-semibold tabular-nums text-slate-600">{subK ? formatAmount(subK) : ''}</td>
                     </tr>
-                    {!tutup && daftar.map(a => {
-                      if (isLabaBerjalan(a)) return <BarisLabaBerjalan key={a.id} akun={a} laba={totals.laba} awalTahun={awalTahun} />;
-                      const v = nilai[a.id] ?? { debit: '', credit: '' };
-                      const d = parseAmount(v.debit), c = parseAmount(v.credit);
-                      const tidakNormal = (a.normal_balance === 'DEBIT' && c > 0) || (a.normal_balance === 'CREDIT' && d > 0);
-                      return (
-                        <tr key={a.id} className={`border-b border-slate-100 ${d || c ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
-                          <td className="px-5 py-2">
-                            <div className="flex items-center gap-3">
-                              <span className="w-24 shrink-0 font-mono text-[11px] text-slate-500">{kodeAkun(a.acc_no)}</span>
-                              <span className={`truncate ${a.is_active ? 'text-foreground' : 'text-slate-400'}`}>{a.account_name}</span>
-                              {tidakNormal && (
-                                <span title="Balance is on the opposite side of this account's normal balance (fine for contra accounts)." className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                                  <AlertTriangle size={10} /> Abnormal
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 text-center">
-                            {a.normal_balance && (
-                              <span className={`inline-block rounded-md px-1.5 py-0.5 text-[11px] font-bold ${a.normal_balance === 'DEBIT' ? 'bg-sky-50 text-sky-700' : 'bg-amber-50 text-amber-700'}`}>
-                                {a.normal_balance === 'DEBIT' ? 'Dr' : 'Cr'}
-                              </span>
-                            )}
-                          </td>
-                          {(['debit', 'credit'] as const).map(sisi => (
-                            <td key={sisi} className="px-4 py-1.5">
-                              <input
-                                value={v[sisi]}
-                                onChange={e => ubahNilai(a.id, sisi, e.target.value)}
-                                onBlur={() => rapikanNilai(a.id, sisi)}
-                                disabled={!draft}
-                                inputMode="decimal"
-                                placeholder="0"
-                                aria-label={`${sisi} ${kodeAkun(a.acc_no)}`}
-                                className="w-full rounded-lg border border-transparent bg-transparent px-2.5 py-1.5 text-right font-mono text-sm tabular-nums text-foreground placeholder:text-slate-300 transition-shadow hover:border-border focus:border-blue-400 focus:bg-card focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:hover:border-transparent"
-                              />
+                  ))
+                ) : grup.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-16">
+                      <div className="flex flex-col items-center text-center">
+                        <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-100 text-neutral-500 ring-1 ring-neutral-200">
+                          {akunTampil.length === 0 ? <ListTree size={20} /> : <Search size={20} />}
+                        </span>
+                        <p className="text-sm font-semibold text-neutral-900">
+                          {akunTampil.length === 0 ? 'No accounts yet' : hanyaTerisi ? 'No balances filled in yet' : 'No matching accounts'}
+                        </p>
+                        <p className="mt-1 max-w-sm text-xs text-neutral-500">
+                          {akunTampil.length === 0 ? 'This client has no chart of accounts yet.' : hanyaTerisi ? 'Enter a debit or credit amount to see it here.' : 'Try another keyword or clear the filters.'}
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : grup.map(([kls, daftar]) => {
+                  const t = themeOf(kls);
+                  const tutup = tertutup.has(kls);
+                  const dijurnal = daftar.filter(a => !isLabaBerjalan(a));
+                  const subD = dijurnal.reduce((s, a) => s + parseAmount(nilai[a.id]?.debit ?? ''), 0);
+                  const subK = dijurnal.reduce((s, a) => s + parseAmount(nilai[a.id]?.credit ?? ''), 0);
+                  return (
+                    <React.Fragment key={kls}>
+                      <tr className="cursor-pointer bg-neutral-100 transition-colors hover:bg-neutral-200" onClick={() => toggleGrup(kls)}>
+                        <td className="px-5 py-2.5" colSpan={2}>
+                          <span className="inline-flex items-center gap-2 text-xs font-bold text-neutral-900">
+                            {tutup ? <ChevronRight size={14} className="text-neutral-500" /> : <ChevronDown size={14} className="text-neutral-500" />}
+                            <span className={`h-2 w-2 rounded-full ${t.dot}`} />
+                            {labelClassification(kls)}
+                            <span className="rounded-full bg-white px-1.5 text-[10px] font-semibold tabular-nums text-neutral-600 ring-1 ring-neutral-300">{daftar.length}</span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-xs font-semibold tabular-nums text-neutral-700">{subD ? formatAmount(subD) : ''}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-xs font-semibold tabular-nums text-neutral-700">{subK ? formatAmount(subK) : ''}</td>
+                      </tr>
+                      {!tutup && daftar.map(a => {
+                        if (isLabaBerjalan(a)) return <BarisLabaBerjalan key={a.id} akun={a} laba={totals.laba} awalTahun={awalTahun} />;
+                        const v = nilai[a.id] ?? { debit: '', credit: '' };
+                        const d = parseAmount(v.debit), c = parseAmount(v.credit);
+                        const terisi = d > 0 || c > 0;
+                        const tidakNormal = (a.normal_balance === 'DEBIT' && c > 0) || (a.normal_balance === 'CREDIT' && d > 0);
+                        return (
+                          <tr key={a.id} className={`transition-colors ${terisi ? 'bg-neutral-100' : 'hover:bg-neutral-50'}`}>
+                            <td className="px-5 py-2.5">
+                              <div className="flex items-center gap-3">
+                                <span className={`h-8 w-0.5 shrink-0 rounded-full bg-neutral-800 ${a.is_active ? '' : 'opacity-20'}`} />
+                                <div className="min-w-0">
+                                  <p className="font-mono text-[11px] text-neutral-500">{kodeAkun(a.acc_no)}</p>
+                                  <div className="flex items-center gap-2">
+                                    <p className={`truncate text-sm font-medium ${a.is_active ? 'text-neutral-900' : 'text-neutral-500'}`}>{a.account_name}</p>
+                                    {tidakNormal && (
+                                      <span title="Balance is on the opposite side of this account's normal balance (fine for contra accounts)." className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
+                                        <AlertTriangle size={10} /> Abnormal
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
                             </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+                            <td className="px-4 py-2.5 text-center">
+                              {a.normal_balance ? (
+                                <span className="inline-block rounded-md bg-neutral-100 px-1.5 py-0.5 text-[11px] font-bold text-neutral-700 ring-1 ring-neutral-200">
+                                  {a.normal_balance === 'DEBIT' ? 'Dr' : 'Cr'}
+                                </span>
+                              ) : <span className="text-neutral-300">—</span>}
+                            </td>
+                            {(['debit', 'credit'] as const).map(sisi => (
+                              <td key={sisi} className="px-4 py-1.5">
+                                <input
+                                  value={v[sisi]}
+                                  onChange={e => ubahNilai(a.id, sisi, e.target.value)}
+                                  onBlur={() => rapikanNilai(a.id, sisi)}
+                                  disabled={!draft}
+                                  inputMode="decimal"
+                                  placeholder="0"
+                                  aria-label={`${sisi} ${kodeAkun(a.acc_no)}`}
+                                  className="w-full rounded-lg border border-transparent bg-transparent px-2.5 py-1.5 text-right font-mono text-sm tabular-nums text-neutral-900 placeholder:text-neutral-300 transition-shadow hover:border-neutral-300 focus:border-neutral-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:hover:border-transparent"
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {akunTampil.length > 0 && (
+            <div className="flex items-center justify-between border-t border-neutral-300 bg-neutral-50 px-5 py-2.5 text-xs text-neutral-500">
+              <span>Showing <span className="font-semibold text-neutral-900">{jumlahTampil}</span> of {akunTampil.length} accounts</span>
+              {(search || hanyaTerisi) && (
+                <button onClick={() => { setSearch(''); setHanyaTerisi(false); }} className="font-semibold text-neutral-900 hover:underline">
+                  Clear filters
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Footer sticky: total, selisih, aksi */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
-        <div className="mx-auto flex max-w-screen-2xl flex-col gap-3 px-6 py-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-300 bg-white shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
+        <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+        <div className="mx-auto flex max-w-screen-2xl flex-col gap-3 px-6 py-3 lg:flex-row lg:items-center lg:justify-between lg:px-8 xl:px-10">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             {!awalTahun && (
-              <div title="Current year earnings = Σ(credit − debit) of all P&L accounts. Info only — not journaled.">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-600">Current year earnings · auto</p>
-                <p className={`font-mono text-base font-bold tabular-nums ${totals.laba < 0 ? 'text-red-600' : 'text-violet-700'}`}>
+              <div title="Current year earnings = Σ(credit − debit) of all P&L accounts. Info only — not journaled." className="border-r border-neutral-300 pr-6">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Current year earnings · auto</p>
+                <p className={`font-mono text-base font-semibold tabular-nums ${totals.laba < 0 ? 'text-rose-600' : 'text-neutral-900'}`}>
                   {totals.laba < 0 ? `(${formatAmount(Math.abs(totals.laba))})` : formatAmount(totals.laba)}
                 </p>
               </div>
             )}
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Total debit</p>
-              <p className="font-mono text-base font-bold tabular-nums text-foreground">{formatAmount(totals.debit)}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Total debit</p>
+              <p className="font-mono text-base font-semibold tabular-nums text-neutral-900">{formatAmount(totals.debit)}</p>
             </div>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Total credit</p>
-              <p className="font-mono text-base font-bold tabular-nums text-foreground">{formatAmount(totals.credit)}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Total credit</p>
+              <p className="font-mono text-base font-semibold tabular-nums text-neutral-900">{formatAmount(totals.credit)}</p>
             </div>
-            <div className={`flex items-center gap-2 rounded-xl px-3 py-1.5 ${seimbang ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
+            <div className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 ${seimbang ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-amber-800'}`}>
               {seimbang ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider opacity-80">{seimbang ? 'Balanced' : 'Difference'}</p>
@@ -654,15 +756,15 @@ Provisional balances — subledger detail still required for: ${pending.map(k =>
           </div>
           {draft && (
             <div className="flex items-center gap-2">
-              {adaPerubahan && <span className="mr-1 text-xs font-medium text-amber-700">Unsaved changes</span>}
-              <button onClick={onSave} disabled={!!aksi || !adaPerubahan} className={tombolSekunder}>
+              {adaPerubahan && (
+                <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-medium text-amber-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Unsaved changes
+                </span>
+              )}
+              <button onClick={onSave} disabled={!!aksi || !adaPerubahan} className={btnOutline}>
                 {aksi === 'save' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save draft
               </button>
-              <button
-                onClick={onPost}
-                disabled={!!aksi}
-                className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 transition-colors hover:bg-blue-800 disabled:opacity-50"
-              >
+              <button onClick={onPost} disabled={!!aksi} className={btnPrimary}>
                 {aksi === 'post' ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Approve
               </button>
             </div>
@@ -680,29 +782,34 @@ function BarisLabaBerjalan({ akun, laba, awalTahun }: { akun: CoaAccount; laba: 
   const teks = Math.abs(nilai) < 0.005 ? '0' : formatAmount(Math.abs(nilai));
   const sel = (aktif: boolean) => (
     <td className="px-4 py-1.5">
-      <div className={`rounded-lg border border-dashed px-2.5 py-1.5 text-right font-mono text-sm tabular-nums ${aktif ? 'border-violet-200 bg-card font-semibold text-violet-700' : 'border-transparent text-slate-300'}`}>
+      <div className={`rounded-lg border border-dashed px-2.5 py-1.5 text-right font-mono text-sm tabular-nums ${aktif ? 'border-neutral-400 bg-white font-semibold text-neutral-900' : 'border-transparent text-neutral-300'}`}>
         {aktif ? teks : '—'}
       </div>
     </td>
   );
   return (
-    <tr className="border-b border-slate-100 bg-violet-50">
-      <td className="px-5 py-2">
+    <tr className="bg-neutral-50">
+      <td className="px-5 py-2.5">
         <div className="flex items-center gap-3">
-          <span className="w-24 shrink-0 font-mono text-[11px] text-slate-500">{kodeAkun(akun.acc_no)}</span>
-          <span className="truncate text-foreground">{akun.account_name}</span>
-          <span
-            title={awalTahun
-              ? 'Start-of-year cut-off: current year earnings start at 0 — last year’s profit belongs in Retained Earnings.'
-              : 'Auto = Σ(credit − debit) of all P&L accounts (Revenue + Other Income − COGS − Expense − Other Expense − Income Tax). Info only: not journaled, because the financial statements already derive current year earnings from the P&L accounts.'}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700"
-          >
-            <Calculator size={10} /> Auto · not journaled
-          </span>
+          <span className="h-8 w-0.5 shrink-0 rounded-full bg-neutral-800" />
+          <div className="min-w-0">
+            <p className="font-mono text-[11px] text-neutral-500">{kodeAkun(akun.acc_no)}</p>
+            <div className="flex items-center gap-2">
+              <p className="truncate text-sm font-medium text-neutral-900">{akun.account_name}</p>
+              <span
+                title={awalTahun
+                  ? 'Start-of-year cut-off: current year earnings start at 0 — last year’s profit belongs in Retained Earnings.'
+                  : 'Auto = Σ(credit − debit) of all P&L accounts (Revenue + Other Income − COGS − Expense − Other Expense − Income Tax). Info only: not journaled, because the financial statements already derive current year earnings from the P&L accounts.'}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-1.5 py-0.5 text-[10px] font-semibold text-neutral-700 ring-1 ring-inset ring-neutral-300"
+              >
+                <Calculator size={10} /> Auto · not journaled
+              </span>
+            </div>
+          </div>
         </div>
       </td>
-      <td className="px-4 py-2 text-center">
-        <span className="inline-block rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-700">Cr</span>
+      <td className="px-4 py-2.5 text-center">
+        <span className="inline-block rounded-md bg-neutral-100 px-1.5 py-0.5 text-[11px] font-bold text-neutral-700 ring-1 ring-neutral-200">Cr</span>
       </td>
       {/* Laba -> sisi kredit (normal); rugi -> sisi debit. */}
       {sel(nilai < 0)}

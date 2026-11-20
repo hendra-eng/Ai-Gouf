@@ -19,6 +19,7 @@ import {
   type CheckStatus, type WorkspaceYear, type YecDetail, type YecPreview,
 } from '@/lib/yearEndClosingStore';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
 
 const glLink = (date: string) => `/reports/general-ledger?start=${date}&end=${date}`;
 const kunci = (y: { client_id: string; fiscal_year: number }) => `${y.client_id}:${y.fiscal_year}`;
@@ -80,20 +81,20 @@ export default function YearEndClosingClient() {
 
   const kpi = data?.kpi;
   return (
-    <div className="min-h-screen bg-background pb-16">
-      <div className="mx-auto max-w-screen-2xl space-y-5 px-4 py-6 sm:px-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className={`${salesFont.className} min-h-screen bg-background pb-16`}>
+      <div className="mx-auto max-w-screen-2xl space-y-5 px-6 py-5 lg:px-8 xl:px-10">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Year-End Closing</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Kelola proses penutupan tahun buku, snapshot saldo akhir, dan audit trail closing per klien.</p>
+            <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Year-End Closing</h1>
+            <p className="mt-1 text-sm font-medium text-neutral-500">Kelola proses penutupan tahun buku, snapshot saldo akhir, dan audit trail closing per klien.</p>
           </div>
           <button onClick={reload} disabled={loading}
-            className="inline-flex w-fit items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs font-medium text-muted-foreground shadow-sm hover:text-foreground disabled:opacity-50">
+            className="inline-flex w-fit items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-medium text-neutral-700 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
             <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
         </div>
 
-        {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+        {error && <div className="rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard icon={CalendarDays} tone="sky" label="Open Fiscal Years" value={kpi?.open} hint="Tahun buku belum ditutup" />
@@ -103,42 +104,42 @@ export default function YearEndClosingClient() {
         </div>
 
         {/* ---------------- Daftar Tahun Buku ---------------- */}
-        <section className="rounded-2xl border border-border bg-card shadow-sm">
+        <section className="card-elevated-md rounded-xl">
           <div className="flex flex-col gap-3 px-5 pb-3 pt-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <h2 className="text-lg font-bold text-foreground">Daftar Tahun Buku</h2>
-              <p className="text-xs text-muted-foreground">Daftar tahun buku per klien beserta status penutupan.</p>
+              <h2 className="text-sm font-semibold text-neutral-900">Daftar Tahun Buku</h2>
+              <p className="mt-0.5 text-xs text-neutral-500">Daftar tahun buku per klien beserta status penutupan.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <label className="flex w-full items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 sm:w-72">
-                <Search size={14} className="text-muted-foreground" />
+              <label className="flex w-full items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 shadow-sm focus-within:border-neutral-700 focus-within:ring-2 focus-within:ring-neutral-300 sm:w-72">
+                <Search size={14} className="text-neutral-500" />
                 <input value={q} onChange={e => setQ(e.target.value)} placeholder="Cari klien atau tahun buku..."
-                  className="w-full bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none" />
+                  className="w-full bg-transparent text-sm placeholder:text-neutral-500 focus:outline-none" />
               </label>
               <FilterMenu status={statusFilter} onStatus={setStatusFilter} activeOnly={activeOnly} onActiveOnly={setActiveOnly} hasActive={!!activeClientId} />
             </div>
           </div>
 
           <div className="overflow-x-auto px-5 pb-2">
-            <table className="w-full min-w-[980px] text-sm">
+            <table className="w-full min-w-[980px] select-text border-separate border-spacing-0 text-sm">
               <thead>
-                <tr className="border-y border-border bg-slate-50 text-left text-xs font-medium text-slate-600">
-                  <th className="px-3 py-2.5">Klien</th>
-                  <th className="px-3 py-2.5">Fiscal Year</th>
-                  <th className="px-3 py-2.5">Start Date</th>
-                  <th className="px-3 py-2.5">End Date</th>
-                  <th className="px-3 py-2.5">Status</th>
-                  <th className="px-3 py-2.5">Closed By</th>
-                  <th className="px-3 py-2.5">Closed At</th>
-                  <th className="px-3 py-2.5">Re-opened By</th>
-                  <th className="px-3 py-2.5">Actions</th>
+                <tr className="bg-neutral-300 text-left">
+                  <th className="whitespace-nowrap border-b border-t border-neutral-800 px-3 py-2.5 text-xs font-bold text-black">Klien</th>
+                  <th className="whitespace-nowrap border-b border-t border-neutral-800 px-3 py-2.5 text-xs font-bold text-black">Fiscal Year</th>
+                  <th className="whitespace-nowrap border-b border-t border-neutral-800 px-3 py-2.5 text-xs font-bold text-black">Start Date</th>
+                  <th className="whitespace-nowrap border-b border-t border-neutral-800 px-3 py-2.5 text-xs font-bold text-black">End Date</th>
+                  <th className="whitespace-nowrap border-b border-t border-neutral-800 px-3 py-2.5 text-xs font-bold text-black">Status</th>
+                  <th className="whitespace-nowrap border-b border-t border-neutral-800 px-3 py-2.5 text-xs font-bold text-black">Closed By</th>
+                  <th className="whitespace-nowrap border-b border-t border-neutral-800 px-3 py-2.5 text-xs font-bold text-black">Closed At</th>
+                  <th className="whitespace-nowrap border-b border-t border-neutral-800 px-3 py-2.5 text-xs font-bold text-black">Re-opened By</th>
+                  <th className="whitespace-nowrap border-b border-t border-neutral-800 px-3 py-2.5 text-xs font-bold text-black">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody>
                 {loading && !data ? (
-                  [0, 1, 2, 3].map(i => <tr key={i}><td colSpan={9} className="px-3 py-3"><div className="h-5 animate-pulse rounded bg-slate-100" /></td></tr>)
+                  [0, 1, 2, 3].map(i => <tr key={i}><td colSpan={9} className="px-3 py-3"><div className="h-5 animate-pulse rounded bg-neutral-100" /></td></tr>)
                 ) : halaman.length === 0 ? (
-                  <tr><td colSpan={9} className="px-3 py-10 text-center text-xs text-muted-foreground">Tidak ada tahun buku yang cocok.</td></tr>
+                  <tr><td colSpan={9} className="px-3 py-10 text-center text-xs text-neutral-500">Tidak ada tahun buku yang cocok.</td></tr>
                 ) : halaman.map(y => (
                   <YearRow key={kunci(y)} y={y} selected={kunci(y) === detailKey}
                     onClose={() => setDrawer({ year: y, mode: 'close' })}
@@ -152,11 +153,11 @@ export default function YearEndClosingClient() {
             </table>
           </div>
           {filtered.length > PER_HALAMAN && (
-            <div className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between border-t border-neutral-200 bg-neutral-50 px-5 py-3 text-xs font-medium text-neutral-500">
               <span>{page * PER_HALAMAN + 1}–{Math.min(filtered.length, (page + 1) * PER_HALAMAN)} dari {filtered.length}</span>
               <div className="flex gap-1.5">
-                <button disabled={page === 0} onClick={() => setPage(p => p - 1)} className="rounded-lg border border-border px-2.5 py-1 hover:bg-slate-50 disabled:opacity-40">Prev</button>
-                <button disabled={page >= jumlahHalaman - 1} onClick={() => setPage(p => p + 1)} className="rounded-lg border border-border px-2.5 py-1 hover:bg-slate-50 disabled:opacity-40">Next</button>
+                <button disabled={page === 0} onClick={() => setPage(p => p - 1)} className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-neutral-700 shadow-sm hover:border-neutral-700 hover:bg-neutral-50 disabled:opacity-40">Prev</button>
+                <button disabled={page >= jumlahHalaman - 1} onClick={() => setPage(p => p + 1)} className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-neutral-700 shadow-sm hover:border-neutral-700 hover:bg-neutral-50 disabled:opacity-40">Next</button>
               </div>
             </div>
           )}
@@ -188,23 +189,16 @@ export default function YearEndClosingClient() {
 
 // ------------------------------------------------------------------
 
-const TONES = {
-  sky: { card: 'border-sky-100 bg-sky-50/50', icon: 'bg-sky-100 text-sky-600' },
-  green: { card: 'border-emerald-100 bg-emerald-50/50', icon: 'bg-emerald-100 text-emerald-600' },
-  orange: { card: 'border-orange-100 bg-orange-50/60', icon: 'bg-orange-100 text-orange-600' },
-  amber: { card: 'border-amber-100 bg-amber-50/60', icon: 'bg-amber-100 text-amber-600' },
-} as const;
-
-function KpiCard({ icon: Icon, tone, label, value, hint }: { icon: React.ElementType; tone: keyof typeof TONES; label: string; value?: number; hint: string }) {
-  const t = TONES[tone];
+function KpiCard({ icon: Icon, label, value, hint }: { icon: React.ElementType; tone?: string; label: string; value?: number; hint: string }) {
   return (
-    <div className={`flex items-center gap-4 rounded-2xl border p-5 shadow-sm ${t.card}`}>
-      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${t.icon}`}><Icon size={22} /></span>
-      <div className="min-w-0">
-        <p className="text-xs font-medium text-foreground">{label}</p>
-        <p className="text-2xl font-bold leading-tight text-foreground">{value ?? '–'}</p>
-        <p className="text-[11px] text-muted-foreground">{hint}</p>
+    <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Icon size={16} /></span>
       </div>
+      <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-neutral-900">{value ?? '–'}</p>
+      <p className="text-[11px] font-medium text-neutral-500">{hint}</p>
     </div>
   );
 }
@@ -217,22 +211,22 @@ function FilterMenu({ status, onStatus, activeOnly, onActiveOnly, hasActive }: {
   return (
     <div className="relative">
       <button onClick={() => setOpen(o => !o)}
-        className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-slate-50">
-        <Filter size={14} /> Filter{aktif ? <span className="rounded-full bg-primary px-1.5 text-[10px] font-semibold text-white">{aktif}</span> : null}
+        className="inline-flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
+        <Filter size={14} /> Filter{aktif ? <span className="rounded-full bg-neutral-800 px-1.5 text-[10px] font-semibold text-white">{aktif}</span> : null}
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-40 mt-2 w-60 rounded-xl border border-border bg-card p-3 shadow-lg">
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Status</p>
+          <div className="absolute right-0 z-40 mt-2 w-60 rounded-[10px] border border-neutral-300 bg-white p-3 shadow-xl">
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Status</p>
             {(['all', 'open', 'closed', 'reopened'] as StatusFilter[]).map(s => (
-              <label key={s} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50">
+              <label key={s} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-neutral-50">
                 <input type="radio" checked={status === s} onChange={() => onStatus(s)} />
                 {s === 'all' ? 'All statuses' : STATUS_BADGE[s].label}
               </label>
             ))}
-            <div className="my-2 border-t border-border" />
-            <label className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${hasActive ? 'cursor-pointer hover:bg-slate-50' : 'opacity-50'}`}>
+            <div className="my-2 border-t border-neutral-200" />
+            <label className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${hasActive ? 'cursor-pointer hover:bg-neutral-50' : 'opacity-50'}`}>
               <input type="checkbox" checked={activeOnly} disabled={!hasActive} onChange={e => onActiveOnly(e.target.checked)} />
               Active client only
             </label>
@@ -244,15 +238,15 @@ function FilterMenu({ status, onStatus, activeOnly, onActiveOnly, hasActive }: {
 }
 
 const STATUS_BADGE: Record<'open' | 'closed' | 'reopened', { label: string; cls: string; dot: string }> = {
-  open: { label: 'Open', cls: 'bg-sky-50 text-sky-700', dot: 'bg-sky-500' },
-  closed: { label: 'Closed', cls: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
-  reopened: { label: 'Re-opened', cls: 'bg-orange-50 text-orange-700', dot: 'bg-orange-500' },
+  open: { label: 'Open', cls: 'bg-neutral-50 text-neutral-700 ring-1 ring-neutral-300', dot: 'bg-neutral-500' },
+  closed: { label: 'Closed', cls: 'bg-neutral-50 text-neutral-700 ring-1 ring-neutral-300', dot: 'bg-emerald-500' },
+  reopened: { label: 'Re-opened', cls: 'bg-neutral-50 text-neutral-700 ring-1 ring-neutral-300', dot: 'bg-amber-500' },
 };
 
 function StatusBadge({ status }: { status: 'open' | 'closed' | 'reopened' }) {
   const b = STATUS_BADGE[status];
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${b.cls}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${b.cls}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${b.dot}`} /> {b.label}
     </span>
   );
@@ -262,26 +256,26 @@ function YearRow({ y, selected, onClose, onView, onChecklist, onReopen, onGl }: 
   y: WorkspaceYear; selected: boolean; onClose: () => void; onView: () => void; onChecklist: () => void; onReopen: () => void; onGl: () => void;
 }) {
   return (
-    <tr className={selected ? 'bg-emerald-50/40' : 'hover:bg-slate-50/60'}>
-      <td className="px-3 py-3 text-xs font-medium uppercase text-foreground">{y.client_name}</td>
-      <td className="px-3 py-3 text-xs font-semibold text-foreground">FY {y.fiscal_year}</td>
-      <td className="px-3 py-3 text-xs text-foreground">{formatDate(y.period_start)}</td>
-      <td className="px-3 py-3 text-xs text-foreground">{formatDate(y.period_end)}</td>
+    <tr className={`[&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200 ${selected ? '[&>td]:bg-neutral-100' : ''}`}>
+      <td className="px-3 py-3 text-xs font-medium uppercase text-neutral-900">{y.client_name}</td>
+      <td className="px-3 py-3 text-xs font-semibold text-neutral-900">FY {y.fiscal_year}</td>
+      <td className="px-3 py-3 text-xs text-neutral-900">{formatDate(y.period_start)}</td>
+      <td className="px-3 py-3 text-xs text-neutral-900">{formatDate(y.period_end)}</td>
       <td className="px-3 py-3"><StatusBadge status={y.status} /></td>
-      <td className="px-3 py-3 text-xs text-foreground">{y.closed_by_name || '-'}</td>
-      <td className="px-3 py-3 text-xs text-foreground">{y.closed_at ? formatDate(y.closed_at) : '-'}</td>
-      <td className="px-3 py-3 text-xs text-foreground" title={y.reopen_reason ?? undefined}>{y.status === 'reopened' ? y.reopened_by_name || '-' : '-'}</td>
+      <td className="px-3 py-3 text-xs text-neutral-900">{y.closed_by_name || '-'}</td>
+      <td className="px-3 py-3 text-xs text-neutral-900">{y.closed_at ? formatDate(y.closed_at) : '-'}</td>
+      <td className="px-3 py-3 text-xs text-neutral-900" title={y.reopen_reason ?? undefined}>{y.status === 'reopened' ? y.reopened_by_name || '-' : '-'}</td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-1.5">
           {y.status === 'open' ? (
             <button onClick={onClose} title={y.has_ended ? undefined : `FY ${y.fiscal_year} ends on ${formatDate(y.period_end)}`}
-              className="w-[118px] rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-800">
+              className="w-[118px] rounded-lg border border-neutral-800 bg-neutral-800 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700">
               Close FY {y.fiscal_year}
             </button>
           ) : (
             <>
-              <button onClick={onView} className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-slate-50">View</button>
-              <button onClick={onChecklist} className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-slate-50">Checklist</button>
+              <button onClick={onView} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">View</button>
+              <button onClick={onChecklist} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">Checklist</button>
             </>
           )}
           <RowMenu y={y} onClose={onClose} onReopen={onReopen} onGl={onGl} />
@@ -293,21 +287,21 @@ function YearRow({ y, selected, onClose, onView, onChecklist, onReopen, onGl }: 
 
 function RowMenu({ y, onClose, onReopen, onGl }: { y: WorkspaceYear; onClose: () => void; onReopen: () => void; onGl: () => void }) {
   const [open, setOpen] = useState(false);
-  const item = 'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs hover:bg-slate-50';
+  const item = 'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs hover:bg-neutral-50';
   return (
     <div className="relative">
-      <button onClick={() => setOpen(o => !o)} className="flex h-7 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:bg-slate-50">
+      <button onClick={() => setOpen(o => !o)} className="flex h-7 w-8 items-center justify-center rounded-lg border border-neutral-300 bg-white text-neutral-500 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
         <MoreHorizontal size={14} />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-40 mt-1 w-56 rounded-xl border border-border bg-card p-1.5 shadow-lg" onClick={() => setOpen(false)}>
+          <div className="absolute right-0 z-40 mt-1 w-56 rounded-[10px] border border-neutral-300 bg-white p-1.5 shadow-xl" onClick={() => setOpen(false)}>
             {y.status === 'reopened' && <button onClick={onClose} className={item}><Play size={13} /> Close FY {y.fiscal_year} again</button>}
             {y.status === 'closed' && (
               y.can_reopen
                 ? <button onClick={onReopen} className={`${item} text-orange-700`}><LockOpen size={13} /> Re-open FY {y.fiscal_year}</button>
-                : <p className="px-2.5 py-1.5 text-[11px] text-muted-foreground">Re-open later years first</p>
+                : <p className="px-2.5 py-1.5 text-[11px] text-neutral-500">Re-open later years first</p>
             )}
             {y.journal_number && (
               <Link href={glLink(y.period_end)} onClick={onGl} className={item}><BookOpen size={13} /> {y.journal_number} in General Ledger</Link>
@@ -347,49 +341,49 @@ function ClosedDetail({ options, selectedKey, onSelect, tick, onGl }: {
   const d = detail;
   const bs = d?.snapshot.balance_sheet;
   return (
-    <section className="rounded-2xl border border-border bg-card shadow-sm">
+    <section className="card-elevated-md rounded-xl">
       <div className="flex flex-col gap-3 px-5 pb-3 pt-5 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-foreground">Detail Tahun yang Sudah Ditutup</h2>
-          <p className="text-xs text-muted-foreground">Informasi detail dan snapshot keuangan untuk tahun buku yang telah ditutup.</p>
+          <h2 className="text-sm font-semibold text-neutral-900">Detail Tahun yang Sudah Ditutup</h2>
+          <p className="mt-0.5 text-xs text-neutral-500">Informasi detail dan snapshot keuangan untuk tahun buku yang telah ditutup.</p>
         </div>
         {options.length > 0 && (
-          <label className="relative flex w-full items-center rounded-xl border border-border bg-card sm:w-80">
+          <label className="relative flex w-full items-center rounded-lg border border-neutral-300 bg-white shadow-sm sm:w-80">
             <select value={selectedKey ?? ''} onChange={e => onSelect(e.target.value)}
-              className="w-full appearance-none bg-transparent py-2 pl-3 pr-9 text-sm font-medium text-foreground focus:outline-none">
+              className="w-full appearance-none bg-transparent py-2 pl-3 pr-9 text-sm font-medium text-neutral-900 focus:outline-none">
               {options.map(o => (
                 <option key={kunci(o)} value={kunci(o)}>FY {o.fiscal_year} – {o.client_name.toUpperCase()}{o.status === 'reopened' ? ' (re-opened)' : ''}</option>
               ))}
             </select>
-            <ChevronDown size={15} className="pointer-events-none absolute right-3 text-muted-foreground" />
+            <ChevronDown size={15} className="pointer-events-none absolute right-3 text-neutral-500" />
           </label>
         )}
       </div>
 
       <div className="px-5 pb-5">
         {options.length === 0 ? (
-          <div className="flex flex-col items-center rounded-2xl border border-dashed border-border px-6 py-12 text-center">
-            <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-400"><CalendarDays size={20} /></span>
-            <p className="text-sm font-semibold text-foreground">Belum ada tahun buku yang ditutup</p>
-            <p className="mt-1 max-w-md text-xs text-muted-foreground">Klik &quot;Close FY&quot; pada tahun buku yang sudah berakhir untuk menjalankan checklist dan menutupnya.</p>
+          <div className="flex flex-col items-center rounded-[10px] border border-dashed border-neutral-300 px-6 py-12 text-center">
+            <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500 ring-1 ring-neutral-200"><CalendarDays size={20} /></span>
+            <p className="text-sm font-semibold text-neutral-900">Belum ada tahun buku yang ditutup</p>
+            <p className="mt-1 max-w-md text-xs text-neutral-500">Klik &quot;Close FY&quot; pada tahun buku yang sudah berakhir untuk menjalankan checklist dan menutupnya.</p>
           </div>
         ) : err ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>
         ) : !d ? (
-          <div className="h-48 animate-pulse rounded-2xl bg-slate-100" />
+          <div className="h-48 animate-pulse rounded-[10px] bg-neutral-100" />
         ) : (
-          <div className={`rounded-2xl border border-border p-5 transition-opacity ${loading ? 'opacity-60' : ''}`}>
+          <div className={`rounded-[10px] border border-neutral-300 p-5 transition-opacity ${loading ? 'opacity-60' : ''}`}>
             <div className="mb-4 flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><CalendarDays size={18} /></span>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><CalendarDays size={18} /></span>
               <div>
-                <p className="flex items-center gap-2 text-lg font-bold text-foreground">FY {d.fiscal_year} <StatusBadge status={d.status} /></p>
-                <p className="text-xs uppercase text-muted-foreground">{d.client_name}</p>
+                <p className="flex items-center gap-2 text-base font-semibold text-neutral-900">FY {d.fiscal_year} <StatusBadge status={d.status} /></p>
+                <p className="text-xs uppercase text-neutral-500">{d.client_name}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:divide-x lg:divide-border">
               <div>
-                <h3 className="mb-2 text-sm font-semibold text-foreground">Closing Snapshot</h3>
+                <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-700"><span className="h-3.5 w-1 rounded-full bg-neutral-800" />Closing Snapshot</h3>
                 <dl className="space-y-2 text-xs">
                   <SnapRow label="Total Assets" value={bs?.assets} />
                   <SnapRow label="Total Liabilities" value={bs?.liabilities} />
@@ -397,40 +391,40 @@ function ClosedDetail({ options, selectedKey, onSelect, tick, onGl }: {
                   <SnapRow label="Net Profit Closed to Retained Earnings" value={d.net_profit} />
                 </dl>
                 {d.snapshot.summary && (
-                  <p className="mt-3 text-[11px] text-muted-foreground">
+                  <p className="mt-3 text-[11px] text-neutral-500">
                     Revenue {rupiah(d.snapshot.summary.revenue)} · Expenses {rupiah(d.snapshot.summary.expenses)}
                   </p>
                 )}
               </div>
 
               <div className="lg:pl-6">
-                <h3 className="mb-2 text-sm font-semibold text-foreground">Closing Journal</h3>
+                <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-700"><span className="h-3.5 w-1 rounded-full bg-neutral-800" />Closing Journal</h3>
                 <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-2 text-xs">
-                  <dt className="text-muted-foreground">Journal No.</dt>
+                  <dt className="text-neutral-500">Journal No.</dt>
                   <dd>
                     {d.journal ? (
                       <Link href={glLink(d.period_end)} onClick={() => onGl(d)}
-                        className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 font-mono text-[11px] font-medium text-sky-700 hover:underline">
+                        className="inline-flex items-center gap-1 rounded-md bg-neutral-100 px-2 py-0.5 font-mono text-[11px] font-medium text-neutral-800 ring-1 ring-neutral-200 hover:underline">
                         {d.journal.je_number} <ExternalLink size={11} />
                       </Link>
-                    ) : <span className="text-muted-foreground">No P&amp;L activity — none needed</span>}
+                    ) : <span className="text-neutral-500">No P&amp;L activity — none needed</span>}
                     {d.reversal_journal && <span className="ml-1.5 font-mono text-[11px] text-orange-700">→ {d.reversal_journal.je_number}</span>}
                   </dd>
-                  <dt className="text-muted-foreground">Link to General Ledger</dt>
+                  <dt className="text-neutral-500">Link to General Ledger</dt>
                   <dd>
                     <Link href={glLink(d.period_end)} onClick={() => onGl(d)}
-                      className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700 hover:underline">
+                      className="inline-flex items-center gap-1 rounded-md bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-800 ring-1 ring-neutral-200 hover:underline">
                       <FileText size={11} /> Lihat di General Ledger
                     </Link>
                   </dd>
-                  <dt className="text-muted-foreground">Retained Earnings</dt>
-                  <dd className="text-foreground">{d.retained_earnings_account ? `${kodeAkun(d.retained_earnings_account.acc_no)} · ${d.retained_earnings_account.account_name}` : '—'}</dd>
-                  <dt className="text-muted-foreground">Closed By</dt>
-                  <dd className="text-foreground">{d.closed_by_name || '—'}</dd>
-                  <dt className="text-muted-foreground">Closed At</dt>
-                  <dd className="text-foreground">{formatDateTime(d.closed_at)}</dd>
-                  <dt className="text-muted-foreground">Catatan</dt>
-                  <dd className="text-foreground">{d.notes || '—'}</dd>
+                  <dt className="text-neutral-500">Retained Earnings</dt>
+                  <dd className="text-neutral-900">{d.retained_earnings_account ? `${kodeAkun(d.retained_earnings_account.acc_no)} · ${d.retained_earnings_account.account_name}` : '—'}</dd>
+                  <dt className="text-neutral-500">Closed By</dt>
+                  <dd className="text-neutral-900">{d.closed_by_name || '—'}</dd>
+                  <dt className="text-neutral-500">Closed At</dt>
+                  <dd className="text-neutral-900">{formatDateTime(d.closed_at)}</dd>
+                  <dt className="text-neutral-500">Catatan</dt>
+                  <dd className="text-neutral-900">{d.notes || '—'}</dd>
                   {d.status === 'reopened' && (
                     <>
                       <dt className="text-orange-700">Re-open reason</dt>
@@ -441,20 +435,20 @@ function ClosedDetail({ options, selectedKey, onSelect, tick, onGl }: {
               </div>
 
               <div className="lg:pl-6">
-                <h3 className="mb-2 text-sm font-semibold text-foreground">Audit Trail</h3>
+                <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-700"><span className="h-3.5 w-1 rounded-full bg-neutral-800" />Audit Trail</h3>
                 <ol className="space-y-3">
                   {d.audit_trail.map((s, i) => {
                     const buka = s.step === 'reopen' || s.step === 'reversed';
                     return (
                       <li key={i} className="flex items-start gap-2.5 text-xs">
-                        <span className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-white ${buka ? 'bg-orange-500' : 'bg-emerald-600'}`}>
+                        <span className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-white ${buka ? 'bg-amber-500' : 'bg-neutral-800'}`}>
                           {buka ? <RotateCcw size={10} /> : <CheckCircle2 size={12} />}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium text-foreground">{s.title}</p>
-                          {s.detail && <p className="truncate text-[11px] text-muted-foreground" title={s.detail}>{s.detail}</p>}
+                          <p className="font-medium text-neutral-900">{s.title}</p>
+                          {s.detail && <p className="truncate text-[11px] text-neutral-500" title={s.detail}>{s.detail}</p>}
                         </div>
-                        <div className="shrink-0 text-right text-[11px] text-muted-foreground">
+                        <div className="shrink-0 text-right text-[11px] text-neutral-500">
                           <p>{formatDateTime(s.at)}</p>
                           <p>oleh {s.by || '—'}</p>
                         </div>
@@ -480,8 +474,8 @@ function ClosedDetail({ options, selectedKey, onSelect, tick, onGl }: {
 function SnapRow({ label, value }: { label: string; value: number | null | undefined }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className={`font-semibold tabular-nums ${(value ?? 0) < 0 ? 'text-rose-600' : 'text-foreground'}`}>{value === null || value === undefined ? '—' : rupiah(value)}</dd>
+      <dt className="text-neutral-500">{label}</dt>
+      <dd className={`font-semibold tabular-nums ${(value ?? 0) < 0 ? 'text-red-600' : 'text-neutral-900'}`}>{value === null || value === undefined ? '—' : rupiah(value)}</dd>
     </div>
   );
 }
@@ -493,15 +487,15 @@ function ImpactPanel() {
     { icon: Settings2, t: 'Settings > Account Mapping', d: 'Akun Retained Earnings dipakai sebagai default tujuan laba tahun berjalan saat closing.', href: '/settings' },
   ];
   return (
-    <section className="rounded-2xl border border-sky-200 bg-sky-50/60 p-5">
-      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-sky-800"><Info size={16} /> Dampak ke Modul Lain</h2>
+    <section className="rounded-[10px] border border-neutral-300 border-l-[3px] border-l-neutral-800 bg-neutral-50 p-5">
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-neutral-900"><Info size={16} /> Dampak ke Modul Lain</h2>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {items.map(({ icon: Icon, t, d, href }) => (
           <Link key={t} href={href} className="group flex items-start gap-3">
-            <Icon size={20} className="mt-0.5 shrink-0 text-sky-700" />
+            <Icon size={20} className="mt-0.5 shrink-0 text-neutral-700" />
             <div>
-              <p className="text-xs font-semibold text-sky-800 group-hover:underline">{t}</p>
-              <p className="text-[11px] leading-relaxed text-slate-600">{d}</p>
+              <p className="text-xs font-semibold text-neutral-900 group-hover:underline">{t}</p>
+              <p className="text-[11px] leading-relaxed text-neutral-600">{d}</p>
             </div>
           </Link>
         ))}
@@ -513,9 +507,9 @@ function ImpactPanel() {
 // ------------------------------------------------------------------
 
 const CHECK_ICON: Record<CheckStatus, { icon: React.ElementType; cls: string }> = {
-  pass: { icon: CheckCircle2, cls: 'bg-emerald-600 text-white' },
+  pass: { icon: CheckCircle2, cls: 'bg-neutral-800 text-white' },
   warn: { icon: AlertTriangle, cls: 'bg-amber-100 text-amber-600' },
-  fail: { icon: XCircle, cls: 'bg-rose-100 text-rose-600' },
+  fail: { icon: XCircle, cls: 'bg-red-100 text-red-600' },
 };
 
 const LABEL_CEK: Record<string, string> = {
@@ -529,16 +523,16 @@ function CheckCard({ c }: { c: { id: string; label?: string; status: CheckStatus
   const ic = CHECK_ICON[c.status];
   const I = ic.icon;
   return (
-    <li className={`flex items-start gap-3 rounded-xl border px-4 py-3 ${c.status === 'fail' ? 'border-rose-200 bg-rose-50/40' : c.status === 'warn' ? 'border-amber-200 bg-amber-50/40' : 'border-border bg-card'}`}>
+    <li className={`flex items-start gap-3 rounded-[10px] border px-4 py-3 ${c.status === 'fail' ? 'border-red-200 bg-red-50/40' : c.status === 'warn' ? 'border-amber-200 bg-amber-50/40' : 'border-neutral-300 bg-white'}`}>
       <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${ic.cls}`}><I size={c.status === 'pass' ? 17 : 15} /></span>
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-foreground">{c.label || LABEL_CEK[c.id] || c.id}</p>
-        <p className="text-xs text-muted-foreground">{c.detail}</p>
+        <p className="text-sm font-semibold text-neutral-900">{c.label || LABEL_CEK[c.id] || c.id}</p>
+        <p className="text-xs text-neutral-500">{c.detail}</p>
         {c.id === 'mapping' && c.status === 'warn' && (
-          <Link href="/financial-statements/mapping" className="text-[11px] font-medium text-blue-700 hover:underline">Open Statement Mapping →</Link>
+          <Link href="/financial-statements/mapping" className="text-[11px] font-medium text-neutral-900 underline-offset-2 hover:underline">Open Statement Mapping →</Link>
         )}
         {c.id === 'pending_documents' && c.status === 'warn' && (
-          <Link href="/transactions/journal-entry" className="text-[11px] font-medium text-blue-700 hover:underline">Review transactions →</Link>
+          <Link href="/transactions/journal-entry" className="text-[11px] font-medium text-neutral-900 underline-offset-2 hover:underline">Review transactions →</Link>
         )}
       </div>
     </li>
@@ -598,34 +592,34 @@ function ChecklistDrawer({ year, mode, onCancel, onDone }: { year: WorkspaceYear
   const checks = mode === 'view' ? snapshot?.snapshot.checks ?? [] : p?.checks ?? [];
   const profit = mode === 'view' ? snapshot?.net_profit ?? 0 : p?.summary.net_profit ?? 0;
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30" onMouseDown={e => { if (e.target === e.currentTarget && !saving) onCancel(); }}>
-      <aside className="flex h-full w-full max-w-[400px] flex-col bg-card shadow-2xl">
+    <div className="fixed inset-0 z-50 flex justify-end bg-neutral-900/30 backdrop-blur-sm" onMouseDown={e => { if (e.target === e.currentTarget && !saving) onCancel(); }}>
+      <aside className="flex h-full w-full max-w-[400px] flex-col bg-white shadow-2xl">
         <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-5">
           <div>
-            <h3 className="text-xl font-bold text-foreground">Pre-Closing Checklist – FY {year.fiscal_year}</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <h3 className="text-lg font-semibold text-neutral-900">Pre-Closing Checklist – FY {year.fiscal_year}</h3>
+            <p className="mt-1 text-xs text-neutral-500">
               {mode === 'view'
                 ? `Hasil checklist saat FY ${year.fiscal_year} ditutup${snapshot?.snapshot.checked_at ? ` (${formatDateTime(snapshot.snapshot.checked_at)})` : ''}.`
                 : 'Pastikan semua persyaratan terpenuhi sebelum melakukan penutupan tahun buku.'}
             </p>
           </div>
-          <button onClick={onCancel} disabled={saving} className="rounded-lg p-1 text-muted-foreground hover:bg-slate-100"><X size={18} /></button>
+          <button onClick={onCancel} disabled={saving} className="rounded-lg p-1 text-neutral-500 hover:bg-neutral-100"><X size={18} /></button>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 pb-4">
-          <div className="rounded-xl bg-slate-50 px-4 py-3 text-xs">
-            <p className="text-muted-foreground">Klien</p>
-            <p className="mb-2 text-sm font-semibold uppercase text-foreground">{year.client_name}</p>
-            <p className="text-muted-foreground">Periode</p>
-            <p className="text-sm text-foreground">{formatDate(year.period_start)} – {formatDate(year.period_end)}</p>
+          <div className="rounded-[10px] border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs">
+            <p className="text-neutral-500">Klien</p>
+            <p className="mb-2 text-sm font-semibold uppercase text-neutral-900">{year.client_name}</p>
+            <p className="text-neutral-500">Periode</p>
+            <p className="text-sm text-neutral-900">{formatDate(year.period_start)} – {formatDate(year.period_end)}</p>
           </div>
 
-          {err && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{err}</div>}
+          {err && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{err}</div>}
 
           <div>
-            <h4 className="mb-2 text-base font-bold text-foreground">Checklist</h4>
+            <h4 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-700"><span className="h-3.5 w-1 rounded-full bg-neutral-800" />Checklist</h4>
             {loading && checks.length === 0 ? (
-              <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground"><Loader2 size={16} className="animate-spin" /> Running pre-closing checks…</div>
+              <div className="flex items-center gap-2 py-8 text-sm text-neutral-500"><Loader2 size={16} className="animate-spin" /> Running pre-closing checks…</div>
             ) : (
               <ul className={`space-y-2.5 transition-opacity ${loading ? 'opacity-60' : ''}`}>
                 {checks.map(c => <CheckCard key={c.id} c={c} />)}
@@ -635,9 +629,9 @@ function ChecklistDrawer({ year, mode, onCancel, onDone }: { year: WorkspaceYear
 
           {mode === 'close' && p && (
             <div>
-              <label className="mb-1 block text-xs font-semibold text-foreground">Retained earnings account</label>
+              <label className="mb-1 block text-xs font-semibold text-neutral-900">Retained earnings account</label>
               <select value={accountId} onChange={e => setAccountId(e.target.value)}
-                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100">
+                className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300">
                 <option value="">— Choose an equity account —</option>
                 {p.retained_earnings_options.map(a => <option key={a.id} value={a.id}>{kodeAkun(a.acc_no)} · {a.account_name}</option>)}
               </select>
@@ -645,42 +639,42 @@ function ChecklistDrawer({ year, mode, onCancel, onDone }: { year: WorkspaceYear
           )}
 
           {(p || snapshot) && (
-            <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700"><Building2 size={18} /></span>
+            <div className="flex items-center gap-3 rounded-[10px] border border-neutral-300 bg-neutral-50 px-4 py-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-neutral-700 ring-1 ring-neutral-200"><Building2 size={18} /></span>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium text-foreground">{mode === 'view' ? 'Profit Closed to Retained Earnings' : 'Estimated Profit to Retained Earnings'}</p>
-                <p className={`text-xl font-bold tabular-nums ${profit < 0 ? 'text-rose-600' : 'text-foreground'}`}>{rupiah(profit)}</p>
+                <p className="text-xs font-medium text-neutral-900">{mode === 'view' ? 'Profit Closed to Retained Earnings' : 'Estimated Profit to Retained Earnings'}</p>
+                <p className={`text-xl font-semibold tabular-nums tracking-tight ${profit < 0 ? 'text-red-600' : 'text-neutral-900'}`}>{rupiah(profit)}</p>
               </div>
-              <span title="Pendapatan dikurangi beban tahun ini; dipindahkan ke akun Retained Earnings lewat jurnal penutup."><Info size={15} className="text-muted-foreground" /></span>
+              <span title="Pendapatan dikurangi beban tahun ini; dipindahkan ke akun Retained Earnings lewat jurnal penutup."><Info size={15} className="text-neutral-500" /></span>
             </div>
           )}
 
           {mode === 'close' && p && (
             <>
-              <div className="rounded-xl border border-border">
-                <button onClick={() => setShowJournal(s => !s)} className="flex w-full items-center justify-between px-4 py-2.5 text-xs font-semibold text-foreground">
-                  <span>Closing journal preview <span className="ml-1 font-mono font-normal text-muted-foreground">{p.journal_preview.je_number}</span></span>
+              <div className="rounded-[10px] border border-neutral-300">
+                <button onClick={() => setShowJournal(s => !s)} className="flex w-full items-center justify-between px-4 py-2.5 text-xs font-semibold text-neutral-900">
+                  <span>Closing journal preview <span className="ml-1 font-mono font-normal text-neutral-500">{p.journal_preview.je_number}</span></span>
                   <ChevronDown size={14} className={`transition-transform ${showJournal ? 'rotate-180' : ''}`} />
                 </button>
                 {showJournal && (
                   p.journal_preview.lines.length === 0 ? (
-                    <p className="border-t border-border px-4 py-3 text-[11px] text-muted-foreground">
+                    <p className="border-t border-neutral-200 px-4 py-3 text-[11px] text-neutral-500">
                       {accountId ? 'Tidak ada saldo laba rugi — periode hanya dikunci.' : 'Pilih akun Retained Earnings untuk melihat jurnal.'}
                     </p>
                   ) : (
-                    <table className="w-full border-t border-border text-[11px]">
-                      <tbody className="divide-y divide-border">
+                    <table className="w-full border-t border-neutral-200 text-[11px]">
+                      <tbody className="divide-y divide-neutral-200">
                         {p.journal_preview.lines.map((l, i) => (
                           <tr key={i}>
-                            <td className="px-3 py-1.5"><span className="font-mono text-slate-500">{kodeAkun(l.account_code)}</span> {l.account_name}</td>
-                            <td className="px-2 py-1.5 text-right font-mono tabular-nums">{l.debit ? formatAmount(l.debit) : ''}</td>
-                            <td className="px-3 py-1.5 text-right font-mono tabular-nums">{l.credit ? formatAmount(l.credit) : ''}</td>
+                            <td className="px-3 py-1.5"><span className="font-mono text-neutral-500">{kodeAkun(l.account_code)}</span> {l.account_name}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">{l.debit ? formatAmount(l.debit) : ''}</td>
+                            <td className="px-3 py-1.5 text-right tabular-nums">{l.credit ? formatAmount(l.credit) : ''}</td>
                           </tr>
                         ))}
-                        <tr className="bg-slate-50 font-semibold">
+                        <tr className="bg-neutral-50 font-semibold">
                           <td className="px-3 py-1.5">Total</td>
-                          <td className="px-2 py-1.5 text-right font-mono tabular-nums">{formatAmount(p.journal_preview.total_debit)}</td>
-                          <td className="px-3 py-1.5 text-right font-mono tabular-nums">{formatAmount(p.journal_preview.total_credit)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{formatAmount(p.journal_preview.total_debit)}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums">{formatAmount(p.journal_preview.total_credit)}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -689,9 +683,9 @@ function ChecklistDrawer({ year, mode, onCancel, onDone }: { year: WorkspaceYear
               </div>
 
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} maxLength={2000} placeholder="Catatan (opsional), mis. sesuai hasil review audit internal"
-                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs shadow-sm focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
 
-              <label className="flex items-start gap-2.5 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-[11px] leading-relaxed text-orange-900">
+              <label className="flex items-start gap-2.5 rounded-[10px] border border-orange-200 bg-orange-50 px-4 py-3 text-[11px] leading-relaxed text-orange-900">
                 <AlertTriangle size={16} className="mt-0.5 shrink-0 text-orange-500" />
                 <span className="flex-1">
                   Proses closing akan menghasilkan jurnal penutup akhir dan mengunci periode tahun buku. Setelah ditutup, transaksi tidak dapat diubah atau ditambahkan.
@@ -704,14 +698,14 @@ function ChecklistDrawer({ year, mode, onCancel, onDone }: { year: WorkspaceYear
           )}
         </div>
 
-        <div className="flex gap-3 border-t border-border px-5 py-4">
-          <button onClick={onCancel} disabled={saving} className="flex-1 rounded-xl border border-border py-2.5 text-sm font-medium hover:bg-slate-50">
+        <div className="flex gap-3 border-t border-neutral-200 px-5 py-4">
+          <button onClick={onCancel} disabled={saving} className="flex-1 rounded-lg border border-neutral-300 bg-white py-2.5 text-sm font-medium text-neutral-700 shadow-sm hover:border-neutral-700 hover:bg-neutral-50">
             {mode === 'view' ? 'Close' : 'Cancel'}
           </button>
           {mode === 'close' && (
             <button onClick={submit} disabled={!p?.can_close || !confirm || saving || loading}
               title={p && !p.can_close ? 'Selesaikan checklist yang gagal terlebih dahulu.' : undefined}
-              className="inline-flex flex-[1.4] items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-800 disabled:opacity-40">
+              className="inline-flex flex-[1.4] items-center justify-center gap-2 rounded-lg border border-neutral-800 bg-neutral-800 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-neutral-700 disabled:opacity-40">
               {saving ? <Loader2 size={15} className="animate-spin" /> : <Play size={14} />} Run Closing
             </button>
           )}
@@ -740,29 +734,29 @@ function ReopenDialog({ year, onCancel, onDone }: { year: WorkspaceYear; onCance
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={e => { if (e.target === e.currentTarget && !saving) onCancel(); }}>
-      <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-card shadow-2xl">
+      <div className="w-full max-w-lg overflow-hidden rounded-[10px] bg-white shadow-2xl">
         <div className="px-6 py-5">
           <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-700"><LockOpen size={18} /></span>
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-700"><LockOpen size={18} /></span>
             <div>
-              <h3 className="text-lg font-bold text-foreground">Re-open FY {year.fiscal_year}?</h3>
-              <p className="mt-0.5 text-xs uppercase text-muted-foreground">{year.client_name}</p>
-              <p className="mt-2 text-sm text-muted-foreground">
+              <h3 className="text-lg font-semibold text-neutral-900">Re-open FY {year.fiscal_year}?</h3>
+              <p className="mt-0.5 text-xs uppercase text-neutral-500">{year.client_name}</p>
+              <p className="mt-2 text-sm text-neutral-500">
                 Transaksi bertanggal di FY {year.fiscal_year} bisa diubah lagi
                 {year.journal_number ? <> dan jurnal penutup <span className="font-mono">{year.journal_number}</span> dibalik dengan <span className="font-mono">RV-{year.journal_number}</span></> : null}.
                 Tutup kembali setelah koreksi selesai di-posting.
               </p>
             </div>
           </div>
-          <label className="mb-1.5 mt-5 block text-xs font-semibold text-foreground">Alasan (wajib)</label>
+          <label className="mb-1.5 mt-5 block text-xs font-semibold text-neutral-900">Alasan (wajib)</label>
           <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={2000} autoFocus placeholder="mis. Penyesuaian audit untuk beban akrual"
-            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-100" />
-          <p className="mt-1 text-[11px] text-muted-foreground">Tercatat di audit trail. Butuh akses Partner / Direktur.</p>
+            className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
+          <p className="mt-1 text-[11px] text-neutral-500">Tercatat di audit trail. Butuh akses Partner / Direktur.</p>
         </div>
-        <div className="flex justify-end gap-2 border-t border-border px-6 py-4">
-          <button onClick={onCancel} disabled={saving} className="rounded-xl border border-border px-4 py-2 text-sm font-medium hover:bg-slate-50">Cancel</button>
+        <div className="flex justify-end gap-2 border-t border-neutral-200 px-6 py-4">
+          <button onClick={onCancel} disabled={saving} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 shadow-sm hover:border-neutral-700 hover:bg-neutral-50">Cancel</button>
           <button onClick={submit} disabled={reason.trim().length < 5 || saving}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-40">
+            className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-40">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <LockOpen size={15} />} Re-open
           </button>
         </div>

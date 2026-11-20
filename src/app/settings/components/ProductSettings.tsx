@@ -20,10 +20,8 @@ import {
 
 const PAGE_SIZE = 20;
 
-const inputCls =
-  'w-full text-sm rounded-lg border border-border bg-card px-3 py-2.5 text-foreground placeholder:text-slate-400 ' +
-  'transition-shadow focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100';
-const labelCls = 'block text-xs font-semibold text-foreground mb-1.5';
+const inputCls = 'w-full rounded-lg border-2 border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:bg-neutral-50';
+const labelCls = 'block text-xs font-semibold text-neutral-900 mb-1.5';
 
 const fmtAmount = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 });
 
@@ -31,21 +29,21 @@ export default function ProductSettings() {
   const { activeClientId } = useActiveClient();
 
   if (!activeClientId) {
-    return <div className="rounded-2xl border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">Select a company to configure product settings.</div>;
+    return <div className="rounded-lg border border-neutral-300 bg-white px-4 py-6 text-center text-sm text-neutral-500">Select a company to configure product settings.</div>;
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-primary ring-1 ring-blue-100"><Package size={18} /></span>
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Package size={18} /></span>
         <div>
-          <h2 className="text-base font-bold text-foreground">Goods &amp; Services</h2>
-          <p className="text-xs text-muted-foreground">Master data and optional features for products.</p>
+          <h2 className="text-base font-bold text-neutral-900">Goods &amp; Services</h2>
+          <p className="text-xs text-neutral-500">Master data and optional features for products.</p>
         </div>
       </div>
 
       <div>
-        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Basic setting</h3>
+        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">Basic setting</h3>
         <div className="grid grid-cols-1 gap-5">
           <MasterTable key={`cat-${activeClientId}`} clientId={activeClientId} kind="categories" title="Product category" column="Product category" icon={Tags} />
           <MasterTable key={`unit-${activeClientId}`} clientId={activeClientId} kind="units" title="Product unit" column="Unit" icon={Ruler} />
@@ -53,7 +51,7 @@ export default function ProductSettings() {
       </div>
 
       <div>
-        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Subfeature settings</h3>
+        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">Subfeature settings</h3>
         <SubfeatureSettings clientId={activeClientId} />
       </div>
     </div>
@@ -104,27 +102,27 @@ function MasterTable({ clientId, kind, title, column, icon: Icon }: {
   const sampai = Math.min(page * PAGE_SIZE, total);
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-      <header className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+    <section className="relative rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800 overflow-hidden">
+      <header className="flex flex-col gap-3 rounded-t-lg border-b border-neutral-300 bg-neutral-50 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-primary ring-1 ring-blue-100"><Icon size={16} /></span>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Icon size={16} /></span>
           <div>
-            <h4 className="text-sm font-semibold text-foreground">{title}</h4>
-            <p className="text-xs text-muted-foreground">{total} {total === 1 ? 'entry' : 'entries'}</p>
+            <h4 className="text-sm font-semibold text-neutral-900">{title}</h4>
+            <p className="text-xs text-neutral-500">{total} {total === 1 ? 'entry' : 'entries'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-64">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={14} className="absolute left-3 top-1/2 -tranneutral-y-1/2 text-neutral-400" />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={`Search ${column.toLowerCase()}…`}
-              className="w-full rounded-xl border border-border bg-slate-50 py-2 pl-9 pr-8 text-sm text-foreground placeholder:text-slate-400 focus:border-blue-400 focus:bg-card focus:outline-none focus:ring-4 focus:ring-blue-100"
+              className="w-full rounded-lg border border-neutral-300 bg-neutral-50 py-2 pl-9 pr-8 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300"
             />
-            {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-foreground" aria-label="Clear search"><X size={13} /></button>}
+            {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -tranneutral-y-1/2 rounded p-0.5 text-neutral-400 hover:text-neutral-900" aria-label="Clear search"><X size={13} /></button>}
           </div>
-          <button onClick={() => setModal({ mode: 'add' })} className="flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 hover:bg-blue-800">
+          <button onClick={() => setModal({ mode: 'add' })} className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-3 text-sm font-semibold text-white shadow-sm hover:bg-neutral-700">
             <Plus size={14} /> Add
           </button>
         </div>
@@ -132,18 +130,18 @@ function MasterTable({ clientId, kind, title, column, icon: Icon }: {
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50">
-            <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <thead>
+            <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:border-y [&>th]:border-neutral-800 [&>th]:font-bold">
               <th className="w-12 px-5 py-3">#</th>
               <th className="px-4 py-3">{column}</th>
               <th className="px-4 py-3 text-right">Amount</th>
               <th className="w-28 px-5 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-neutral-300">
             {loading && !data ? (
               Array.from({ length: 3 }).map((_, i) => (
-                <tr key={i}><td colSpan={4} className="px-5 py-4"><div className="h-4 animate-pulse rounded bg-slate-100" style={{ width: `${50 + i * 12}%` }} /></td></tr>
+                <tr key={i}><td colSpan={4} className="px-5 py-4"><div className="h-4 animate-pulse rounded bg-neutral-100" style={{ width: `${50 + i * 12}%` }} /></td></tr>
               ))
             ) : error ? (
               <tr><td colSpan={4} className="py-12 text-center text-sm text-red-600">{error}</td></tr>
@@ -151,21 +149,21 @@ function MasterTable({ clientId, kind, title, column, icon: Icon }: {
               <tr>
                 <td colSpan={4} className="py-12">
                   <div className="flex flex-col items-center text-center">
-                    <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-400"><Boxes size={18} /></span>
-                    <p className="text-sm font-semibold text-foreground">{cari ? `No matching ${column.toLowerCase()}` : `No ${column.toLowerCase()} yet`}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{cari ? 'Try another keyword.' : 'Click "Add" to create the first one.'}</p>
+                    <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg bg-neutral-100 text-neutral-400"><Boxes size={18} /></span>
+                    <p className="text-sm font-semibold text-neutral-900">{cari ? `No matching ${column.toLowerCase()}` : `No ${column.toLowerCase()} yet`}</p>
+                    <p className="mt-1 text-xs text-neutral-500">{cari ? 'Try another keyword.' : 'Click "Add" to create the first one.'}</p>
                   </div>
                 </td>
               </tr>
             ) : items.map((it, i) => (
-              <tr key={it.id} className={`transition-colors hover:bg-slate-50 ${loading ? 'opacity-60' : ''}`}>
-                <td className="px-5 py-2.5 tabular-nums text-slate-400">{dari + i}</td>
-                <td className="px-4 py-2.5 font-medium text-foreground">{it.name}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-foreground">{fmtAmount.format(it.amount)}</td>
+              <tr key={it.id} className={`transition-colors hover:bg-neutral-200 ${loading ? 'opacity-60' : ''}`}>
+                <td className="px-5 py-2.5 tabular-nums text-neutral-400">{dari + i}</td>
+                <td className="px-4 py-2.5 font-medium text-neutral-900">{it.name}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-neutral-900">{fmtAmount.format(it.amount)}</td>
                 <td className="px-5 py-2.5">
                   <div className="flex justify-end gap-1">
-                    <button onClick={() => setModal({ mode: 'edit', item: it })} title="Edit" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-700"><Pencil size={14} /></button>
-                    <button onClick={() => setModal({ mode: 'delete', item: it })} title="Delete" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button>
+                    <button onClick={() => setModal({ mode: 'edit', item: it })} title="Edit" className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900"><Pencil size={14} /></button>
+                    <button onClick={() => setModal({ mode: 'delete', item: it })} title="Delete" className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button>
                   </div>
                 </td>
               </tr>
@@ -175,12 +173,12 @@ function MasterTable({ clientId, kind, title, column, icon: Icon }: {
       </div>
 
       {total > 0 && (
-        <footer className="flex items-center justify-between gap-3 border-t border-border px-5 py-3 text-xs text-muted-foreground">
-          <span>Showing <span className="font-medium text-foreground">{dari}–{sampai}</span> of <span className="font-medium text-foreground">{total}</span></span>
+        <footer className="flex items-center justify-between gap-3 rounded-b-lg border-t border-neutral-300 bg-neutral-50 px-5 py-3 text-xs text-neutral-500">
+          <span>Showing <span className="font-medium text-neutral-900">{dari}–{sampai}</span> of <span className="font-medium text-neutral-900">{total}</span></span>
           <div className="flex items-center gap-1">
-            <button onClick={() => setPage(p => p - 1)} disabled={page <= 1 || loading} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border hover:bg-slate-50 disabled:opacity-40" aria-label="Previous page"><ChevronLeft size={14} /></button>
+            <button onClick={() => setPage(p => p - 1)} disabled={page <= 1 || loading} className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-300 hover:bg-neutral-50 disabled:opacity-40" aria-label="Previous page"><ChevronLeft size={14} /></button>
             <span className="px-2 tabular-nums">Page {page} / {totalPage}</span>
-            <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPage || loading} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border hover:bg-slate-50 disabled:opacity-40" aria-label="Next page"><ChevronRight size={14} /></button>
+            <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPage || loading} className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-300 hover:bg-neutral-50 disabled:opacity-40" aria-label="Next page"><ChevronRight size={14} /></button>
           </div>
         </footer>
       )}
@@ -224,8 +222,8 @@ function Overlay({ onClose, children }: { onClose: () => void; children: React.R
     return () => window.removeEventListener('keydown', esc);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xl">{children}</div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-md rounded-lg border border-neutral-300 bg-white shadow-xl">{children}</div>
     </div>
   );
 }
@@ -257,9 +255,9 @@ function FormModal({ title, column, awal, onClose, onSubmit }: {
   return (
     <Overlay onClose={onClose}>
       <form onSubmit={kirim}>
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-foreground" aria-label="Close"><X size={16} /></button>
+        <div className="flex items-center justify-between rounded-t-lg border-b border-neutral-300 bg-neutral-50 px-5 py-3.5">
+          <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" aria-label="Close"><X size={16} /></button>
         </div>
         <div className="space-y-4 px-5 py-5">
           <div>
@@ -271,9 +269,9 @@ function FormModal({ title, column, awal, onClose, onSubmit }: {
             <input type="number" min={0} step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className={`${inputCls} tabular-nums`} />
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
-          <button type="button" onClick={onClose} disabled={saving} className="h-9 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-slate-50 disabled:opacity-50">Cancel</button>
-          <button type="submit" disabled={saving} className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 hover:bg-blue-800 disabled:opacity-50">
+        <div className="flex justify-end gap-2 rounded-b-lg border-t border-neutral-300 bg-neutral-50 px-5 py-3">
+          <button type="button" onClick={onClose} disabled={saving} className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">Cancel</button>
+          <button type="submit" disabled={saving} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-4 text-sm font-semibold text-white shadow-sm hover:bg-neutral-700 disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save
           </button>
         </div>
@@ -297,12 +295,12 @@ function DeleteModal({ title, name, onClose, onConfirm }: { title: string; name:
   return (
     <Overlay onClose={onClose}>
       <div className="px-5 py-5">
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-        <p className="mt-1.5 text-sm text-muted-foreground"><span className="font-medium text-foreground">{name}</span> will be removed from this company.</p>
+        <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
+        <p className="mt-1.5 text-sm text-neutral-500"><span className="font-medium text-neutral-900">{name}</span> will be removed from this company.</p>
       </div>
-      <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
-        <button onClick={onClose} disabled={busy} className="h-9 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-slate-50 disabled:opacity-50">Cancel</button>
-        <button onClick={hapus} disabled={busy} className="flex h-9 items-center gap-1.5 rounded-xl bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+      <div className="flex justify-end gap-2 rounded-b-lg border-t border-neutral-300 bg-neutral-50 px-5 py-3">
+        <button onClick={onClose} disabled={busy} className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">Cancel</button>
+        <button onClick={hapus} disabled={busy} className="flex h-9 items-center gap-1.5 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Delete
         </button>
       </div>
@@ -342,43 +340,43 @@ function SubfeatureSettings({ clientId }: { clientId: string }) {
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-card shadow-sm">
-      <header className="flex items-start gap-3 border-b border-border px-5 py-4">
-        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-primary ring-1 ring-blue-100"><ToggleLeft size={16} /></span>
+    <section className="relative rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800">
+      <header className="flex items-start gap-3 rounded-t-lg border-b border-neutral-300 bg-neutral-50 px-5 py-3.5">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><ToggleLeft size={16} /></span>
         <div>
-          <h4 className="text-sm font-semibold text-foreground">Product features</h4>
-          <p className="text-xs text-muted-foreground">Turn optional product features on or off.</p>
+          <h4 className="text-sm font-semibold text-neutral-900">Product features</h4>
+          <p className="text-xs text-neutral-500">Turn optional product features on or off.</p>
         </div>
       </header>
       <div className="px-5 py-4">
         {loading && !setting ? (
-          <div className="space-y-3">{FLAGS.map(f => <div key={f.key} className="h-9 animate-pulse rounded bg-slate-100" />)}</div>
+          <div className="space-y-3">{FLAGS.map(f => <div key={f.key} className="h-9 animate-pulse rounded bg-neutral-100" />)}</div>
         ) : error && !setting ? (
           <p className="text-sm text-red-600">{error}</p>
         ) : form && (
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-neutral-300">
             {FLAGS.map(f => (
               <label key={f.key} className="flex cursor-pointer items-start gap-3 py-3 first:pt-0 last:pb-0">
                 <input
                   type="checkbox"
                   checked={form[f.key]}
                   onChange={e => setForm(v => (v ? { ...v, [f.key]: e.target.checked } : v))}
-                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-neutral-400 text-neutral-800 accent-neutral-800 focus:ring-neutral-500"
                 />
                 <span>
-                  <span className="block text-sm font-medium text-foreground">{f.label}</span>
-                  <span className="block text-xs text-muted-foreground">{f.hint}</span>
+                  <span className="block text-sm font-medium text-neutral-900">{f.label}</span>
+                  <span className="block text-xs text-neutral-500">{f.hint}</span>
                 </span>
               </label>
             ))}
           </div>
         )}
       </div>
-      <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
-        <p className="text-xs text-muted-foreground">
+      <div className="flex items-center justify-between gap-3 rounded-b-lg border-t border-neutral-300 bg-neutral-50 px-5 py-3">
+        <p className="text-xs text-neutral-500">
           {berubah ? <span className="font-medium text-amber-700">Unsaved changes</span> : 'Saving requires Tahap 5 (Partner) access.'}
         </p>
-        <button onClick={simpan} disabled={saving || !form || (setting?.exists && !berubah)} className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 hover:bg-blue-800 disabled:opacity-50">
+        <button onClick={simpan} disabled={saving || !form || (setting?.exists && !berubah)} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-4 text-sm font-semibold text-white shadow-sm hover:bg-neutral-700 disabled:opacity-50">
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save
         </button>
       </div>

@@ -108,13 +108,13 @@ export default function AccountMappingSettings() {
   }
 
   if (!activeClientId) {
-    return <div className="rounded-2xl border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">Select a company to configure account mapping.</div>;
+    return <div className="rounded-lg border border-neutral-300 bg-white px-4 py-6 text-center text-sm text-neutral-500">Select a company to configure account mapping.</div>;
   }
   if (loading && !mapping) {
-    return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-40 animate-pulse rounded-2xl bg-slate-100" />)}</div>;
+    return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-40 animate-pulse rounded-lg bg-neutral-100" />)}</div>;
   }
   if (error && !mapping) {
-    return <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
+    return <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
   }
   if (!mapping) return null;
 
@@ -128,27 +128,27 @@ export default function AccountMappingSettings() {
     <div className="space-y-5 pb-20">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-primary ring-1 ring-blue-100"><Waypoints size={18} /></span>
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Waypoints size={18} /></span>
           <div>
-            <h2 className="text-base font-bold text-foreground">Account mapping</h2>
-            <p className="text-xs text-muted-foreground">
-              Default accounts used when posting transactions · <span className="font-medium text-foreground">{terisi}/{mapping.total}</span> mapped
-              {' '}· <span className="font-medium text-foreground">{mapping.locked}</span> locked
+            <h2 className="text-base font-bold text-neutral-900">Account mapping</h2>
+            <p className="text-xs text-neutral-500">
+              Default accounts used when posting transactions · <span className="font-medium text-neutral-900">{terisi}/{mapping.total}</span> mapped
+              {' '}· <span className="font-medium text-neutral-900">{mapping.locked}</span> locked
             </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
         <button type="button" onClick={() => kunci(bisaKunci, true, 'all')} disabled={!bisaKunci.length || !!locking}
-          className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-slate-50 disabled:opacity-50">
+          className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
           {locking === 'all' ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />} Lock all mapped
         </button>
         <button type="button" onClick={() => kunci(terkunci, false, 'none')} disabled={!terkunci.length || !!locking}
-          className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-slate-50 disabled:opacity-50">
+          className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
           {locking === 'none' ? <Loader2 size={14} className="animate-spin" /> : <LockOpen size={14} />} Unlock all
         </button>
         <button
           onClick={() => setTutup(Object.fromEntries(mapping.groups.map(g => [g.key, !semuaTutup])))}
-          className="flex h-9 items-center gap-1.5 self-start rounded-xl border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-slate-50 sm:self-auto"
+          className="flex h-9 items-center gap-1.5 self-start rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 sm:self-auto"
         >
           {semuaTutup ? <><ChevronsUpDown size={14} /> Expand all</> : <><ChevronsDownUp size={14} /> Collapse all</>}
         </button>
@@ -156,14 +156,14 @@ export default function AccountMappingSettings() {
       </div>
 
       {mapping.locked > 0 && (
-        <div className="flex items-start gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+        <div className="flex items-start gap-2 rounded-lg border border-neutral-300 bg-neutral-100 px-4 py-3 text-sm text-neutral-800">
           <Lock size={16} className="mt-0.5 shrink-0" />
           <span>Locked mappings cannot be changed from any menu — including deleting, deactivating, renaming or renumbering their accounts in the Chart of Accounts — until they are unlocked here.</span>
         </div>
       )}
 
       {!coaLoading && coa.length === 0 && (
-        <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <span>This company has no chart of accounts yet. Add accounts in <Link href="/coa" className="font-semibold underline">Chart of Accounts</Link> first.</span>
         </div>
@@ -173,18 +173,18 @@ export default function AccountMappingSettings() {
         const tertutup = !!tutup[g.key];
         const isi = g.items.filter(it => form[it.key]).length;
         return (
-          <section key={g.key} className="rounded-2xl border border-border bg-card shadow-sm">
+          <section key={g.key} className="relative rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800">
             <button
               type="button"
               onClick={() => setTutup(t => ({ ...t, [g.key]: !t[g.key] }))}
               aria-expanded={!tertutup}
-              className={`flex w-full items-center justify-between gap-3 px-5 py-4 text-left ${tertutup ? '' : 'border-b border-border'}`}
+              className={`flex w-full items-center justify-between gap-3 rounded-lg bg-neutral-50 px-5 py-3.5 text-left transition-colors hover:bg-neutral-100 ${tertutup ? '' : 'rounded-b-none border-b border-neutral-300'}`}
             >
               <div className="flex items-center gap-3">
-                <ChevronDown size={16} className={`text-slate-400 transition-transform ${tertutup ? '-rotate-90' : ''}`} />
-                <h3 className="text-sm font-semibold text-foreground">{g.label}</h3>
+                <ChevronDown size={16} className={`text-neutral-400 transition-transform ${tertutup ? '-rotate-90' : ''}`} />
+                <h3 className="text-sm font-semibold text-neutral-900">{g.label}</h3>
               </div>
-              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${isi === g.items.length ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${isi === g.items.length ? 'bg-emerald-50 text-emerald-700' : 'bg-neutral-100 text-neutral-600'}`}>
                 {isi}/{g.items.length} mapped
               </span>
             </button>
@@ -199,16 +199,16 @@ export default function AccountMappingSettings() {
                   return (
                     <div key={it.key}>
                       <div className="mb-1.5 flex items-center justify-between gap-2">
-                        <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-neutral-900">
                           {it.label}
-                          {it.is_locked && <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700"><Lock size={10} /> Locked</span>}
+                          {it.is_locked && <span className="inline-flex items-center gap-1 rounded-full bg-neutral-800 px-1.5 py-0.5 text-[10px] font-semibold text-white"><Lock size={10} /> Locked</span>}
                           {disarankan && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" title="Suggested from the chart of accounts — not saved yet">Suggested</span>}
                           {nilai !== (awal[it.key] ?? null) && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Unsaved" />}
                         </label>
                         {(it.coa_id || it.is_locked) && (
                           <button type="button" onClick={() => kunci([it.key], !it.is_locked, it.key)} disabled={!!locking || (!it.is_locked && nilai !== (awal[it.key] ?? null))}
                             title={it.is_locked ? 'Unlock this mapping' : 'Lock this mapping'}
-                            className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold disabled:opacity-40 ${it.is_locked ? 'text-sky-700 hover:bg-sky-50' : 'text-slate-500 hover:bg-slate-100'}`}>
+                            className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold disabled:opacity-40 ${it.is_locked ? 'text-neutral-800 hover:bg-neutral-200' : 'text-neutral-500 hover:bg-neutral-100'}`}>
                             {locking === it.key ? <Loader2 size={12} className="animate-spin" /> : it.is_locked ? <LockOpen size={12} /> : <Lock size={12} />}
                             {it.is_locked ? 'Unlock' : 'Lock'}
                           </button>
@@ -223,10 +223,10 @@ export default function AccountMappingSettings() {
                         </p>
                       )}
                       {it.is_locked && (
-                        <p className="mt-1 text-[11px] text-sky-700">Locked{it.locked_by_name ? ` by ${it.locked_by_name}` : ''}{it.locked_at ? ` · ${fmtTanggal.format(new Date(it.locked_at))}` : ''}</p>
+                        <p className="mt-1 text-[11px] text-neutral-600">Locked{it.locked_by_name ? ` by ${it.locked_by_name}` : ''}{it.locked_at ? ` · ${fmtTanggal.format(new Date(it.locked_at))}` : ''}</p>
                       )}
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        {it.used_in ? <>Used in: {it.used_in}</> : <span className="text-slate-400">Saved for upcoming features.</span>}
+                      <p className="mt-1 text-[11px] text-neutral-500">
+                        {it.used_in ? <>Used in: {it.used_in}</> : <span className="text-neutral-400">Saved for upcoming features.</span>}
                       </p>
                       {pilih?.catatan && (
                         <p className="mt-1 text-[11px] text-amber-700">This account is {pilih.catatan} in the chart of accounts — pick another one.</p>
@@ -240,9 +240,9 @@ export default function AccountMappingSettings() {
         );
       })}
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-300 bg-white shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
         <div className="mx-auto flex max-w-screen-2xl items-center justify-between gap-3 px-6 py-3">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-neutral-500">
             {jumlahGanda
               ? <span className="font-medium text-red-600">{jumlahGanda} inputs share the same account — fix them before saving</span>
               : jumlahBerubah
@@ -251,10 +251,10 @@ export default function AccountMappingSettings() {
             <span className="hidden sm:inline"> · Saving requires Tahap 5 (Partner) access.</span>
           </p>
           <div className="flex items-center gap-2">
-            <button onClick={() => setForm(bawaan)} disabled={saving || Object.keys(form).every(k => form[k] === bawaan[k])} className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-slate-50 disabled:opacity-50">
+            <button onClick={() => setForm(bawaan)} disabled={saving || Object.keys(form).every(k => form[k] === bawaan[k])} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
               <RotateCcw size={14} /> Reset
             </button>
-            <button onClick={simpan} disabled={saving || !jumlahBerubah || jumlahGanda > 0} className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 hover:bg-blue-800 disabled:opacity-50">
+            <button onClick={simpan} disabled={saving || !jumlahBerubah || jumlahGanda > 0} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-4 text-sm font-semibold text-white shadow-sm hover:bg-neutral-700 disabled:opacity-50">
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save changes
             </button>
           </div>
@@ -302,16 +302,16 @@ function CoaSelect({ value, opsi, loading, onChange, disabled, ganda, dipakai }:
         type="button"
         onClick={() => { if (disabled) return; setBuka(b => !b); setQ(''); }}
         disabled={disabled}
-        className={`flex w-full items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2.5 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-80 text-left text-sm transition-shadow focus:outline-none focus:ring-4 focus:ring-blue-100 ${buka ? 'border-blue-400 ring-4 ring-blue-100' : ganda ? 'border-red-400' : 'border-border'}`}
+        className={`flex w-full items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:opacity-80 text-left text-sm transition-shadow focus:outline-none focus:ring-2 focus:ring-neutral-300 ${buka ? 'border-neutral-700 ring-2 ring-neutral-300' : ganda ? 'border-red-400' : 'border-neutral-300'}`}
       >
         {pilih ? (
-          <span className="min-w-0 truncate text-foreground">
-            <span className="font-mono text-xs text-slate-500">{kodeAkun(pilih.acc_no)}</span> · {pilih.account_name}
+          <span className="min-w-0 truncate text-neutral-900">
+            <span className="font-mono text-xs text-neutral-500">{kodeAkun(pilih.acc_no)}</span> · {pilih.account_name}
           </span>
         ) : value ? (
-          <span className="truncate text-slate-400">Loading account…</span>
+          <span className="truncate text-neutral-400">Loading account…</span>
         ) : (
-          <span className="text-slate-400">Select account</span>
+          <span className="text-neutral-400">Select account</span>
         )}
         <span className="flex shrink-0 items-center gap-1">
           {value && !disabled && (
@@ -319,33 +319,33 @@ function CoaSelect({ value, opsi, loading, onChange, disabled, ganda, dipakai }:
               role="button"
               tabIndex={-1}
               onClick={e => { e.stopPropagation(); onChange(null); }}
-              className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-foreground"
+              className="rounded p-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
               aria-label="Clear"
             >
               <X size={13} />
             </span>
           )}
-          <ChevronDown size={14} className="text-slate-400" />
+          <ChevronDown size={14} className="text-neutral-400" />
         </span>
       </button>
 
       {buka && (
-        <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-xl border border-border bg-card shadow-lg">
-          <div className="relative border-b border-border p-2">
-            <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+        <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-lg border border-neutral-300 bg-white shadow-lg">
+          <div className="relative border-b border-neutral-300 p-2">
+            <Search size={13} className="absolute left-4 top-1/2 -tranneutral-y-1/2 text-neutral-400" />
             <input
               autoFocus
               value={q}
               onChange={e => setQ(e.target.value)}
               placeholder="Search account no. or name…"
-              className="w-full rounded-lg bg-slate-50 py-1.5 pl-7 pr-2 text-sm text-foreground placeholder:text-slate-400 focus:outline-none"
+              className="w-full rounded-lg bg-neutral-50 py-1.5 pl-7 pr-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none"
             />
           </div>
           <ul className="max-h-64 overflow-y-auto py-1">
             {loading && opsi.length === 0 ? (
-              <li className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"><Loader2 size={12} className="animate-spin" /> Loading accounts…</li>
+              <li className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-500"><Loader2 size={12} className="animate-spin" /> Loading accounts…</li>
             ) : hasil.list.length === 0 ? (
-              <li className="px-3 py-2 text-xs text-muted-foreground">No accounts found.</li>
+              <li className="px-3 py-2 text-xs text-neutral-500">No accounts found.</li>
             ) : hasil.list.map(o => {
               const lain = dipakai(o.id);
               return (
@@ -354,14 +354,14 @@ function CoaSelect({ value, opsi, loading, onChange, disabled, ganda, dipakai }:
                   type="button"
                   disabled={lain.length > 0}
                   onClick={() => { onChange(o.id); setBuka(false); }}
-                  className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent ${o.id === value ? 'bg-blue-50' : ''}`}
+                  className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent ${o.id === value ? 'bg-neutral-100' : ''}`}
                 >
-                  <span className="mt-0.5 w-4 shrink-0 text-blue-600">{o.id === value && <Check size={14} />}</span>
+                  <span className="mt-0.5 w-4 shrink-0 text-neutral-800">{o.id === value && <Check size={14} />}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-foreground"><span className="font-mono text-xs text-slate-500">{kodeAkun(o.acc_no)}</span> · {o.account_name}</span>
-                    <span className="block text-[10px] uppercase tracking-wider text-slate-400">
+                    <span className="block truncate text-neutral-900"><span className="font-mono text-xs text-neutral-500">{kodeAkun(o.acc_no)}</span> · {o.account_name}</span>
+                    <span className="block text-[10px] uppercase tracking-wider text-neutral-400">
                       {o.account_classification}{o.catatan && <span className="text-amber-600"> · {o.catatan}</span>}
-                      {lain.length > 0 && <span className="normal-case tracking-normal text-slate-500"> · used in {lain.join(', ')}</span>}
+                      {lain.length > 0 && <span className="normal-case tracking-normal text-neutral-500"> · used in {lain.join(', ')}</span>}
                     </span>
                   </span>
                 </button>
@@ -369,7 +369,7 @@ function CoaSelect({ value, opsi, loading, onChange, disabled, ganda, dipakai }:
               );
             })}
             {hasil.total > hasil.list.length && (
-              <li className="px-3 py-2 text-[11px] text-muted-foreground">Showing {hasil.list.length} of {hasil.total} — type to narrow down.</li>
+              <li className="px-3 py-2 text-[11px] text-neutral-500">Showing {hasil.list.length} of {hasil.total} — type to narrow down.</li>
             )}
           </ul>
         </div>

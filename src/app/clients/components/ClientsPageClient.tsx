@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 import { useCurrency } from '@/lib/currency';
 import { fileToLogoDataUrl } from '@/lib/imageUtils';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
 
 const PAGE_SIZE = 8;
 
@@ -118,21 +119,15 @@ function formatIDR(n: number, compact = true): string {
 }
 
 function StatusBadge({ status }: { status: ClientStatus }) {
-  const map: Record<ClientStatus, string> = {
-    Healthy: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    Stable: 'bg-blue-50 text-blue-700 border-blue-200',
-    'Attention Required': 'bg-amber-50 text-amber-700 border-amber-200',
-    Critical: 'bg-red-50 text-red-700 border-red-200',
-  };
-  const icons: Record<ClientStatus, React.ReactNode> = {
-    Healthy: <CheckCircle size={10} />,
-    Stable: <Activity size={10} />,
-    'Attention Required': <AlertTriangle size={10} />,
-    Critical: <AlertCircle size={10} />,
+  const dot: Record<ClientStatus, string> = {
+    Healthy: 'bg-emerald-500',
+    Stable: 'bg-neutral-700',
+    'Attention Required': 'bg-amber-500',
+    Critical: 'bg-red-500',
   };
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${map[status]}`}>
-      {icons[status]}
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-neutral-300 bg-neutral-50 px-2.5 py-0.5 text-[11px] font-semibold text-neutral-700">
+      <span className={`h-1.5 w-1.5 rounded-full ${dot[status]}`} />
       {status}
     </span>
   );
@@ -140,13 +135,13 @@ function StatusBadge({ status }: { status: ClientStatus }) {
 
 function TaxBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    Compliant: 'bg-emerald-50 text-emerald-700',
-    Pending: 'bg-amber-50 text-amber-700',
-    Overdue: 'bg-red-50 text-red-700',
-    'Under Review': 'bg-blue-50 text-blue-700',
+    Compliant: 'bg-neutral-100 text-neutral-700 ring-neutral-200',
+    Pending: 'bg-neutral-100 text-neutral-700 ring-neutral-200',
+    Overdue: 'bg-red-50 text-red-700 ring-red-200',
+    'Under Review': 'bg-neutral-100 text-neutral-700 ring-neutral-200',
   };
   return (
-    <span className={`px-2 py-0.5 rounded text-xs font-medium ${map[status] ?? 'bg-gray-50 text-gray-600'}`}>
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${map[status] ?? 'bg-neutral-100 text-neutral-600 ring-neutral-200'}`}>
       {status}
     </span>
   );
@@ -154,17 +149,17 @@ function TaxBadge({ status }: { status: string }) {
 
 function AccountingBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    'Up to Date': 'text-emerald-600',
-    'Pending Review': 'text-amber-600',
-    'Needs Attention': 'text-orange-600',
+    'Up to Date': 'text-neutral-800',
+    'Pending Review': 'text-neutral-500',
+    'Needs Attention': 'text-amber-700',
     Behind: 'text-red-600',
   };
-  return <span className={`text-xs font-medium ${map[status] ?? 'text-muted-foreground'}`}>{status}</span>;
+  return <span className={`text-xs font-semibold ${map[status] ?? 'text-neutral-500'}`}>{status}</span>;
 }
 
 function HealthScoreRing({ score }: { score: number }) {
-  const color = score >= 80 ? '#059669' : score >= 60 ? '#1B4FD8' : score >= 40 ? '#D97706' : '#DC2626';
-  const data = [{ value: score, fill: color }, { value: 100 - score, fill: '#F1F5F9' }];
+  const color = score >= 80 ? '#047857' : score >= 60 ? '#262626' : score >= 40 ? '#B45309' : '#B91C1C';
+  const data = [{ value: score, fill: color }, { value: 100 - score, fill: '#E5E5E5' }];
   return (
     <div className="relative w-16 h-16">
       <ResponsiveContainer width="100%" height="100%">
@@ -173,7 +168,7 @@ function HealthScoreRing({ score }: { score: number }) {
         </RadialBarChart>
       </ResponsiveContainer>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-sm font-bold tabular-nums" style={{ color }}>{score}</span>
+        <span className="text-sm font-semibold tabular-nums" style={{ color }}>{score}</span>
       </div>
     </div>
   );
@@ -187,7 +182,7 @@ function MiniSparkline({ data, positive }: { data: number[]; positive: boolean }
         <Line
           type="monotone"
           dataKey="v"
-          stroke={positive ? '#059669' : '#DC2626'}
+          stroke={positive ? '#404040' : '#B91C1C'}
           strokeWidth={1.5}
           dot={false}
         />
@@ -247,32 +242,32 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
 
   function scoreColor(s: number) {
     if (s >= 80) return 'bg-emerald-500';
-    if (s >= 60) return 'bg-blue-500';
+    if (s >= 60) return 'bg-neutral-700';
     if (s >= 40) return 'bg-amber-500';
     return 'bg-red-500';
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-foreground/20 backdrop-blur-sm flex items-start justify-end">
-      <div className="h-full w-full max-w-2xl bg-card shadow-2xl flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-neutral-900/30 backdrop-blur-sm flex items-start justify-end">
+      <div className="h-full w-full max-w-2xl bg-white shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-5 border-b border-border bg-gradient-to-r from-primary/5 to-transparent">
+        <div className="px-6 py-5 border-b border-neutral-200 bg-neutral-50">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Building2 size={22} className="text-primary" />
+              <div className="w-12 h-12 rounded-lg bg-white ring-1 ring-neutral-200 shadow-sm flex items-center justify-center">
+                <Building2 size={22} className="text-neutral-700" />
               </div>
               <div>
-                <h2 className="text-base font-bold text-foreground">{client.companyName}</h2>
+                <h2 className="text-base font-bold text-neutral-900">{client.companyName}</h2>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs text-muted-foreground">{client.industry}</span>
-                  <span className="text-muted-foreground">·</span>
+                  <span className="text-xs text-neutral-500">{client.industry}</span>
+                  <span className="text-neutral-500">·</span>
                   <StatusBadge status={client.status} />
                 </div>
               </div>
             </div>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted/60 transition-colors">
-              <X size={16} className="text-muted-foreground" />
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors">
+              <X size={16} className="text-neutral-500" />
             </button>
           </div>
 
@@ -280,18 +275,18 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
             <HealthScoreRing score={client.healthScore.overall} />
             <div className="grid grid-cols-3 gap-4 flex-1">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Revenue</p>
-                <p className="text-sm font-bold font-mono text-foreground">{fx(formatIDR(client.financials.revenue))}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-0.5">Revenue</p>
+                <p className="text-sm font-semibold tabular-nums tracking-tight text-neutral-900">{fx(formatIDR(client.financials.revenue))}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Net Profit</p>
-                <p className={`text-sm font-bold font-mono ${client.financials.netProfit < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-0.5">Net Profit</p>
+                <p className={`text-sm font-semibold tabular-nums tracking-tight ${client.financials.netProfit < 0 ? 'text-red-600' : 'text-neutral-900'}`}>
                   {fx(formatIDR(client.financials.netProfit))}
                 </p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Cash</p>
-                <p className="text-sm font-bold font-mono text-foreground">{fx(formatIDR(client.financials.cash))}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-0.5">Cash</p>
+                <p className="text-sm font-semibold tabular-nums tracking-tight text-neutral-900">{fx(formatIDR(client.financials.cash))}</p>
               </div>
             </div>
           </div>
@@ -310,38 +305,38 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
           {activeTab === 'overview' && (
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-muted/30 rounded-xl p-4">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Contact</p>
-                  <p className="text-sm font-semibold text-foreground">{client.contactName}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{client.contactEmail}</p>
-                  <p className="text-xs text-muted-foreground">{client.contactPhone}</p>
+                <div className="bg-neutral-50 border border-neutral-200 rounded-[10px] p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-2">Contact</p>
+                  <p className="text-sm font-semibold text-neutral-900">{client.contactName}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">{client.contactEmail}</p>
+                  <p className="text-xs text-neutral-500">{client.contactPhone}</p>
                 </div>
-                <div className="bg-muted/30 rounded-xl p-4">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Assigned Accountant</p>
+                <div className="bg-neutral-50 border border-neutral-200 rounded-[10px] p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-2">Assigned Accountant</p>
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center text-primary text-xs font-semibold">
+                    <div className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center text-neutral-700 text-xs font-semibold">
                       {client.assignedAccountant.split(' ').map(n => n[0]).join('')}
                     </div>
-                    <span className="text-sm font-medium text-foreground">{client.assignedAccountant}</span>
+                    <span className="text-sm font-medium text-neutral-900">{client.assignedAccountant}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-2">Last activity: {client.lastActivity}</p>
+                  <p className="text-xs text-neutral-500 mt-2">Last activity: {client.lastActivity}</p>
                 </div>
               </div>
-              <div className="bg-muted/30 rounded-xl p-4 space-y-2">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Company Details</p>
+              <div className="bg-neutral-50 border border-neutral-200 rounded-[10px] p-4 space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-2">Company Details</p>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><span className="text-muted-foreground">NPWP:</span> <span className="font-mono text-foreground ml-1">{client.npwp}</span></div>
-                  <div><span className="text-muted-foreground">Client Since:</span> <span className="text-foreground ml-1">{client.joinDate}</span></div>
-                  <div className="col-span-2"><span className="text-muted-foreground">Address:</span> <span className="text-foreground ml-1">{client.address}</span></div>
+                  <div><span className="text-neutral-500">NPWP:</span> <span className="font-mono text-neutral-900 ml-1">{client.npwp}</span></div>
+                  <div><span className="text-neutral-500">Client Since:</span> <span className="text-neutral-900 ml-1">{client.joinDate}</span></div>
+                  <div className="col-span-2"><span className="text-neutral-500">Address:</span> <span className="text-neutral-900 ml-1">{client.address}</span></div>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-muted/30 rounded-xl p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Tax Status</p>
+                <div className="bg-neutral-50 border border-neutral-200 rounded-[10px] p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-1">Tax Status</p>
                   <TaxBadge status={client.taxStatus} />
                 </div>
-                <div className="bg-muted/30 rounded-xl p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Accounting Status</p>
+                <div className="bg-neutral-50 border border-neutral-200 rounded-[10px] p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-1">Accounting Status</p>
                   <AccountingBadge status={client.accountingStatus} />
                 </div>
               </div>
@@ -352,25 +347,25 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: 'Revenue', value: client.financials.revenue, color: 'text-foreground' },
-                  { label: 'Net Profit', value: client.financials.netProfit, color: client.financials.netProfit < 0 ? 'text-red-600' : 'text-emerald-600' },
-                  { label: 'Cash', value: client.financials.cash, color: 'text-foreground' },
-                  { label: 'Accounts Receivable', value: client.financials.ar, color: 'text-blue-600' },
-                  { label: 'Accounts Payable', value: client.financials.ap, color: 'text-foreground' },
-                  { label: 'Gross Margin', value: null, display: `${client.financials.grossMargin.toFixed(1)}%`, color: 'text-foreground' },
+                  { label: 'Revenue', value: client.financials.revenue, color: 'text-neutral-900' },
+                  { label: 'Net Profit', value: client.financials.netProfit, color: client.financials.netProfit < 0 ? 'text-red-600' : 'text-neutral-900' },
+                  { label: 'Cash', value: client.financials.cash, color: 'text-neutral-900' },
+                  { label: 'Accounts Receivable', value: client.financials.ar, color: 'text-neutral-900' },
+                  { label: 'Accounts Payable', value: client.financials.ap, color: 'text-neutral-900' },
+                  { label: 'Gross Margin', value: null, display: `${client.financials.grossMargin.toFixed(1)}%`, color: 'text-neutral-900' },
                 ].map(item => (
-                  <div key={`fin-${item.label}`} className="bg-muted/30 rounded-xl p-3">
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{item.label}</p>
-                    <p className={`text-base font-bold font-mono ${item.color}`}>
+                  <div key={`fin-${item.label}`} className="bg-neutral-50 border border-neutral-200 rounded-[10px] p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-1">{item.label}</p>
+                    <p className={`text-base font-semibold tabular-nums tracking-tight ${item.color}`}>
                       {item.display ?? fx(formatIDR(item.value!))}
                     </p>
                   </div>
                 ))}
               </div>
-              <div className="bg-muted/30 rounded-xl p-4">
+              <div className="bg-neutral-50 border border-neutral-200 rounded-[10px] p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold text-foreground">Revenue Trend</p>
-                  <div className={`flex items-center gap-1 text-xs font-medium ${client.financials.revenueGrowth >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  <p className="text-xs font-semibold text-neutral-900">Revenue Trend</p>
+                  <div className={`flex items-center gap-1 text-xs font-medium ${client.financials.revenueGrowth >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
                     {client.financials.revenueGrowth >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
                     {client.financials.revenueGrowth >= 0 ? '+' : ''}{client.financials.revenueGrowth.toFixed(1)}% YoY
                   </div>
@@ -381,13 +376,13 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
                       <Line
                         type="monotone"
                         dataKey="v"
-                        stroke={client.financials.revenueGrowth >= 0 ? '#059669' : '#DC2626'}
+                        stroke={client.financials.revenueGrowth >= 0 ? '#2563EB' : '#B91C1C'}
                         strokeWidth={2}
                         dot={false}
                       />
                       <Tooltip
                         formatter={(v: number) => [fx(`Rp ${v.toFixed(2).replace('.', ',')}M`), 'Revenue']}
-                        contentStyle={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: 8 }}
+                        contentStyle={{ fontSize: 11, border: '1px solid #d4d4d4', borderRadius: 8 }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
@@ -398,13 +393,13 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
 
           {activeTab === 'health' && (
             <div className="space-y-6">
-              <div className="flex items-center gap-4 bg-muted/30 rounded-xl p-4">
+              <div className="flex items-center gap-4 bg-neutral-50 border border-neutral-200 rounded-[10px] p-4">
                 <HealthScoreRing score={client.healthScore.overall} />
                 <div>
-                  <p className="text-lg font-bold text-foreground">
+                  <p className="text-lg font-bold text-neutral-900">
                     {client.healthScore.overall} / 100
                   </p>
-                  <p className="text-sm text-muted-foreground">Overall Health Score</p>
+                  <p className="text-sm text-neutral-500">Overall Health Score</p>
                   <StatusBadge status={client.status} />
                 </div>
               </div>
@@ -412,10 +407,10 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
                 {healthItems.map(item => (
                   <div key={`hi-${item.label}`}>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-foreground">{item.label}</span>
-                      <span className="text-xs font-bold font-mono text-foreground">{item.score}</span>
+                      <span className="text-xs font-medium text-neutral-900">{item.label}</span>
+                      <span className="text-xs font-semibold tabular-nums tracking-tight text-neutral-900">{item.score}</span>
                     </div>
-                    <div className="h-2 bg-muted/60 rounded-full overflow-hidden">
+                    <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all ${scoreColor(item.score)}`}
                         style={{ width: `${item.score}%` }}
@@ -431,22 +426,22 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
             <div className="space-y-3">
               {activityLoading ? (
                 <div className="text-center py-10">
-                  <p className="text-sm text-muted-foreground">Memuat aktivitas…</p>
+                  <p className="text-sm text-neutral-500">Memuat aktivitas…</p>
                 </div>
               ) : activity.length === 0 ? (
                 <div className="text-center py-10">
-                  <Activity size={24} className="text-muted-foreground mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">No recent activity for this client.</p>
+                  <Activity size={24} className="text-neutral-500 mx-auto mb-2" />
+                  <p className="text-sm text-neutral-500">No recent activity for this client.</p>
                 </div>
               ) : (
                 activity.map(item => (
-                  <div key={item.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/20 hover:bg-muted/40 transition-colors">
-                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Activity size={12} className="text-primary" />
+                  <div key={item.id} className="flex items-start gap-3 p-3 rounded-lg bg-neutral-50 hover:bg-neutral-100 transition-colors">
+                    <div className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center flex-shrink-0">
+                      <Activity size={12} className="text-neutral-700" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-foreground">{item.action}</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">{item.user} · {item.date} {item.time}</p>
+                      <p className="text-xs font-medium text-neutral-900">{item.action}</p>
+                      <p className="text-[11px] text-neutral-500 mt-0.5">{item.user} · {item.date} {item.time}</p>
                     </div>
                   </div>
                 ))
@@ -456,17 +451,17 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
 
           {activeTab === 'ai' && (
             <div className="space-y-4">
-              <div className="bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-200/60 rounded-xl p-4">
+              <div className="bg-neutral-50 border border-neutral-300 border-l-[3px] border-l-neutral-800 rounded-[10px] p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="w-6 h-6 rounded-md bg-violet-600 flex items-center justify-center">
+                  <div className="w-6 h-6 rounded-md bg-neutral-800 flex items-center justify-center">
                     <Star size={12} className="text-white" />
                   </div>
-                  <p className="text-sm font-semibold text-violet-800">AI Financial Assessment</p>
+                  <p className="text-sm font-semibold text-neutral-900">AI Financial Assessment</p>
                 </div>
-                <p className="text-sm text-violet-900 leading-relaxed">{client.aiInsight}</p>
+                <p className="text-sm text-neutral-700 leading-relaxed">{client.aiInsight}</p>
               </div>
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-foreground uppercase tracking-wider">Recommended Actions</p>
+                <p className="text-xs font-semibold text-neutral-900 uppercase tracking-wider">Recommended Actions</p>
                 {client.status === 'Critical' && (
                   <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
                     <AlertCircle size={14} className="text-red-600 flex-shrink-0 mt-0.5" />
@@ -487,10 +482,10 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
                 )}
                 {(client.status === 'Healthy' || client.status === 'Stable') && (
                   <div className="flex items-start gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-                    <CheckCircle size={14} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <CheckCircle size={14} className="text-emerald-700 flex-shrink-0 mt-0.5" />
                     <div>
                       <p className="text-xs font-semibold text-emerald-700">Client in good standing</p>
-                      <p className="text-xs text-emerald-600 mt-0.5">Continue regular monthly review cycle.</p>
+                      <p className="text-xs text-emerald-700 mt-0.5">Continue regular monthly review cycle.</p>
                     </div>
                   </div>
                 )}
@@ -498,14 +493,14 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
               <div className="flex gap-2">
                 <button
                   onClick={handleFullAIAnalysis}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700 transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-neutral-800 text-white text-xs font-semibold hover:bg-neutral-700 transition-colors"
                 >
                   <Star size={12} />
                   Full AI Analysis
                 </button>
                 <button
                   onClick={handleGenerateReport}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-neutral-300 text-xs font-medium text-neutral-500 hover:bg-neutral-50 transition-colors"
                 >
                   <FileText size={12} />
                   Generate Report
@@ -516,24 +511,24 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-border flex items-center gap-2">
+        <div className="px-6 py-4 border-t border-neutral-200 flex items-center gap-2">
           <button
             onClick={handleViewFullProfile}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-neutral-800 text-white text-xs font-semibold hover:bg-neutral-700 transition-colors"
           >
             <Eye size={12} />
             View Full Profile
           </button>
           <button
             onClick={handleGoToReports}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-300 text-xs font-medium text-neutral-500 hover:bg-neutral-50 transition-colors"
           >
             <FileText size={12} />
             Reports
           </button>
           <button
             onClick={handleGoToTax}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-300 text-xs font-medium text-neutral-500 hover:bg-neutral-50 transition-colors"
           >
             <Receipt size={12} />
             Tax
@@ -576,16 +571,17 @@ function ClientPortfolioCard({
   return (
     <div
       onClick={onClick}
-      className="relative bg-card border border-border rounded-xl p-5 hover:shadow-md hover:border-primary/30 transition-all cursor-pointer group"
+      className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-5 pt-6 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700 cursor-pointer group"
     >
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-            <Building2 size={18} className="text-primary" />
+          <div className="w-10 h-10 rounded-lg bg-neutral-100 ring-1 ring-neutral-200 flex items-center justify-center">
+            <Building2 size={18} className="text-neutral-700" />
           </div>
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-foreground leading-tight truncate max-w-[160px]">{client.companyName}</h3>
-            <p className="text-xs text-muted-foreground">{client.industry}</p>
+            <h3 className="text-sm font-semibold text-neutral-900 leading-tight truncate max-w-[160px]">{client.companyName}</h3>
+            <p className="text-xs text-neutral-500">{client.industry}</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -593,7 +589,7 @@ function ClientPortfolioCard({
           <div className="relative" ref={menuRef}>
             <button
               onClick={e => { e.stopPropagation(); setMenuOpen(o => !o); }}
-              className="p-1 rounded-lg text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+              className="p-1 rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 transition-colors"
               aria-label="Menu client"
             >
               <MoreVertical size={16} />
@@ -601,11 +597,11 @@ function ClientPortfolioCard({
             {menuOpen && (
               <div
                 onClick={e => e.stopPropagation()}
-                className="absolute right-0 top-full mt-1 w-36 bg-card border border-border rounded-lg shadow-lg py-1 z-10"
+                className="absolute right-0 top-full mt-1 w-36 bg-white border border-neutral-300 rounded-lg shadow-lg py-1 z-10"
               >
                 <button
                   onClick={() => { setMenuOpen(false); onEdit(); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-muted/40 transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-neutral-900 hover:bg-neutral-50 transition-colors"
                 >
                   <Pencil size={13} />
                   Edit
@@ -625,30 +621,30 @@ function ClientPortfolioCard({
 
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Revenue</p>
-          <p className="text-sm font-bold font-mono text-foreground">{fx(formatIDR(client.financials.revenue))}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-0.5">Revenue</p>
+          <p className="text-sm font-semibold tabular-nums tracking-tight text-neutral-900">{fx(formatIDR(client.financials.revenue))}</p>
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Net Profit</p>
-          <p className={`text-sm font-bold font-mono ${client.financials.netProfit < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-0.5">Net Profit</p>
+          <p className={`text-sm font-semibold tabular-nums tracking-tight ${client.financials.netProfit < 0 ? 'text-red-600' : 'text-neutral-900'}`}>
             {fx(formatIDR(client.financials.netProfit))}
           </p>
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">AR</p>
-          <p className="text-sm font-medium font-mono text-foreground">{fx(formatIDR(client.financials.ar))}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-0.5">AR</p>
+          <p className="text-sm font-medium tabular-nums text-neutral-900">{fx(formatIDR(client.financials.ar))}</p>
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">AP</p>
-          <p className="text-sm font-medium font-mono text-foreground">{fx(formatIDR(client.financials.ap))}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500 mb-0.5">AP</p>
+          <p className="text-sm font-medium tabular-nums text-neutral-900">{fx(formatIDR(client.financials.ap))}</p>
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-t border-border pt-3">
+      <div className="flex items-center justify-between border-t border-neutral-200 pt-3">
         <StatusBadge status={client.status} />
         <div className="flex items-center gap-2">
           <MiniSparkline data={client.financials.trendData} positive={isPositive} />
-          <div className={`flex items-center gap-0.5 text-xs font-medium ${isPositive ? 'text-emerald-600' : 'text-red-600'}`}>
+          <div className={`flex items-center gap-0.5 text-xs font-medium ${isPositive ? 'text-emerald-700' : 'text-red-600'}`}>
             {isPositive ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
             {Math.abs(client.financials.revenueGrowth).toFixed(1)}%
           </div>
@@ -658,10 +654,10 @@ function ClientPortfolioCard({
       <div className="flex items-center justify-between mt-3">
         <TaxBadge status={client.taxStatus} />
         <div className="flex items-center gap-1.5">
-          <div className="w-5 h-5 rounded-full bg-muted/60 flex items-center justify-center text-[10px] font-semibold text-muted-foreground">
+          <div className="w-5 h-5 rounded-full bg-neutral-100 flex items-center justify-center text-[10px] font-semibold text-neutral-500">
             {client.assignedAccountant.split(' ').map(n => n[0]).join('')}
           </div>
-          <span className="text-xs text-muted-foreground">{client.assignedAccountant.split(' ')[0]}</span>
+          <span className="text-xs text-neutral-500">{client.assignedAccountant.split(' ')[0]}</span>
         </div>
       </div>
     </div>
@@ -751,30 +747,30 @@ function AddClientModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-foreground/20 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-lg bg-card rounded-xl shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <h2 className="text-sm font-semibold text-foreground">{isEditMode ? 'Edit Client' : 'Add New Client'}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted/60 transition-colors">
-            <X size={16} className="text-muted-foreground" />
+    <div className="fixed inset-0 z-50 bg-neutral-900/30 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200">
+          <h2 className="text-sm font-semibold text-neutral-900">{isEditMode ? 'Edit Client' : 'Add New Client'}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors">
+            <X size={16} className="text-neutral-500" />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-lg border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
+            <div className="w-16 h-16 rounded-lg border border-neutral-300 bg-neutral-50 flex items-center justify-center overflow-hidden flex-shrink-0">
               {logo ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={logo} alt="Company logo" className="max-w-full max-h-full object-contain" />
               ) : (
-                <Building2 size={22} className="text-muted-foreground" />
+                <Building2 size={22} className="text-neutral-500" />
               )}
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-foreground">Company Logo</p>
-              <p className="text-[11px] text-muted-foreground mb-1.5">PNG, JPEG, or WebP · max 2 MB. Used on printed documents (e.g. Journal Entry PDF).</p>
+              <p className="text-xs font-medium text-neutral-900">Company Logo</p>
+              <p className="text-[11px] text-neutral-500 mb-1.5">PNG, JPEG, or WebP · max 2 MB. Used on printed documents (e.g. Journal Entry PDF).</p>
               <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoSelected} />
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => logoInputRef.current?.click()} disabled={isSubmitting} className="text-xs px-2.5 py-1 rounded-md border border-border hover:bg-muted/40 transition-colors disabled:opacity-50">
+                <button type="button" onClick={() => logoInputRef.current?.click()} disabled={isSubmitting} className="text-xs px-2.5 py-1 rounded-md border border-neutral-300 hover:bg-neutral-50 transition-colors disabled:opacity-50">
                   {logo ? 'Change logo' : 'Upload logo'}
                 </button>
                 {logo && (
@@ -787,29 +783,29 @@ function AddClientModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1">Client Code</label>
-              <div className="w-full text-sm font-mono border border-border rounded-lg px-3 py-2 bg-slate-50 text-slate-600 truncate">
+              <label className="block text-xs font-medium text-neutral-900 mb-1">Client Code</label>
+              <div className="w-full text-sm font-mono border border-neutral-300 rounded-lg px-3 py-2 bg-slate-50 text-slate-600 truncate">
                 {isEditMode ? (clientCode && clientCode !== '-' ? clientCode : '—') : (singkatanNama(companyName) || 'Auto')}
               </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">
+              <p className="mt-1 text-[11px] text-neutral-500">
                 {isEditMode ? 'Generated automatically; cannot be changed.' : 'Generated from the company name (made unique on save).'}
               </p>
             </div>
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1">Company Name *</label>
+              <label className="block text-xs font-medium text-neutral-900 mb-1">Company Name *</label>
               <input
                 value={companyName}
                 onChange={e => setCompanyName(e.target.value)}
                 placeholder="PT Contoh Sejahtera"
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full text-sm border border-neutral-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1">Industry *</label>
+              <label className="block text-xs font-medium text-neutral-900 mb-1">Industry *</label>
               <select
                 value={industry}
                 onChange={e => setIndustry(e.target.value)}
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 text-foreground"
+                className="w-full text-sm border border-neutral-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300 text-neutral-900"
               >
                 <option value="" disabled>{industriesLoading ? 'Loading industries…' : 'Select industry'}</option>
                 {industries.map(opt => (
@@ -818,20 +814,20 @@ function AddClientModal({
                 {industry && !industriesLoading && !industriTerpilih && <option value={industry}>{industry}</option>}
               </select>
               {industriTerpilih && !isEditMode && (
-                <p className="mt-1 text-[11px] text-muted-foreground">
+                <p className="mt-1 text-[11px] text-neutral-500">
                   {industriTerpilih.account_count} default COA accounts will be created ({industriTerpilih.template_sheet}).
                 </p>
               )}
               {isEditMode && (
-                <p className="mt-1 text-[11px] text-muted-foreground">Changing the industry does not change the existing chart of accounts.</p>
+                <p className="mt-1 text-[11px] text-neutral-500">Changing the industry does not change the existing chart of accounts.</p>
               )}
             </div>
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1">Status</label>
+              <label className="block text-xs font-medium text-neutral-900 mb-1">Status</label>
               <select
                 value={status}
                 onChange={e => setStatus(e.target.value as ClientStatus)}
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full text-sm border border-neutral-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300"
               >
                 {(['Healthy', 'Stable', 'Attention Required', 'Critical'] as ClientStatus[]).map(s => (
                   <option key={s} value={s}>{s}</option>
@@ -839,47 +835,47 @@ function AddClientModal({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1">Contact Name</label>
+              <label className="block text-xs font-medium text-neutral-900 mb-1">Contact Name</label>
               <input
                 value={contactName}
                 onChange={e => setContactName(e.target.value)}
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full text-sm border border-neutral-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1">Contact Phone</label>
+              <label className="block text-xs font-medium text-neutral-900 mb-1">Contact Phone</label>
               <input
                 value={contactPhone}
                 onChange={e => setContactPhone(e.target.value)}
                 placeholder="+62 21 5555 0000"
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full text-sm border border-neutral-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300"
               />
             </div>
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-foreground mb-1">Contact Email</label>
+              <label className="block text-xs font-medium text-neutral-900 mb-1">Contact Email</label>
               <input
                 type="email"
                 value={contactEmail}
                 onChange={e => setContactEmail(e.target.value)}
                 placeholder="contact@company.co.id"
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full text-sm border border-neutral-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1">NPWP</label>
+              <label className="block text-xs font-medium text-neutral-900 mb-1">NPWP</label>
               <input
                 value={npwp}
                 onChange={e => setNpwp(e.target.value)}
                 placeholder="00.000.000.0-000.000"
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full text-sm border border-neutral-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1">Address</label>
+              <label className="block text-xs font-medium text-neutral-900 mb-1">Address</label>
               <input
                 value={address}
                 onChange={e => setAddress(e.target.value)}
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full text-sm border border-neutral-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300"
               />
             </div>
           </div>
@@ -888,14 +884,14 @@ function AddClientModal({
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="flex-1 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors disabled:opacity-50"
+              className="flex-1 py-2 rounded-lg border border-neutral-300 text-xs font-medium text-neutral-500 hover:bg-neutral-50 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60"
+              className="flex-1 py-2 rounded-lg bg-neutral-800 text-white text-xs font-semibold hover:bg-neutral-700 transition-colors disabled:opacity-60"
             >
               {isSubmitting ? 'Menyimpan...' : (isEditMode ? 'Save Changes' : 'Add Client')}
             </button>
@@ -1062,17 +1058,17 @@ export default function ClientsPageClient() {
   const statusOptions = ['all', 'Healthy', 'Stable', 'Attention Required', 'Critical'];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className={`${salesFont.className} min-h-screen bg-background px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto`}>
       {/* Page Header */}
-      <div className="pb-2">
-        <div className="max-w-screen-2xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="mb-4">
+        <div>
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <Users size={20} className="text-primary" />
-                <h1 className="text-2xl font-bold tracking-tight text-foreground">Clients</h1>
+                <Users size={20} className="text-neutral-800" />
+                <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Clients</h1>
               </div>
-              <p className="text-sm text-muted-foreground mt-0.5">Monitor client financial health, accounting status, and service activity.</p>
+              <p className="text-sm font-medium text-neutral-500 mt-1">Monitor client financial health, accounting status, and service activity.</p>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -1084,21 +1080,21 @@ export default function ClientsPageClient() {
               />
               <button
                 onClick={handleImportClick}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-300 bg-white text-sm font-medium text-neutral-700 shadow-sm hover:border-neutral-700 hover:bg-neutral-50 transition-colors"
               >
                 <Upload size={14} />
                 Import
               </button>
               <button
                 onClick={handleExport}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-300 bg-white text-sm font-medium text-neutral-700 shadow-sm hover:border-neutral-700 hover:bg-neutral-50 transition-colors"
               >
                 <Download size={14} />
                 Export
               </button>
               <button
                 onClick={() => setShowAddModal(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-sm font-semibold text-white shadow-sm hover:bg-neutral-700 transition-colors"
               >
                 <Plus size={14} />
                 Add Client
@@ -1108,9 +1104,9 @@ export default function ClientsPageClient() {
         </div>
       </div>
 
-      <div className="max-w-screen-2xl mx-auto pt-4 pb-6 space-y-6">
+      <div className="pt-5 space-y-6">
         {clientsLoading && (
-          <div className="text-xs text-muted-foreground px-1">Memuat data klien...</div>
+          <div className="text-xs text-neutral-500 px-1">Memuat data klien...</div>
         )}
         {clientsError && (
           <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -1120,30 +1116,31 @@ export default function ClientsPageClient() {
         {/* Portfolio Summary */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           {[
-            { label: 'Total Clients', value: portfolioSummary.total, color: 'text-foreground', bg: 'bg-card' },
-            { label: 'Healthy', value: portfolioSummary.healthy, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-            { label: 'Stable', value: portfolioSummary.stable, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { label: 'Total Clients', value: portfolioSummary.total, color: 'text-neutral-900', bg: 'bg-white' },
+            { label: 'Healthy', value: portfolioSummary.healthy, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+            { label: 'Stable', value: portfolioSummary.stable, color: 'text-neutral-900', bg: 'bg-blue-50' },
             { label: 'Needs Attention', value: portfolioSummary.attention, color: 'text-amber-600', bg: 'bg-amber-50' },
             { label: 'Critical', value: portfolioSummary.critical, color: 'text-red-600', bg: 'bg-red-50' },
             { label: 'Avg Health Score', value: portfolioSummary.avgHealth, color: 'text-violet-600', bg: 'bg-violet-50' },
           ].map(item => (
-            <div key={`ps-${item.label}`} className={`${item.bg} border border-border rounded-xl p-4`}>
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{item.label}</p>
-              <p className={`text-2xl font-bold tabular-nums ${item.color}`}>{item.value}</p>
+            <div key={`ps-${item.label}`} className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+              <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-600">{item.label}</p>
+              <p className="text-2xl font-semibold tabular-nums tracking-tight text-neutral-900">{item.value}</p>
             </div>
           ))}
         </div>
 
         {/* Health Distribution Visual */}
-        <div className="bg-card border border-border rounded-xl p-5">
+        <div className="card-elevated-md rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-foreground">Portfolio Health Distribution</h2>
-            <p className="text-xs text-muted-foreground">{clientList.length} clients · {fx(formatIDR(portfolioSummary.totalRevenue))} total revenue</p>
+            <h2 className="text-sm font-semibold text-neutral-900">Portfolio Health Distribution</h2>
+            <p className="text-xs font-medium text-neutral-500">{clientList.length} clients · {fx(formatIDR(portfolioSummary.totalRevenue))} total revenue</p>
           </div>
           <div className="flex items-center gap-2 h-8">
             {[
               { status: 'Healthy', count: portfolioSummary.healthy, color: 'bg-emerald-500' },
-              { status: 'Stable', count: portfolioSummary.stable, color: 'bg-blue-500' },
+              { status: 'Stable', count: portfolioSummary.stable, color: 'bg-neutral-700' },
               { status: 'Attention Required', count: portfolioSummary.attention, color: 'bg-amber-500' },
               { status: 'Critical', count: portfolioSummary.critical, color: 'bg-red-500' },
             ].map(item => (
@@ -1161,13 +1158,13 @@ export default function ClientsPageClient() {
           <div className="flex items-center gap-4 mt-3 flex-wrap">
             {[
               { label: 'Healthy', color: 'bg-emerald-500' },
-              { label: 'Stable', color: 'bg-blue-500' },
+              { label: 'Stable', color: 'bg-neutral-700' },
               { label: 'Attention Required', color: 'bg-amber-500' },
               { label: 'Critical', color: 'bg-red-500' },
             ].map(item => (
               <div key={`legend-${item.label}`} className="flex items-center gap-1.5">
                 <div className={`w-2 h-2 rounded-full ${item.color}`} />
-                <span className="text-xs text-muted-foreground">{item.label}</span>
+                <span className="text-xs text-neutral-500">{item.label}</span>
               </div>
             ))}
           </div>
@@ -1176,13 +1173,13 @@ export default function ClientsPageClient() {
         {/* Toolbar */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="relative flex-1 max-w-xs">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
             <input
               type="text"
               placeholder="Search clients…"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-lg bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+              className="w-full pl-9 pr-3 py-2 text-sm shadow-sm border border-neutral-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300 focus:border-neutral-700"
             />
           </div>
 
@@ -1190,31 +1187,31 @@ export default function ClientsPageClient() {
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
-              className="text-sm border border-border rounded-lg px-3 py-2 bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="text-sm border border-neutral-300 rounded-lg px-3 py-2 bg-white text-neutral-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-neutral-300"
             >
               {statusOptions.map(s => (
                 <option key={`sf-${s}`} value={s}>{s === 'all' ? 'All Statuses' : s}</option>
               ))}
             </select>
 
-            <div className="flex items-center gap-1 bg-muted/40 rounded-lg p-1">
+            <div className="flex items-center gap-1 bg-neutral-100 ring-1 ring-neutral-200 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('portfolio')}
-                className={`p-1.5 rounded-md transition-colors ${viewMode === 'portfolio' ? 'bg-card shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`p-1.5 rounded-md transition-colors ${viewMode === 'portfolio' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'}`}
                 title="Portfolio view"
               >
                 <LayoutGrid size={15} />
               </button>
               <button
                 onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded-md transition-colors ${viewMode === 'table' ? 'bg-card shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`p-1.5 rounded-md transition-colors ${viewMode === 'table' ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'}`}
                 title="Table view"
               >
                 <List size={15} />
               </button>
             </div>
 
-            <span className="text-xs text-muted-foreground">{filtered.length} clients</span>
+            <span className="text-xs font-medium text-neutral-500">{filtered.length} clients</span>
           </div>
         </div>
 
@@ -1232,11 +1229,11 @@ export default function ClientsPageClient() {
             ))}
             {filtered.length === 0 && (
               <div className="col-span-full flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-12 h-12 rounded-xl bg-muted/60 flex items-center justify-center mb-3">
-                  <Users size={24} className="text-muted-foreground" />
+                <div className="w-12 h-12 rounded-xl bg-neutral-100 flex items-center justify-center mb-3">
+                  <Users size={24} className="text-neutral-500" />
                 </div>
-                <p className="text-sm font-medium text-foreground mb-1">No clients found</p>
-                <p className="text-xs text-muted-foreground">Try adjusting your search or filter.</p>
+                <p className="text-sm font-medium text-neutral-900 mb-1">No clients found</p>
+                <p className="text-xs text-neutral-500">Try adjusting your search or filter.</p>
               </div>
             )}
           </div>
@@ -1244,11 +1241,11 @@ export default function ClientsPageClient() {
 
         {/* Table View */}
         {viewMode === 'table' && (
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="card-elevated-md rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-border bg-muted/20">
+                  <tr className="border-b border-neutral-300 bg-neutral-50">
                     {[
                       { label: 'Company', col: 'name' },
                       { label: 'Industry', col: null },
@@ -1266,7 +1263,7 @@ export default function ClientsPageClient() {
                       <th
                         key={`th-${i}`}
                         onClick={() => h.col && toggleSort(h.col)}
-                        className={`px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap ${h.col ? 'cursor-pointer hover:text-foreground' : ''}`}
+                        className={`px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-600 whitespace-nowrap ${h.col ? 'cursor-pointer hover:text-neutral-900' : ''}`}
                       >
                         <div className="flex items-center gap-1">
                           {h.label}
@@ -1278,51 +1275,51 @@ export default function ClientsPageClient() {
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-neutral-200">
                   {paginated.map(client => (
                     <tr
                       key={client.id}
-                      className="hover:bg-muted/20 transition-colors group cursor-pointer"
+                      className="hover:bg-neutral-50 transition-colors group cursor-pointer"
                       onClick={() => setSelectedClient(client)}
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                            <Building2 size={13} className="text-primary" />
+                          <div className="w-7 h-7 rounded-lg bg-neutral-100 ring-1 ring-neutral-200 flex items-center justify-center flex-shrink-0">
+                            <Building2 size={13} className="text-neutral-700" />
                           </div>
-                          <span className="text-sm font-medium text-foreground whitespace-nowrap max-w-[160px] truncate">
+                          <span className="text-sm font-medium text-neutral-900 whitespace-nowrap max-w-[160px] truncate">
                             {client.companyName}
                           </span>
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-sm text-muted-foreground whitespace-nowrap">{client.industry}</span>
+                        <span className="text-sm text-neutral-500 whitespace-nowrap">{client.industry}</span>
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={client.status} />
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-sm font-mono font-medium text-foreground whitespace-nowrap">
+                        <span className="text-sm tabular-nums font-medium text-neutral-900 whitespace-nowrap">
                           {fx(formatIDR(client.financials.revenue))}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`text-sm font-mono font-medium whitespace-nowrap ${client.financials.netProfit < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                        <span className={`text-sm tabular-nums font-medium whitespace-nowrap ${client.financials.netProfit < 0 ? 'text-red-600' : 'text-neutral-900'}`}>
                           {fx(formatIDR(client.financials.netProfit))}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-sm font-mono text-foreground whitespace-nowrap">
+                        <span className="text-sm tabular-nums text-neutral-900 whitespace-nowrap">
                           {fx(formatIDR(client.financials.cash))}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-sm font-mono text-foreground whitespace-nowrap">
+                        <span className="text-sm tabular-nums text-neutral-900 whitespace-nowrap">
                           {fx(formatIDR(client.financials.ar))}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-sm font-mono text-foreground whitespace-nowrap">
+                        <span className="text-sm tabular-nums text-neutral-900 whitespace-nowrap">
                           {fx(formatIDR(client.financials.ap))}
                         </span>
                       </td>
@@ -1331,27 +1328,27 @@ export default function ClientsPageClient() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <div className="w-12 h-2 bg-muted/60 rounded-full overflow-hidden">
+                          <div className="w-12 h-2 bg-neutral-100 rounded-full overflow-hidden">
                             <div
                               className={`h-full rounded-full ${
                                 client.healthScore.overall >= 80 ? 'bg-emerald-500' :
-                                client.healthScore.overall >= 60 ? 'bg-blue-500' :
+                                client.healthScore.overall >= 60 ? 'bg-neutral-700' :
                                 client.healthScore.overall >= 40 ? 'bg-amber-500' : 'bg-red-500'
                               }`}
                               style={{ width: `${client.healthScore.overall}%` }}
                             />
                           </div>
-                          <span className="text-sm font-mono font-semibold text-foreground">
+                          <span className="text-sm tabular-nums font-semibold text-neutral-900">
                             {client.healthScore.overall}
                           </span>
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
-                          <div className="w-5 h-5 rounded-full bg-muted/60 flex items-center justify-center text-[10px] font-semibold text-muted-foreground">
+                          <div className="w-5 h-5 rounded-full bg-neutral-100 flex items-center justify-center text-[10px] font-semibold text-neutral-500">
                             {client.assignedAccountant.split(' ').map(n => n[0]).join('')}
                           </div>
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          <span className="text-xs text-neutral-500 whitespace-nowrap">
                             {client.assignedAccountant.split(' ')[0]}
                           </span>
                         </div>
@@ -1359,7 +1356,7 @@ export default function ClientsPageClient() {
                       <td className="px-4 py-3">
                         <button
                           onClick={e => { e.stopPropagation(); setSelectedClient(client); }}
-                          className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all"
+                          className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-500 hover:text-neutral-900 transition-all"
                         >
                           <ChevronRight size={14} />
                         </button>
@@ -1369,15 +1366,15 @@ export default function ClientsPageClient() {
                 </tbody>
               </table>
             </div>
-            <div className="px-5 py-3 border-t border-border bg-muted/10 flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
+            <div className="px-5 py-3 border-t border-neutral-200 bg-neutral-50 flex items-center justify-between">
+              <p className="text-xs text-neutral-500">
                 Showing {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length} clients
               </p>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="w-7 h-7 rounded-md text-xs font-medium transition-colors text-muted-foreground hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="w-7 h-7 rounded-md text-xs font-medium transition-colors text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   ‹
                 </button>
@@ -1385,7 +1382,7 @@ export default function ClientsPageClient() {
                   <button
                     key={`page-${p}`}
                     onClick={() => setPage(p)}
-                    className={`w-7 h-7 rounded-md text-xs font-medium transition-colors ${p === page ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-muted/60'}`}
+                    className={`w-7 h-7 rounded-md text-xs font-medium transition-colors ${p === page ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:bg-neutral-100'}`}
                   >
                     {p}
                   </button>
@@ -1393,7 +1390,7 @@ export default function ClientsPageClient() {
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="w-7 h-7 rounded-md text-xs font-medium transition-colors text-muted-foreground hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="w-7 h-7 rounded-md text-xs font-medium transition-colors text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   ›
                 </button>

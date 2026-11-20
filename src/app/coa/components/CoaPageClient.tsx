@@ -30,6 +30,9 @@ import {
   type CoaAccount,
 } from '@/lib/coaStore';
 import { labelClassification, themeOf } from './coaTheme';
+import PageHeading from '@/components/shared/PageHeading';
+import { btnOutline, btnPrimary, tabBadgeCls, tabBarCls, tabCls, tabListCls } from '@/components/arap/arapSalesUi';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
 
 type View = 'client' | 'unassigned';
 type StatusFilter = 'all' | 'active' | 'inactive';
@@ -39,18 +42,21 @@ function csvCell(v: unknown): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function StatCard({ icon: Icon, label, value, tone }: {
-  icon: React.ElementType; label: string; value: number | string; tone: string;
+function StatCard({ icon: Icon, label, value, note }: {
+  icon: React.ElementType; label: string; value: number | string; note?: string;
 }) {
+  // Desain sama dengan kartu KPI Accounts Receivable/Payable (ArApWorkspace.KartuGrid).
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3.5 shadow-sm">
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone}`}>
-        <Icon size={18} />
-      </span>
-      <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
-        <p className="number-display text-xl font-bold text-foreground leading-none">{value}</p>
+    <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200">
+          <Icon size={16} />
+        </span>
       </div>
+      <p className="mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{value}</p>
+      <div className="mt-1 min-h-4 text-[11px] text-neutral-500">{note}</div>
     </div>
   );
 }
@@ -184,120 +190,97 @@ export default function CoaPageClient() {
   const filterAktif = search || classification !== 'all' || statusFilter !== 'all';
 
   return (
-    <div className="min-h-screen bg-background pb-24">
-      {/* Header */}
-      <div className="pb-2">
-        <div className="mx-auto max-w-screen-2xl">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="flex items-start gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-violet-600 text-white shadow-md shadow-blue-600/25">
-                <ListTree size={20} />
-              </span>
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight text-foreground">Chart of Accounts</h1>
-                <p className="text-sm text-muted-foreground mt-0.5">Master accounts per client, mapped to the IFRS-aligned standard layer.</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => { refresh(); if (!isUnassignedView) saldoCoa.refresh(); }}
-                disabled={loading || (!isUnassignedView && !activeClientId)}
-                title="Refresh"
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-slate-50 hover:text-foreground disabled:opacity-40"
-              >
-                <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} />
-              </button>
-              <button
-                onClick={handleExport}
-                disabled={filtered.length === 0}
-                className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-40"
-              >
-                <Download size={14} /> Export
-              </button>
-              <Link
-                href="/coa/opening-balances"
-                className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-slate-50"
-              >
-                <Scale size={14} /> Opening Balances
-              </Link>
-              <Link
-                href={`/coa/new${qsView}`}
-                className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 transition-colors hover:bg-blue-800"
-              >
-                <Plus size={15} /> New Account
-              </Link>
-            </div>
-          </div>
+    <div className={`${salesFont.className} min-h-screen bg-background pb-24`}>
+      {/* Header: gaya Sales / AR / AP (PageHeading + tab garis bawah) */}
+      <div>
+        <div className="mx-auto max-w-screen-2xl space-y-5 px-6 pt-5 lg:px-8 xl:px-10">
+          <PageHeading
+            title="Chart of Accounts"
+            description="Master accounts per client, mapped to the IFRS-aligned standard layer."
+          />
 
-          {/* Tab pill */}
-          <div className="mt-6 inline-flex rounded-xl bg-slate-100 p-1">
-            {([
-              ['client', Building2, activeClientName ?? 'Client accounts', clientCoa.accounts.length],
-              ['unassigned', Inbox, 'Unassigned', unassignedCoa.accounts.length],
-            ] as const).map(([v, Icon, label, n]) => {
-              const aktif = view === v;
-              return (
-                <button
-                  key={v}
-                  onClick={() => switchView(v)}
-                  className={`flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
-                    aktif ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Icon size={14} className={aktif ? 'text-primary' : ''} />
+          {/* Tab */}
+          <div className={tabBarCls}>
+            <div className={tabListCls}>
+              {([
+                ['client', Building2, activeClientName ?? 'Client accounts', clientCoa.accounts.length],
+                ['unassigned', Inbox, 'Unassigned', unassignedCoa.accounts.length],
+              ] as const).map(([v, Icon, label, n]) => (
+                <button key={v} type="button" onClick={() => switchView(v)} className={tabCls(view === v)}>
+                  <Icon size={15} />
                   <span className="max-w-[220px] truncate">{label}</span>
-                  <span className={`rounded-md px-1.5 text-[11px] font-semibold tabular-nums ${aktif ? 'bg-blue-50 text-primary' : 'bg-slate-200 text-slate-600'}`}>{n}</span>
+                  <span className={tabBadgeCls}>{n}</span>
                 </button>
-              );
-            })}
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pb-2 lg:pb-0">
+                <button
+                  type="button"
+                  onClick={() => { refresh(); if (!isUnassignedView) saldoCoa.refresh(); }}
+                  disabled={loading || (!isUnassignedView && !activeClientId)}
+                  title="Refresh"
+                  className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-40"
+                >
+                  <RefreshCcw size={15} className={loading ? 'animate-spin' : ''} />
+                </button>
+                <button type="button" onClick={handleExport} disabled={filtered.length === 0} className={btnOutline}>
+                  <Download size={14} /> Export
+                </button>
+                <Link href="/coa/opening-balances" className={btnOutline}>
+                  <Scale size={14} /> Opening Balances
+                </Link>
+                <Link href={`/coa/new${qsView}`} className={btnPrimary}>
+                  <Plus size={14} /> New Account
+                </Link>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="mx-auto max-w-screen-2xl space-y-5 pt-4 pb-6">
+      <div className="mx-auto max-w-screen-2xl space-y-5 px-6 pt-5 pb-6 lg:px-8 xl:px-10">
         {/* Ringkasan */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard icon={Layers} label="Total accounts" value={accounts.length} tone="bg-blue-50 text-blue-600" />
-          <StatCard icon={CheckCircle2} label="Active" value={jumlahAktif} tone="bg-emerald-50 text-emerald-600" />
-          <StatCard icon={CircleSlash} label="Inactive" value={accounts.length - jumlahAktif} tone="bg-slate-100 text-slate-500" />
-          <StatCard icon={Inbox} label="Unassigned pool" value={unassignedCoa.accounts.length} tone="bg-violet-50 text-violet-600" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard icon={Layers} label="Total accounts" value={accounts.length} note="In this client's chart" />
+          <StatCard icon={CheckCircle2} label="Active" value={jumlahAktif} note={accounts.length ? `${Math.round((jumlahAktif / accounts.length) * 100)}% of total accounts` : '—'} />
+          <StatCard icon={CircleSlash} label="Inactive" value={accounts.length - jumlahAktif} note={accounts.length ? `${Math.round(((accounts.length - jumlahAktif) / accounts.length) * 100)}% of total accounts` : '—'} />
+          <StatCard icon={Inbox} label="Unassigned pool" value={unassignedCoa.accounts.length} note="Waiting to be assigned" />
         </div>
 
         {isUnassignedView && (
-          <div className="flex items-start gap-3 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3">
-            <Inbox size={16} className="mt-0.5 shrink-0 text-violet-600" />
-            <p className="text-xs leading-relaxed text-violet-900">
+          <div className="flex items-start gap-3 rounded-lg border border-neutral-300 bg-neutral-50 px-4 py-3">
+            <Inbox size={16} className="mt-0.5 shrink-0 text-neutral-700" />
+            <p className="text-xs font-medium leading-relaxed text-neutral-700">
               Accounts not linked to any client yet. Tick the ones you need and add them to{' '}
               <span className="font-semibold">{activeClientName ?? 'the active client (select one in the header)'}</span>.
             </p>
           </div>
         )}
 
-        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        <div className="relative overflow-hidden rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:z-20 before:h-0.5 before:bg-neutral-800">
           {/* Toolbar */}
-          <div className="space-y-3 border-b border-border p-4">
+          <div className="space-y-3 border-b border-neutral-300 bg-neutral-50 px-5 pb-4 pt-5">
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="relative flex-1">
-                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
                 <input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search ACC No or account name…"
-                  className="w-full rounded-xl border border-border bg-slate-50 py-2.5 pl-10 pr-9 text-sm text-foreground placeholder:text-slate-400 transition-shadow focus:border-blue-400 focus:bg-card focus:outline-none focus:ring-4 focus:ring-blue-100"
+                  className="w-full rounded-lg border border-neutral-300 bg-white py-2 pl-10 pr-9 text-sm text-neutral-900 placeholder:text-neutral-400 transition-shadow focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
                 />
                 {search && (
-                  <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-foreground" aria-label="Clear search">
+                  <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-neutral-400 hover:text-neutral-900" aria-label="Clear search">
                     <X size={14} />
                   </button>
                 )}
               </div>
-              <div className="inline-flex shrink-0 rounded-xl bg-slate-100 p-1">
+              <div className="inline-flex shrink-0 rounded-lg border border-neutral-300 bg-white p-0.5">
                 {(['all', 'active', 'inactive'] as const).map(s => (
                   <button
                     key={s}
                     onClick={() => setStatusFilter(s)}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition-all ${
-                      statusFilter === s ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                      statusFilter === s ? 'bg-neutral-800 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
                     }`}
                   >
                     {s}
@@ -310,8 +293,8 @@ export default function CoaPageClient() {
             <div className="flex flex-wrap gap-1.5">
               <button
                 onClick={() => setClassification('all')}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  classification === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                  classification === 'all' ? 'border-neutral-800 bg-neutral-800 text-white' : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-700'
                 }`}
               >
                 All <span className="ml-0.5 tabular-nums opacity-70">{accounts.length}</span>
@@ -323,8 +306,8 @@ export default function CoaPageClient() {
                   <button
                     key={c}
                     onClick={() => setClassification(aktif ? 'all' : c)}
-                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset transition-colors ${
-                      aktif ? t.badge : 'bg-card text-slate-600 ring-border hover:bg-slate-50'
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                      aktif ? 'border-neutral-800 bg-neutral-100 text-neutral-900 ring-1 ring-neutral-800' : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-700'
                     }`}
                   >
                     <span className={`h-1.5 w-1.5 rounded-full ${t.dot}`} />
@@ -338,12 +321,12 @@ export default function CoaPageClient() {
 
           {/* Tabel */}
           <div className="max-h-[64vh] overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-slate-50">
-                <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:shadow-[inset_0_1px_0_0_#262626,inset_0_-1px_0_0_#262626] [&>th]:font-bold">
                   {isUnassignedView && (
                     <th className="w-10 py-3 pl-5">
-                      <input type="checkbox" checked={semuaTerpilih} onChange={toggleSelectAll} disabled={filtered.length === 0} aria-label="Select all" className="h-4 w-4 rounded border-slate-300 accent-blue-600" />
+                      <input type="checkbox" checked={semuaTerpilih} onChange={toggleSelectAll} disabled={filtered.length === 0} aria-label="Select all" className="h-4 w-4 rounded border-neutral-300 accent-neutral-800" />
                     </th>
                   )}
                   <th className="px-5 py-3">Account</th>
@@ -356,14 +339,14 @@ export default function CoaPageClient() {
                   <th className="w-28 px-4 py-3" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-neutral-400">
                 {!isUnassignedView && !activeClientId ? (
                   <EmptyRow colSpan={kolom} icon={Building2} title="No client selected" hint="Pick a client in the header (Switch Company) to see its chart of accounts." />
                 ) : loading && accounts.length === 0 ? (
                   Array.from({ length: 6 }).map((_, i) => (
                     <tr key={i}>
                       <td colSpan={kolom} className="px-5 py-3.5">
-                        <div className="h-4 animate-pulse rounded-md bg-slate-100" style={{ width: `${60 + ((i * 7) % 35)}%` }} />
+                        <div className="h-4 animate-pulse rounded-md bg-neutral-100" style={{ width: `${60 + ((i * 7) % 35)}%` }} />
                       </td>
                     </tr>
                   ))
@@ -381,40 +364,40 @@ export default function CoaPageClient() {
                   const t = themeOf(a.account_classification);
                   const terpilih = isUnassignedView && selected.has(a.id);
                   return (
-                    <tr key={a.id} className={`group transition-colors hover:bg-slate-50 ${terpilih ? 'bg-blue-50 hover:bg-blue-50' : ''} ${a.is_active ? '' : 'text-muted-foreground'}`}>
+                    <tr key={a.id} className={`group transition-colors hover:bg-neutral-50 ${terpilih ? 'bg-neutral-100 hover:bg-neutral-100' : ''} ${a.is_active ? '' : 'text-neutral-500'}`}>
                       {isUnassignedView && (
                         <td className="py-3 pl-5">
-                          <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggleSelect(a.id)} aria-label={`Select ${a.acc_no}`} className="h-4 w-4 rounded border-slate-300 accent-blue-600" />
+                          <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggleSelect(a.id)} aria-label={`Select ${a.acc_no}`} className="h-4 w-4 rounded border-neutral-300 accent-neutral-800" />
                         </td>
                       )}
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-3">
-                          <span className={`h-8 w-1 shrink-0 rounded-full ${t.dot} ${a.is_active ? '' : 'opacity-30'}`} />
+                          <span className={`h-8 w-0.5 shrink-0 rounded-full bg-neutral-800 ${a.is_active ? '' : 'opacity-20'}`} />
                           <div className="min-w-0">
-                            <p className="font-mono text-[11px] text-slate-500">
+                            <p className="font-mono text-[11px] text-neutral-500">
                               {a.source_acc_no || a.acc_no}
-                              {a.source_acc_no && a.source_acc_no !== a.acc_no && <span className="ml-1.5 text-slate-400" title="ZAFEB standard code">· ZAFEB {a.acc_no}</span>}
+                              {a.source_acc_no && a.source_acc_no !== a.acc_no && <span className="ml-1.5 text-neutral-400" title="ZAFEB standard code">· ZAFEB {a.acc_no}</span>}
                             </p>
-                            <p className={`truncate font-medium ${a.is_active ? 'text-foreground' : 'text-slate-500'}`} title={a.description ?? undefined}>{a.account_name}</p>
+                            <p className={`truncate text-sm font-medium ${a.is_active ? 'text-neutral-900' : 'text-neutral-500'}`} title={a.description ?? undefined}>{a.account_name}</p>
                           </div>
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${t.badge}`}>
+                        <span className={`inline-flex items-center gap-1.5 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-700 ring-1 ring-inset ring-neutral-200`}>
                           <span className={`h-1.5 w-1.5 rounded-full ${t.dot}`} />{labelClassification(a.account_classification)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
                         {a.normal_balance ? (
-                          <span className={`inline-block rounded-md px-1.5 py-0.5 text-[11px] font-bold ${a.normal_balance === 'DEBIT' ? 'bg-sky-50 text-sky-700' : 'bg-amber-50 text-amber-700'}`}>
+                          <span className={`inline-block rounded-md bg-neutral-100 px-1.5 py-0.5 text-[11px] font-bold text-neutral-700 ring-1 ring-neutral-200`}>
                             {a.normal_balance === 'DEBIT' ? 'Dr' : 'Cr'}
                           </span>
-                        ) : <span className="text-slate-300">—</span>}
+                        ) : <span className="text-neutral-300">—</span>}
                       </td>
                       {!isUnassignedView && <SaldoCell saldo={saldoCoa.balances[a.acc_no]} normal={a.normal_balance} loading={saldoCoa.loading} />}
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${a.is_active ? 'text-emerald-700' : 'text-slate-400'}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${a.is_active ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${a.is_active ? 'text-emerald-700' : 'text-neutral-400'}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${a.is_active ? 'bg-emerald-500' : 'bg-neutral-300'}`} />
                           {a.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
@@ -425,15 +408,15 @@ export default function CoaPageClient() {
                               onClick={() => handleAssign([a.id])}
                               disabled={!activeClientId || assigning}
                               title={activeClientName ? `Add to ${activeClientName}` : 'Select a client first'}
-                              className="rounded-lg p-1.5 text-slate-500 hover:bg-blue-50 hover:text-primary disabled:opacity-30"
+                              className="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-30"
                             >
                               <Link2 size={14} />
                             </button>
                           )}
-                          <Link href={`/coa/${a.id}/edit${qsView}`} title="Edit" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-foreground">
+                          <Link href={`/coa/${a.id}/edit${qsView}`} title="Edit" className="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900">
                             <Pencil size={14} />
                           </Link>
-                          <button onClick={() => handleDelete(a)} title="Delete" className="rounded-lg p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600">
+                          <button onClick={() => handleDelete(a)} title="Delete" className="rounded-lg p-1.5 text-neutral-500 hover:bg-red-50 hover:text-red-600">
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -446,12 +429,12 @@ export default function CoaPageClient() {
           </div>
 
           {accounts.length > 0 && (
-            <div className="flex items-center justify-between border-t border-border bg-slate-50 px-5 py-2.5 text-xs text-slate-500">
-              <span>Showing <span className="font-semibold text-foreground">{filtered.length}</span> of {accounts.length} accounts</span>
+            <div className="flex items-center justify-between border-t border-neutral-300 bg-neutral-50 px-5 py-2.5 text-xs text-neutral-500">
+              <span>Showing <span className="font-semibold text-neutral-900">{filtered.length}</span> of {accounts.length} accounts</span>
               {filterAktif && (
                 <button
                   onClick={() => { setSearch(''); setClassification('all'); setStatusFilter('all'); }}
-                  className="font-medium text-primary hover:underline"
+                  className="font-semibold text-neutral-900 hover:underline"
                 >
                   Clear filters
                 </button>
@@ -464,13 +447,13 @@ export default function CoaPageClient() {
       {/* Action bar mengambang: bulk assign akun unassigned */}
       {isUnassignedView && selected.size > 0 && (
         <div className="fixed inset-x-0 bottom-6 z-30 flex justify-center px-4">
-          <div className="flex items-center gap-3 rounded-2xl bg-slate-900 py-2 pl-4 pr-2 text-white shadow-2xl shadow-slate-900/30">
+          <div className="flex items-center gap-3 rounded-xl bg-neutral-900 py-2 pl-4 pr-2 text-white shadow-2xl shadow-neutral-900/30">
             <span className="text-sm"><span className="font-semibold tabular-nums">{selected.size}</span> selected</span>
-            <button onClick={() => setSelected(new Set())} className="rounded-lg px-2 py-1 text-xs text-slate-300 hover:bg-slate-800 hover:text-white">Clear</button>
+            <button onClick={() => setSelected(new Set())} className="rounded-lg px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 hover:text-white">Clear</button>
             <button
               onClick={() => handleAssign([...selected])}
               disabled={!activeClientId || assigning}
-              className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold transition-colors hover:bg-blue-500 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-neutral-900 transition-colors hover:bg-neutral-200 disabled:opacity-50"
             >
               <Link2 size={14} />
               {assigning ? 'Adding…' : `Add to ${activeClientName ?? 'client'}`}
@@ -489,7 +472,7 @@ function SaldoCell({ saldo, normal, loading }: { saldo?: CoaBalance; normal: Nor
   if (!saldo) {
     return (
       <td className="whitespace-nowrap px-4 py-3 text-right">
-        {loading ? <span className="inline-block h-3.5 w-16 animate-pulse rounded bg-slate-100" /> : <span className="text-slate-300">—</span>}
+        {loading ? <span className="inline-block h-3.5 w-16 animate-pulse rounded bg-neutral-100" /> : <span className="text-neutral-300">—</span>}
       </td>
     );
   }
@@ -501,7 +484,7 @@ function SaldoCell({ saldo, normal, loading }: { saldo?: CoaBalance; normal: Nor
       className="whitespace-nowrap px-4 py-3 text-right"
       title={`Debit ${fmtSaldo.format(saldo.debit)} · Credit ${fmtSaldo.format(saldo.credit)}${abnormal ? ' · balance is on the opposite side of the normal balance' : ''}`}
     >
-      <span className={`font-mono text-sm tabular-nums ${nol ? 'text-slate-400' : abnormal ? 'font-semibold text-red-600' : 'font-semibold text-foreground'}`}>
+      <span className={`font-mono text-sm tabular-nums ${nol ? 'text-neutral-400' : abnormal ? 'font-semibold text-rose-600' : 'font-semibold text-neutral-900'}`}>
         {abnormal ? `(${fmtSaldo.format(Math.abs(nilai))})` : fmtSaldo.format(nilai)}
       </span>
     </td>
@@ -513,11 +496,11 @@ function EmptyRow({ colSpan, icon: Icon, title, hint }: { colSpan: number; icon:
     <tr>
       <td colSpan={colSpan} className="py-16">
         <div className="flex flex-col items-center text-center">
-          <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+          <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-100 text-neutral-500 ring-1 ring-neutral-200">
             <Icon size={20} />
           </span>
-          <p className="text-sm font-semibold text-foreground">{title}</p>
-          <p className="mt-1 max-w-sm text-xs text-muted-foreground">{hint}</p>
+          <p className="text-sm font-semibold text-neutral-900">{title}</p>
+          <p className="mt-1 max-w-sm text-xs text-neutral-500">{hint}</p>
         </div>
       </td>
     </tr>

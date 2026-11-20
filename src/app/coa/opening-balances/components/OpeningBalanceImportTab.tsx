@@ -26,11 +26,12 @@ import {
   type ImportModule,
   type ImportModuleSummary,
 } from '@/lib/openingBalanceImportStore';
+import { ObClientSwitcher } from './ObClientSwitcher';
 import { BatchStatusBadge, ControlStatusBanner, ControlStatusLine, IMPORT_MODULE_META, type ImportModuleMeta } from './importUi';
 
 const fmtPeriode = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric' });
 
-export default function OpeningBalanceImportTab({ ob, clientName }: { ob: OpeningBalanceDetail; clientName: string }) {
+export default function OpeningBalanceImportTab({ ob, clientName, onGantiClient, beralih }: { ob: OpeningBalanceDetail; clientName: string; onGantiClient?: (clientId: string) => void; beralih?: boolean }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [target, setTarget] = useState<ImportModule | null>(null);
@@ -104,7 +105,7 @@ export default function OpeningBalanceImportTab({ ob, clientName }: { ob: Openin
     }
   }
 
-  const fieldCls = 'flex h-10 w-full items-center rounded-xl border border-border bg-card px-3.5 text-sm font-semibold text-foreground shadow-sm';
+  const fieldCls = 'flex h-10 w-full items-center rounded-lg border border-neutral-400 bg-white px-3.5 text-sm font-semibold text-neutral-900 shadow-sm';
 
   return (
     <div className="space-y-5">
@@ -113,35 +114,38 @@ export default function OpeningBalanceImportTab({ ob, clientName }: { ob: Openin
       {/* Judul + konteks client/period (terkunci ke set saldo awal ini) */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Opening Balance</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Import opening data and templates for new client onboarding.</p>
+          <h2 className="text-2xl font-semibold tracking-tight text-neutral-900">Opening Balance</h2>
+          <p className="mt-1 text-sm font-medium text-neutral-500">Import opening data and templates for new client onboarding.</p>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(240px,1fr)_180px]">
           <div>
-            <p className="mb-1 text-xs font-medium text-muted-foreground">Client</p>
-            <div className={fieldCls} title="Fixed to this opening balance set"><span className="truncate uppercase">{clientName || '—'}</span></div>
+            <p className="mb-1 text-xs font-semibold text-neutral-600">Client</p>
+            {onGantiClient
+              ? <ObClientSwitcher value={ob.client_id} onChange={onGantiClient} disabled={beralih} />
+              : <div className={fieldCls} title="Fixed to this opening balance set"><span className="truncate uppercase">{clientName || '—'}</span></div>}
           </div>
           <div>
-            <p className="mb-1 text-xs font-medium text-muted-foreground">Period</p>
+            <p className="mb-1 text-xs font-semibold text-neutral-600">Period</p>
             <div className={fieldCls} title="Cut-off month of this opening balance set">{periode}</div>
           </div>
         </div>
       </div>
 
       {/* Kartu ringkasan */}
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {([
-          ['Total Modules', total, Layers, 'bg-sky-50 text-sky-600'],
-          ['Imported', imported, CheckCircle2, 'bg-emerald-50 text-emerald-600'],
-          ['Pending', total - imported, Clock, 'bg-amber-50 text-amber-600'],
-          ['Reconciled', kontrol.filter(k => k.status === 'reconciled').length, BarChart3, 'bg-violet-50 text-violet-600'],
-        ] as const).map(([label, val, Icon, cls]) => (
-          <div key={label} className="flex items-center gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${cls}`}><Icon size={26} /></div>
-            <div>
-              <p className="text-sm text-muted-foreground">{label}</p>
-              <p className="text-2xl font-bold tabular-nums text-foreground">{ringkasan ? val : '–'}</p>
+          ['Total Modules', total, Layers],
+          ['Imported', imported, CheckCircle2],
+          ['Pending', total - imported, Clock],
+          ['Reconciled', kontrol.filter(k => k.status === 'reconciled').length, BarChart3],
+        ] as const).map(([label, val, Icon]) => (
+          <div key={label} className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Icon size={16} /></span>
             </div>
+            <p className="mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{ringkasan ? val : '–'}</p>
           </div>
         ))}
       </div>
@@ -156,59 +160,66 @@ export default function OpeningBalanceImportTab({ ob, clientName }: { ob: Openin
       <ControlStatusBanner items={kontrol} obId={ob.id} />
 
       {/* Daftar modul import */}
-      <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+      <div className="divide-y divide-neutral-200 overflow-hidden rounded-[10px] border border-neutral-300 bg-white shadow-sm">
         {IMPORT_MODULE_META.map(mod => {
           const r = ringkasanOf(mod.key);
           const Icon = mod.icon;
           const latest = r?.latest ?? null;
           const statusKontrol = kontrol.find(k => k.module === mod.key);
+          const selesai = latest?.status === 'approved';
           return (
-            <div key={mod.key} className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center">
-              <div className="flex min-w-0 flex-1 items-center gap-4">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">{mod.no}</span>
-                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${mod.iconCls}`}><Icon size={20} /></div>
+            <div key={mod.key} className="group flex flex-col gap-4 px-5 py-5 transition-colors hover:bg-neutral-50/70 lg:flex-row lg:items-center">
+              <div className="flex min-w-0 flex-1 items-start gap-4">
+                <div className="flex shrink-0 flex-col items-center gap-2">
+                  <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${mod.iconCls}`}><Icon size={20} /></span>
+                </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground">{mod.title}</p>
-                  <p className="text-xs text-muted-foreground">{mod.desc}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Step {mod.no}</span>
+                    {selesai && <CheckCircle2 size={13} className="text-emerald-600" />}
+                  </div>
+                  <p className="mt-0.5 text-sm font-semibold tracking-tight text-neutral-900">{mod.title}</p>
+                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-neutral-500">{mod.desc}</p>
                   {!!r?.missing_mappings.length && (
-                    <p className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-amber-700">
+                    <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-amber-700">
                       <AlertTriangle size={12} /> Setup required ({r.setup.label}): {r.missing_mappings.join(', ')}
                     </p>
                   )}
                   {statusKontrol && <ControlStatusLine status={statusKontrol} />}
                   {latest && (
-                    <Link href={`/coa/opening-balances/${ob.id}/imports/${mod.key}/${latest.id}`} className="mt-0.5 block truncate text-[11px] font-medium text-sky-700 hover:underline">
+                    <Link href={`/coa/opening-balances/${ob.id}/imports/${mod.key}/${latest.id}`} className="mt-1 block truncate text-[11px] font-medium text-neutral-600 underline-offset-2 hover:text-neutral-900 hover:underline">
                       {latest.file_name} · {latest.total_rows} row{latest.total_rows === 1 ? '' : 's'}
                       {latest.error_rows > 0 && ` · ${latest.error_rows} error${latest.error_rows === 1 ? '' : 's'}`}
                     </Link>
                   )}
                 </div>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-3 lg:justify-end">
-                {ringkasan ? <BatchStatusBadge batch={latest} className="w-36" /> : <span className="w-36" />}
+              <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+                {ringkasan ? <BatchStatusBadge batch={latest} className="mr-2 w-36" /> : <span className="mr-2 w-36" />}
                 <button
                   onClick={() => pilihFile(mod.key)}
                   disabled={!!sibuk || !draft}
                   title={draft ? undefined : 'Opening balance is not in draft'}
-                  className="flex h-10 w-28 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800 disabled:opacity-50"
+                  className="flex h-9 w-28 items-center justify-center gap-2 rounded-lg bg-emerald-700 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-800 disabled:opacity-50"
                 >
-                  {sibuk?.module === mod.key && sibuk.jenis === 'upload' ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} />} Import
+                  {sibuk?.module === mod.key && sibuk.jenis === 'upload' ? <Loader2 size={15} className="animate-spin" /> : <CloudUpload size={15} />} Import
                 </button>
                 <button
                   onClick={() => unduhTemplate(mod)}
                   disabled={!!sibuk}
-                  className="flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
+                  title="Download Template"
+                  className="flex h-9 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3.5 text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-700 hover:text-neutral-900 disabled:opacity-50"
                 >
-                  {sibuk?.module === mod.key && sibuk.jenis === 'template' ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />} Download Template
+                  {sibuk?.module === mod.key && sibuk.jenis === 'template' ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />} Template
                 </button>
                 <Link
                   href={`/coa/opening-balances/${ob.id}/imports/${mod.key}`}
                   title="Import history & approval"
-                  className="relative flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-slate-50"
+                  className="relative flex h-9 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3.5 text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-700 hover:text-neutral-900"
                 >
-                  <History size={16} /> Monitor
+                  <History size={15} /> Monitor
                   {!!r?.pending_approval && (
-                    <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+                    <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-700 px-1 text-[10px] font-bold text-white">
                       {r.pending_approval}
                     </span>
                   )}
@@ -221,7 +232,7 @@ export default function OpeningBalanceImportTab({ ob, clientName }: { ob: Openin
 
       {infoMapping && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setInfoMapping(null)}>
-          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-md rounded-[10px] border border-neutral-300 bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600"><AlertTriangle size={18} /></div>
               <div className="min-w-0 flex-1">
@@ -241,8 +252,8 @@ export default function OpeningBalanceImportTab({ ob, clientName }: { ob: Openin
               <button onClick={() => setInfoMapping(null)} title="Close" className="text-muted-foreground hover:text-foreground"><X size={16} /></button>
             </div>
             <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setInfoMapping(null)} className="h-9 rounded-xl border border-border px-4 text-sm font-medium hover:bg-slate-50">Close</button>
-              <Link href={infoMapping.setup.href} className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white hover:bg-blue-800">
+              <button onClick={() => setInfoMapping(null)} className="h-9 rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50">Close</button>
+              <Link href={infoMapping.setup.href} className="flex h-9 items-center gap-1.5 rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">
                 Go to {infoMapping.setup.label.split(' > ').pop()} <ArrowRight size={14} />
               </Link>
             </div>
@@ -250,10 +261,10 @@ export default function OpeningBalanceImportTab({ ob, clientName }: { ob: Openin
         </div>
       )}
 
-      <div className="flex items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-5 py-3.5">
-        <Info size={18} className="shrink-0 text-sky-600" />
-        <p className="text-sm text-slate-700">
-          <span className="font-semibold text-sky-800">Recommended sequence:</span> COA &amp; non-subledger first, then AR, AP, Inventory, and Fixed Assets.
+      <div className="flex items-center gap-3 rounded-[10px] border border-neutral-300 bg-neutral-50 px-5 py-3.5">
+        <Info size={16} className="shrink-0 text-neutral-500" />
+        <p className="text-sm text-neutral-600">
+          <span className="font-semibold text-neutral-900">Recommended sequence:</span> COA &amp; non-subledger first, then AR, AP, Inventory, and Fixed Assets.
         </p>
       </div>
     </div>

@@ -78,35 +78,35 @@ export function SuspenseSelect({ accounts, value, onChange, disabled, className 
         aria-haspopup="listbox"
         aria-expanded={buka}
       >
-        <span className={`truncate ${terpilih ? '' : 'text-muted-foreground'}`}>
+        <span className={`truncate ${terpilih ? 'text-neutral-900' : 'text-neutral-400'}`}>
           {terpilih ? `${kodeAkun(terpilih.acc_no)} · ${terpilih.account_name}` : '— Choose a suspense account —'}
         </span>
-        <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
+        <ChevronDown size={14} className="shrink-0 text-neutral-500" />
       </button>
       {buka && (
-        <div className="absolute left-0 right-0 z-30 mt-1 rounded-lg border border-slate-200 bg-white shadow-lg">
-          <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
-            <Search size={14} className="shrink-0 text-muted-foreground" />
+        <div className="absolute left-0 right-0 z-30 mt-1 rounded-lg border border-neutral-300 bg-white shadow-lg">
+          <div className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2">
+            <Search size={14} className="shrink-0 text-neutral-500" />
             <input
               ref={cariRef}
               value={cari}
               onChange={e => setCari(e.target.value)}
               onKeyDown={onKey}
               placeholder="Search account code or name..."
-              className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              className="w-full bg-transparent text-sm outline-none placeholder:text-neutral-400"
             />
           </div>
           <div ref={daftarRef} role="listbox" className="max-h-72 overflow-y-auto py-1">
             {value && !cari && (
               <button type="button" onClick={() => pilih('')}
-                className="block w-full px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-slate-50">
+                className="block w-full px-3 py-1.5 text-left text-xs text-neutral-500 hover:bg-neutral-50">
                 Clear selection
               </button>
             )}
-            {rata.length === 0 && <p className="px-3 py-4 text-center text-xs text-muted-foreground">No accounts match &quot;{cari}&quot;.</p>}
+            {rata.length === 0 && <p className="px-3 py-4 text-center text-xs text-neutral-500">No accounts match &quot;{cari}&quot;.</p>}
             {grup.map(([kelas, list]) => (
               <div key={kelas}>
-                <p className="sticky top-0 bg-slate-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{kelas}</p>
+                <p className="sticky top-0 bg-neutral-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-neutral-600">{kelas}</p>
                 {list.map(a => {
                   idx += 1;
                   const i = idx;
@@ -119,11 +119,11 @@ export function SuspenseSelect({ accounts, value, onChange, disabled, className 
                       data-idx={i}
                       onMouseEnter={() => setAktif(i)}
                       onClick={() => pilih(a.id)}
-                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${i === aktif ? 'bg-emerald-50' : ''}`}
+                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${i === aktif ? 'bg-neutral-100' : ''}`}
                     >
-                      <span className="shrink-0 font-mono text-xs text-muted-foreground">{kodeAkun(a.acc_no)}</span>
+                      <span className="shrink-0 font-mono text-xs text-neutral-500">{kodeAkun(a.acc_no)}</span>
                       <span className="flex-1 truncate">{a.account_name}</span>
-                      {a.id === value && <Check size={14} className="shrink-0 text-emerald-600" />}
+                      {a.id === value && <Check size={14} className="shrink-0 text-neutral-800" />}
                     </button>
                   );
                 })}

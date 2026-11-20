@@ -26,7 +26,7 @@ export const IMPORT_MODULE_META: ImportModuleMeta[] = [
     title: 'Import Legacy COA + Non-Subledger Opening Balances',
     desc: 'Upload legacy chart of accounts and non-subledger balances in one file. New accounts are added to the COA on approval.',
     icon: FileText,
-    iconCls: 'bg-sky-50 text-sky-600',
+    iconCls: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
     amounts: [{ label: 'Debit', field: 'total_debit' }, { label: 'Credit', field: 'total_credit' }],
   },
   {
@@ -35,7 +35,7 @@ export const IMPORT_MODULE_META: ImportModuleMeta[] = [
     title: 'Import Opening AR',
     desc: 'Upload all customer invoices and their payments up to the cut-off date (settled and unpaid). Rows are grouped per Reference.',
     icon: Users,
-    iconCls: 'bg-emerald-50 text-emerald-600',
+    iconCls: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
     amounts: [{ label: 'Outstanding', field: 'total_debit' }],
   },
   {
@@ -44,7 +44,7 @@ export const IMPORT_MODULE_META: ImportModuleMeta[] = [
     title: 'Import Opening AP',
     desc: 'Upload all vendor bills and their payments up to the cut-off date (settled and unpaid). Rows are grouped per Reference.',
     icon: Users,
-    iconCls: 'bg-orange-50 text-orange-600',
+    iconCls: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
     amounts: [{ label: 'Outstanding', field: 'total_credit' }],
   },
   {
@@ -53,7 +53,7 @@ export const IMPORT_MODULE_META: ImportModuleMeta[] = [
     title: 'Import Opening Stock Inventory',
     desc: 'Upload opening stock by item, warehouse, quantity, and unit cost.',
     icon: Package,
-    iconCls: 'bg-violet-50 text-violet-600',
+    iconCls: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
     amounts: [{ label: 'Stock value', field: 'total_debit' }],
   },
   {
@@ -62,7 +62,7 @@ export const IMPORT_MODULE_META: ImportModuleMeta[] = [
     title: 'Import Asset Register',
     desc: 'Upload fixed asset register including cost, accumulated depreciation, and useful life.',
     icon: Building2,
-    iconCls: 'bg-rose-50 text-rose-600',
+    iconCls: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
     amounts: [{ label: 'Cost', field: 'total_debit' }, { label: 'Accum. dep.', field: 'total_credit' }],
   },
 ];
@@ -71,14 +71,14 @@ export const metaModul = (k: string) => IMPORT_MODULE_META.find(m => m.key === k
 
 type BadgeKey = ImportBatchStatus | 'not_started' | 'has_errors';
 
-const BADGE: Record<BadgeKey, { label: string; cls: string; icon: React.ElementType }> = {
-  not_started: { label: 'Not Started', cls: 'bg-slate-100 text-slate-600', icon: Circle },
-  has_errors: { label: 'Has Errors', cls: 'bg-red-50 text-red-700', icon: XCircle },
-  validated: { label: 'Ready', cls: 'bg-sky-50 text-sky-700', icon: Clock },
-  submitted: { label: 'Pending Approval', cls: 'bg-amber-50 text-amber-700', icon: ShieldCheck },
-  approved: { label: 'Imported', cls: 'bg-emerald-50 text-emerald-700', icon: CheckCircle2 },
-  rejected: { label: 'Rejected', cls: 'bg-red-50 text-red-700', icon: XCircle },
-  cancelled: { label: 'Cancelled', cls: 'bg-slate-100 text-slate-500', icon: Ban },
+const BADGE: Record<BadgeKey, { label: string; cls: string; icon: React.ElementType; iconCls: string }> = {
+  not_started: { label: 'Not Started', cls: '', icon: Circle, iconCls: 'text-neutral-400' },
+  has_errors: { label: 'Has Errors', cls: '', icon: XCircle, iconCls: 'text-red-600' },
+  validated: { label: 'Ready', cls: '', icon: Clock, iconCls: 'text-sky-600' },
+  submitted: { label: 'Pending Approval', cls: '', icon: ShieldCheck, iconCls: 'text-amber-600' },
+  approved: { label: 'Imported', cls: '', icon: CheckCircle2, iconCls: 'text-emerald-600' },
+  rejected: { label: 'Rejected', cls: '', icon: XCircle, iconCls: 'text-red-600' },
+  cancelled: { label: 'Cancelled', cls: '', icon: Ban, iconCls: 'text-neutral-400' },
 };
 
 export function badgeKey(batch: ImportBatch | null): BadgeKey {
@@ -91,8 +91,8 @@ export function BatchStatusBadge({ batch, status, className = '' }: { batch?: Im
   const s = BADGE[status ?? badgeKey(batch ?? null)];
   const Icon = s.icon;
   return (
-    <span className={`inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${s.cls} ${className}`}>
-      <Icon size={13} /> {s.label}
+    <span className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700 ${className}`}>
+      <Icon size={13} className={s.iconCls} /> {s.label}
     </span>
   );
 }
@@ -130,7 +130,7 @@ export function ControlStatusBanner({ items, obId }: { items: ImportControlStatu
   if (tampil.length === 0) return null;
   const pending = tampil.filter(s => s.status === 'pending');
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+    <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
       <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
       <div className="min-w-0 text-xs leading-relaxed text-amber-900">
         {pending.length > 0 && (

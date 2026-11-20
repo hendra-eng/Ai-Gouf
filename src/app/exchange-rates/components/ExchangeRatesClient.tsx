@@ -1,6 +1,7 @@
 'use client';
 
 // Management > Exchange Rates: master kurs terhadap IDR (global, dipakai semua klien).
+// Tema elegant monokrom (neutral-*) disamakan dengan halaman Sales / FX Transfers.
 // Kartu kurs terbaru, daftar kurs + filter, input manual, impor tempel dari spreadsheet,
 // dan tarik kurs otomatis. Backend: modules/management/exchange_rates_v1.py.
 
@@ -12,8 +13,10 @@ import {
   deleteRate, fetchLatestRates, fetchRateMeta, fetchRates, fetchRatesAuto, fmtRate, parsePasteRates, saveRate, saveRatesBulk, useExchangeRateData,
   type ExchangeRate, type LatestRate, type RateInput, type RateList, type RateMeta, type RateSource, type RateType,
 } from '@/lib/exchangeRateStore';
-import { btnOutline, btnPrimary, btnSmall, inputCls } from '@/components/arap/arapUi';
-import { FormField, Modal } from '@/components/shared/moduleUi';
+import { btnOutline, btnPrimary, btnSmall, EmptyRow, FormField, inputCls } from '@/components/arap/arapSalesUi';
+import { Modal } from '@/components/shared/moduleUi';
+import PageHeading from '@/components/shared/PageHeading';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
 
 const PER_HALAMAN = 25;
 const hariIni = () => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -58,44 +61,42 @@ export default function ExchangeRatesClient() {
 
   const jumlahHalaman = Math.max(1, Math.ceil(list.data.total / PER_HALAMAN));
   return (
-    <div className="min-h-screen bg-background pb-16">
-      <div className="mx-auto max-w-screen-2xl space-y-5 px-4 py-6 sm:px-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Exchange Rates</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Master kurs terhadap IDR (IDR per 1 unit mata uang asing). Dipakai semua klien dan terisi otomatis di form transaksi.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+    <div className={`min-h-screen bg-background pb-16 ${salesFont.className}`}>
+      <div className="mx-auto max-w-screen-2xl space-y-5 px-6 py-5 lg:px-8 xl:px-10">
+        <PageHeading
+          title="Exchange Rates"
+          description="Master kurs terhadap IDR (IDR per 1 unit mata uang asing). Dipakai semua klien dan terisi otomatis di form transaksi."
+          actions={<>
             <button onClick={refreshSemua} className={btnOutline} aria-label="Refresh"><RefreshCcw size={14} className={list.loading ? 'animate-spin' : ''} /> Refresh</button>
             {bisaTulis && <>
               <button onClick={() => setTarik(true)} className={btnOutline}><CloudDownload size={14} /> Fetch rates</button>
               <button onClick={() => setTempel(true)} className={btnOutline}><ClipboardPaste size={14} /> Paste import</button>
               <button onClick={() => setForm({ row: null })} className={btnPrimary}><Plus size={14} /> Add rate</button>
             </>}
-          </div>
-        </div>
+          </>}
+        />
 
         {!bisaTulis && user && (
-          <div className="flex items-start gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
+          <div className="flex items-start gap-2 rounded-xl border border-neutral-300 bg-neutral-50 px-4 py-3 text-xs text-neutral-700">
             <Info size={14} className="mt-0.5 shrink-0" /> Exchange rates can be changed by Manager level and above. You can view them here.
           </div>
         )}
-        {meta.error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{meta.error}</div>}
+        {meta.error && <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">{meta.error}</div>}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {latest.loading && latest.data.length === 0 ? [0, 1, 2, 3].map(i => <div key={i} className="h-28 animate-pulse rounded-2xl bg-slate-100" />)
+          {latest.loading && latest.data.length === 0 ? [0, 1, 2, 3].map(i => <div key={i} className="h-28 animate-pulse rounded-xl bg-neutral-100" />)
             : latest.data.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-border bg-card p-5 text-sm text-muted-foreground sm:col-span-2 xl:col-span-4">
+              <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-5 text-sm text-neutral-500 sm:col-span-2 xl:col-span-4">
                 No exchange rates yet. {bisaTulis ? 'Use “Fetch rates” to pull the latest USD/SGD rates, or add one manually.' : 'Ask a Manager to add the first rates.'}
               </div>
             ) : latest.data.slice(0, 8).map(r => <LatestCard key={r.currency} r={r} />)}
         </div>
 
-        <section className="rounded-2xl border border-border bg-card shadow-sm">
-          <div className="flex flex-col gap-3 px-5 pb-3 pt-5">
+        <section className="relative rounded-xl border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-xl before:bg-neutral-800">
+          <div className="flex flex-col gap-3 rounded-t-xl border-b border-neutral-300 bg-neutral-50 px-5 pb-3 pt-4">
             <div>
-              <h2 className="text-lg font-bold text-foreground">Rate history</h2>
-              <p className="text-xs text-muted-foreground">{list.data.total} rate{list.data.total === 1 ? '' : 's'}. If a date has no rate, forms use the latest earlier rate (weekends and holidays).</p>
+              <h2 className="text-sm font-semibold text-neutral-900">Rate history</h2>
+              <p className="mt-0.5 text-xs font-medium text-neutral-500">{list.data.total} rate{list.data.total === 1 ? '' : 's'}. If a date has no rate, forms use the latest earlier rate (weekends and holidays).</p>
             </div>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
               <select value={currency} onChange={e => setCurrency(e.target.value)} className={inputCls} aria-label="Currency">
@@ -114,34 +115,33 @@ export default function ExchangeRatesClient() {
               <button onClick={() => { setCurrency(''); setRateType(''); setSource(''); setDari(''); setSampai(''); }} className={btnOutline}>Clear</button>
             </div>
           </div>
-          <div className="overflow-x-auto px-5 pb-2">
-            <table className="w-full min-w-[860px] text-sm">
+          <div className="overflow-x-auto scrollbar-thin">
+            <table className="w-full min-w-[860px] select-text border-separate border-spacing-0 text-xs">
               <thead>
-                <tr className="border-y border-border bg-slate-50 text-left text-xs font-medium text-slate-600">
-                  <th className="px-3 py-2.5">Date</th><th className="px-3 py-2.5">Currency</th><th className="px-3 py-2.5">Type</th>
-                  <th className="px-3 py-2.5 text-right">Rate (IDR)</th><th className="px-3 py-2.5">Source</th><th className="px-3 py-2.5">Notes</th>
-                  <th className="px-3 py-2.5">Updated by</th>{bisaTulis && <th className="px-3 py-2.5 text-right">Actions</th>}
+                <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:whitespace-nowrap [&>th]:border-y [&>th]:border-neutral-800 [&>th]:font-bold">
+                  <th className="px-2 py-2">Date</th><th className="px-2 py-2">Currency</th><th className="px-2 py-2">Type</th>
+                  <th className="px-2 py-2 text-right">Rate (IDR)</th><th className="px-2 py-2">Source</th><th className="px-2 py-2">Notes</th>
+                  <th className="px-2 py-2">Updated by</th>{bisaTulis && <th className="px-2 py-2 text-right">Actions</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
-                {list.loading && list.data.items.length === 0 ? [0, 1, 2].map(i => <tr key={i}><td colSpan={8} className="px-3 py-3"><div className="h-5 animate-pulse rounded bg-slate-100" /></td></tr>)
-                  : list.data.items.length === 0 ? <tr><td colSpan={8} className="px-3 py-10 text-center text-xs text-muted-foreground">No rates match the filters.</td></tr>
+              <tbody>
+                {list.data.items.length === 0 ? <EmptyRow cols={bisaTulis ? 8 : 7} text="No rates match the filters." loading={list.loading} />
                     : list.data.items.map(r => (
-                      <tr key={r.id} className="hover:bg-slate-50/60">
-                        <td className="px-3 py-2.5 whitespace-nowrap">{tgl(r.rate_date)}</td>
-                        <td className="px-3 py-2.5 font-semibold">{r.currency}</td>
-                        <td className="px-3 py-2.5">{JENIS_LABEL[r.rate_type]}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{fmtRate(r.rate)}</td>
-                        <td className="px-3 py-2.5">
-                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${r.source === 'auto' ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-700'}`}>{r.source === 'auto' ? 'Automatic' : 'Manual'}</span>
-                          {r.source_name && <span className="ml-1.5 text-xs text-muted-foreground">{r.source_name}</span>}
+                      <tr key={r.id} className="[&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200">
+                        <td className="px-2 py-2 whitespace-nowrap">{tgl(r.rate_date)}</td>
+                        <td className="px-2 py-2 font-semibold">{r.currency}</td>
+                        <td className="px-2 py-2">{JENIS_LABEL[r.rate_type]}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{fmtRate(r.rate)}</td>
+                        <td className="px-2 py-2">
+                          <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${r.source === 'auto' ? 'bg-neutral-800 text-white' : 'bg-neutral-200 text-neutral-800'}`}>{r.source === 'auto' ? 'Automatic' : 'Manual'}</span>
+                          {r.source_name && <span className="ml-1.5 text-xs text-neutral-500">{r.source_name}</span>}
                         </td>
-                        <td className="max-w-[220px] truncate px-3 py-2.5 text-xs text-muted-foreground" title={r.notes ?? ''}>{r.notes || '-'}</td>
-                        <td className="px-3 py-2.5 text-xs text-muted-foreground">{r.edited_by_name || r.created_by_name || '-'}</td>
+                        <td className="max-w-[220px] truncate px-2 py-2 text-xs text-neutral-500" title={r.notes ?? ''}>{r.notes || '-'}</td>
+                        <td className="px-2 py-2 text-xs text-neutral-500">{r.edited_by_name || r.created_by_name || '-'}</td>
                         {bisaTulis && (
-                          <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                          <td className="px-2 py-2 text-right whitespace-nowrap">
                             <button onClick={() => setForm({ row: r })} className={`${btnSmall} mr-1.5`} aria-label="Edit"><Pencil size={12} /></button>
-                            <button onClick={() => hapus(r)} className={`${btnSmall} text-red-600`} aria-label="Delete"><Trash2 size={12} /></button>
+                            <button onClick={() => hapus(r)} className={`${btnSmall} text-red-700`} aria-label="Delete"><Trash2 size={12} /></button>
                           </td>
                         )}
                       </tr>
@@ -150,11 +150,11 @@ export default function ExchangeRatesClient() {
             </table>
           </div>
           {list.data.total > PER_HALAMAN && (
-            <div className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between border-t border-neutral-300 px-5 py-3 text-xs text-neutral-500">
               <span>{page * PER_HALAMAN + 1}–{Math.min(list.data.total, (page + 1) * PER_HALAMAN)} of {list.data.total}</span>
               <div className="flex gap-1.5">
-                <button disabled={page === 0} onClick={() => setPage(p => p - 1)} className="rounded-lg border border-border px-2.5 py-1 hover:bg-slate-50 disabled:opacity-40">Prev</button>
-                <button disabled={page >= jumlahHalaman - 1} onClick={() => setPage(p => p + 1)} className="rounded-lg border border-border px-2.5 py-1 hover:bg-slate-50 disabled:opacity-40">Next</button>
+                <button disabled={page === 0} onClick={() => setPage(p => p - 1)} className="rounded-lg border border-neutral-300 px-2.5 py-1 hover:border-neutral-700 hover:bg-neutral-50 disabled:opacity-40">Prev</button>
+                <button disabled={page >= jumlahHalaman - 1} onClick={() => setPage(p => p + 1)} className="rounded-lg border border-neutral-300 px-2.5 py-1 hover:border-neutral-700 hover:bg-neutral-50 disabled:opacity-40">Next</button>
               </div>
             </div>
           )}
@@ -172,21 +172,21 @@ function LatestCard({ r }: { r: LatestRate }) {
   const naik = (r.change ?? 0) > 0, turun = (r.change ?? 0) < 0;
   const basi = r.days_old > 4;
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+    <div className="relative rounded-xl border border-neutral-300 bg-white p-4 shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-xl before:bg-neutral-800">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-bold text-foreground">{r.currency} / IDR</span>
+        <span className="text-sm font-semibold text-neutral-900">{r.currency} / IDR</span>
         {basi
-          ? <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700"><TriangleAlert size={11} /> {r.days_old}d old</span>
-          : <span className="text-[11px] text-muted-foreground">{tgl(r.rate_date)}</span>}
+          ? <span className="inline-flex items-center gap-1 rounded-md bg-neutral-800 px-2 py-0.5 text-[11px] font-semibold text-white"><TriangleAlert size={11} /> {r.days_old}d old</span>
+          : <span className="text-[11px] text-neutral-500">{tgl(r.rate_date)}</span>}
       </div>
-      <p className="mt-2 text-2xl font-bold tabular-nums text-foreground">{fmtRate(r.rate)}</p>
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-neutral-900">{fmtRate(r.rate)}</p>
       <div className="mt-1 flex items-center justify-between text-xs">
-        {r.change_pct == null ? <span className="text-muted-foreground">No earlier rate</span> : (
-          <span className={`inline-flex items-center gap-0.5 font-medium ${naik ? 'text-emerald-600' : turun ? 'text-red-600' : 'text-muted-foreground'}`}>
+        {r.change_pct == null ? <span className="text-neutral-500">No earlier rate</span> : (
+          <span className={`inline-flex items-center gap-0.5 font-medium ${naik ? 'text-neutral-900' : turun ? 'text-red-700' : 'text-neutral-500'}`}>
             {naik ? <ArrowUpRight size={13} /> : turun ? <ArrowDownRight size={13} /> : null}{r.change_pct > 0 ? '+' : ''}{r.change_pct.toFixed(2)}%
           </span>
         )}
-        <span className="text-muted-foreground">{r.source === 'auto' ? 'Automatic' : 'Manual'}</span>
+        <span className="text-neutral-500">{r.source === 'auto' ? 'Automatic' : 'Manual'}</span>
       </div>
     </div>
   );
@@ -253,9 +253,9 @@ function PasteDialog({ meta, onClose }: { meta: RateMeta | null; onClose: () => 
         </select>
       </FormField>
       <textarea rows={9} value={teks} onChange={e => { setTeks(e.target.value); setGalat([]); }} placeholder={'USD\t2026-11-12\t16000\nSGD\t2026-11-12\t11750.5\nUSD\t2026-11-12\t15950\ttax'} className={`${inputCls} font-mono text-xs`} />
-      <p className="text-xs text-muted-foreground">{hasil.rows.length} valid row{hasil.rows.length === 1 ? '' : 's'}{hasil.bad.length ? `, ${hasil.bad.length} not recognised` : ''}.</p>
-      {hasil.bad.length > 0 && <ul className="max-h-24 overflow-y-auto rounded-xl bg-amber-50 p-3 text-xs text-amber-800">{hasil.bad.slice(0, 20).map(b => <li key={b}>{b}</li>)}</ul>}
-      {galat.length > 0 && <ul className="max-h-24 overflow-y-auto rounded-xl bg-red-50 p-3 text-xs text-red-700">{galat.map(b => <li key={b}>{b}</li>)}</ul>}
+      <p className="text-xs text-neutral-500">{hasil.rows.length} valid row{hasil.rows.length === 1 ? '' : 's'}{hasil.bad.length ? `, ${hasil.bad.length} not recognised` : ''}.</p>
+      {hasil.bad.length > 0 && <ul className="max-h-24 overflow-y-auto rounded-lg border border-neutral-300 bg-neutral-100 p-3 text-xs text-neutral-700">{hasil.bad.slice(0, 20).map(b => <li key={b}>{b}</li>)}</ul>}
+      {galat.length > 0 && <ul className="max-h-24 overflow-y-auto rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-700">{galat.map(b => <li key={b}>{b}</li>)}</ul>}
     </Modal>
   );
 }
@@ -281,7 +281,7 @@ function FetchDialog({ meta, onClose }: { meta: RateMeta | null; onClose: () => 
       footer={<><button onClick={onClose} className={btnOutline}>Close</button><button onClick={jalan} disabled={busy || pilih.length === 0} className={btnPrimary}>{busy ? <Loader2 size={14} className="animate-spin" /> : <CloudDownload size={14} />} Fetch</button></>}>
       <div className="flex flex-wrap gap-2">
         {(meta?.currencies ?? []).map(c => (
-          <label key={c.code} className={`cursor-pointer rounded-xl border px-3 py-1.5 text-xs font-medium ${pilih.includes(c.code) ? 'border-[#0F7D4E] bg-emerald-50 text-[#0F7D4E]' : 'border-border text-muted-foreground'}`}>
+          <label key={c.code} className={`cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${pilih.includes(c.code) ? 'border-neutral-800 bg-neutral-800 text-white' : 'border-neutral-300 bg-white text-neutral-700 hover:border-neutral-700'}`}>
             <input type="checkbox" className="sr-only" checked={pilih.includes(c.code)} onChange={() => toggle(c.code)} /> {c.code}
           </label>
         ))}
@@ -289,8 +289,8 @@ function FetchDialog({ meta, onClose }: { meta: RateMeta | null; onClose: () => 
       <FormField label="Date (optional)" hint="Empty = latest published rate. A weekend date returns the previous business day.">
         <input type="date" value={tanggal} max={hariIni()} onChange={e => setTanggal(e.target.value)} className={inputCls} />
       </FormField>
-      {hasil.length > 0 && <ul className="rounded-xl bg-slate-50 p-3 text-xs text-foreground">{hasil.map(h => <li key={h}>{h}</li>)}</ul>}
-      <p className="text-[11px] text-muted-foreground">Fetched rates are saved as “middle” rates. For BI JISDOR or the KMK tax rate, enter them manually or paste them.</p>
+      {hasil.length > 0 && <ul className="rounded-lg border border-neutral-300 bg-neutral-50 p-3 text-xs text-neutral-900">{hasil.map(h => <li key={h}>{h}</li>)}</ul>}
+      <p className="text-[11px] text-neutral-500">Fetched rates are saved as “middle” rates. For BI JISDOR or the KMK tax rate, enter them manually or paste them.</p>
     </Modal>
   );
 }

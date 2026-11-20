@@ -3,12 +3,19 @@
 import { useTabSuara } from '@/lib/tabSuara';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
+import { BarChart3, Search, TriangleAlert, Paperclip, Scale, ShieldCheck } from 'lucide-react';
+import PageHeading from '@/components/shared/PageHeading';
+import { btnOutline, btnPrimary } from '@/components/arap/arapSalesUi';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
 import { CheckCircleIcon, PlusIcon, ArrowDownTrayIcon, FunnelIcon, MagnifyingGlassIcon, XMarkIcon, PaperClipIcon, TrashIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
 import { useAuditTrail } from './lib/useAuditTrail';
 import { useAuditData, type AuditFinding, type FindingRisk, type FindingStatus, type AuditEvidenceItem } from './lib/auditBridge';
 import { tambahAuditFinding, ubahAuditFinding, tambahAuditEvidence, hapusAuditEvidence, auditEvidenceFileUrl, ubahAuditStage } from '@/app/zafeb-ai/lib/api';
+
+// Tema elegant monokrom (neutral-*) disamakan dengan halaman Sales; merah hanya untuk risiko Critical / nilai negatif.
+const TH = 'text-left text-xs font-bold text-black whitespace-nowrap px-2 py-2 border-y border-neutral-800';
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 // [FIX] Sebelumnya auditStages/findings/auditActivities di sini SENGAJA
@@ -21,17 +28,36 @@ import { tambahAuditFinding, ubahAuditFinding, tambahAuditEvidence, hapusAuditEv
 // (diturunkan dari jurnal_posting) -- konsep berbeda, sengaja dibiarkan
 // terpisah (lihat catatan di auditBridge.ts).
 
+// Kartu KPI -- desain sama dengan OverviewKpiTile di halaman Sales (strip hitam di dalam kartu, ikon, bar proporsi).
+function AuditKpiTile({ label, value, sub, icon: Icon }: {
+  label: string; value: string; sub?: string; icon: React.ElementType;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <div className="relative flex items-start justify-between gap-2">
+        <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
+          <Icon size={16} className="text-neutral-700" />
+        </span>
+      </div>
+      <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900" title={value}>{value}</p>
+      <p className="relative h-4 truncate text-[11px] font-medium text-neutral-500">{sub ?? '\u00A0'}</p>
+    </div>
+  );
+}
+
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function RiskBadge({ risk }: { risk: FindingRisk }) {
   const map: Record<FindingRisk, string> = {
-    Low: 'bg-positive-subtle text-positive border-[#A7F3D0]',
-    Medium: 'bg-warning-bg text-warning border-[#FDE68A]',
-    High: 'bg-[#FFF7ED] text-[#EA580C] border-[#FED7AA]',
-    Critical: 'bg-negative-subtle text-negative border-[#FECACA]',
+    Low: 'bg-neutral-100 text-neutral-700 border-neutral-300',
+    Medium: 'bg-neutral-200 text-neutral-800 border-neutral-400',
+    High: 'bg-neutral-800 text-white border-neutral-800',
+    Critical: 'bg-red-50 text-red-700 border-red-300',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${map[risk]}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border ${map[risk]}`}>
       {risk}
     </span>
   );
@@ -39,14 +65,14 @@ function RiskBadge({ risk }: { risk: FindingRisk }) {
 
 function StatusBadge({ status }: { status: FindingStatus }) {
   const map: Record<FindingStatus, string> = {
-    Open: 'bg-negative-subtle text-negative',
-    'Under Review': 'bg-[#EFF6FF] text-primary',
-    'Management Response': 'bg-warning-bg text-warning',
-    Resolved: 'bg-positive-subtle text-positive',
-    Accepted: 'bg-ai-subtle text-ai',
+    Open: 'bg-neutral-800 text-white',
+    'Under Review': 'bg-neutral-200 text-neutral-800',
+    'Management Response': 'bg-neutral-100 text-neutral-700 border border-neutral-300',
+    Resolved: 'bg-white text-neutral-700 border border-neutral-300',
+    Accepted: 'bg-neutral-100 text-neutral-500',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${map[status]}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold ${map[status]}`}>
       {status}
     </span>
   );
@@ -124,19 +150,19 @@ function FindingDrawer({ finding, onClose, evidence, clientId, onChanged }: Find
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-border bg-gradient-to-r from-[#F8FAFC] to-white">
+        <div className="px-5 py-4 border-b border-neutral-300 bg-neutral-50">
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-mono font-bold text-primary">{finding.id}</span>
+                <span className="text-xs font-mono font-bold text-neutral-900">{finding.id}</span>
                 <RiskBadge risk={finding.risk} />
                 <StatusBadge status={finding.status} />
               </div>
-              <h2 className="text-sm font-bold text-foreground">{finding.description}</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">{finding.area} · {finding.account}</p>
+              <h2 className="text-sm font-bold text-neutral-900">{finding.description}</h2>
+              <p className="text-xs text-neutral-500 mt-0.5">{finding.area} · {finding.account}</p>
             </div>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-background transition-colors">
-              <XMarkIcon className="w-4 h-4 text-muted-foreground" />
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors">
+              <XMarkIcon className="w-4 h-4 text-neutral-500" />
             </button>
           </div>
         </div>
@@ -145,115 +171,115 @@ function FindingDrawer({ finding, onClose, evidence, clientId, onChanged }: Find
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Financial Impact */}
           <div className="grid grid-cols-3 gap-3">
-            <div className="p-3 bg-negative-subtle rounded-lg border border-[#FECACA]">
-              <p className="text-[10px] text-muted-light mb-1">Financial Impact</p>
+            <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-300">
+              <p className="text-[10px] text-neutral-500 mb-1">Financial Impact</p>
               <p className="text-sm font-bold font-mono text-negative">{fx(formatIDR(finding.amount))}</p>
             </div>
-            <div className="p-3 bg-background rounded-lg border border-border">
-              <p className="text-[10px] text-muted-light mb-1">Assigned To</p>
-              <p className="text-sm font-semibold text-foreground">{finding.assignedTo}</p>
+            <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-300">
+              <p className="text-[10px] text-neutral-500 mb-1">Assigned To</p>
+              <p className="text-sm font-semibold text-neutral-900">{finding.assignedTo}</p>
             </div>
-            <div className="p-3 bg-background rounded-lg border border-border">
-              <p className="text-[10px] text-muted-light mb-1">Due Date</p>
-              <p className="text-sm font-semibold text-foreground">{finding.dueDate}</p>
+            <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-300">
+              <p className="text-[10px] text-neutral-500 mb-1">Due Date</p>
+              <p className="text-sm font-semibold text-neutral-900">{finding.dueDate}</p>
             </div>
           </div>
 
           {/* Risk Assessment */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-light mb-2">Risk Assessment</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 mb-2">Risk Assessment</p>
             <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 bg-background rounded-lg border border-border">
-                <p className="text-[10px] text-muted-foreground mb-1">Likelihood</p>
+              <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-300">
+                <p className="text-[10px] text-neutral-500 mb-1">Likelihood</p>
                 <div className="flex gap-1">
                   {[1,2,3,4,5].map(n => (
-                    <div key={n} className={`h-2 flex-1 rounded-sm ${n <= finding.likelihood ? 'bg-negative' : 'bg-border'}`} />
+                    <div key={n} className={`h-2 flex-1 rounded-sm ${n <= finding.likelihood ? 'bg-neutral-800' : 'bg-neutral-200'}`} />
                   ))}
                 </div>
-                <p className="text-[10px] text-muted-light mt-1">{finding.likelihood}/5</p>
+                <p className="text-[10px] text-neutral-500 mt-1">{finding.likelihood}/5</p>
               </div>
-              <div className="p-3 bg-background rounded-lg border border-border">
-                <p className="text-[10px] text-muted-foreground mb-1">Impact</p>
+              <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-300">
+                <p className="text-[10px] text-neutral-500 mb-1">Impact</p>
                 <div className="flex gap-1">
                   {[1,2,3,4,5].map(n => (
-                    <div key={n} className={`h-2 flex-1 rounded-sm ${n <= finding.impact ? 'bg-warning' : 'bg-border'}`} />
+                    <div key={n} className={`h-2 flex-1 rounded-sm ${n <= finding.impact ? 'bg-neutral-600' : 'bg-neutral-200'}`} />
                   ))}
                 </div>
-                <p className="text-[10px] text-muted-light mt-1">{finding.impact}/5</p>
+                <p className="text-[10px] text-neutral-500 mt-1">{finding.impact}/5</p>
               </div>
             </div>
           </div>
 
           {/* Root Cause */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-light mb-2">Root Cause</p>
-            <p className="text-xs text-foreground leading-relaxed bg-warning-bg p-3 rounded-lg border border-[#FDE68A]">{finding.rootCause}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 mb-2">Root Cause</p>
+            <p className="text-xs text-neutral-900 leading-relaxed bg-neutral-50 p-3 rounded-lg border border-neutral-300">{finding.rootCause}</p>
           </div>
 
           {/* Recommendation */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-light mb-2">Recommendation</p>
-            <p className="text-xs text-foreground leading-relaxed bg-[#EFF6FF] p-3 rounded-lg border border-[#DBEAFE]">{fx(finding.recommendation)}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 mb-2">Recommendation</p>
+            <p className="text-xs text-neutral-900 leading-relaxed bg-neutral-50 p-3 rounded-lg border border-neutral-300">{fx(finding.recommendation)}</p>
           </div>
 
           {/* Management Response */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-light mb-2">Management Response</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 mb-2">Management Response</p>
             {finding.managementResponse ? (
-              <p className="text-xs text-foreground leading-relaxed bg-positive-subtle p-3 rounded-lg border border-[#A7F3D0]">{finding.managementResponse}</p>
+              <p className="text-xs text-neutral-900 leading-relaxed bg-neutral-50 p-3 rounded-lg border border-neutral-300">{finding.managementResponse}</p>
             ) : (
-              <div className="p-3 bg-background rounded-lg border border-dashed border-[#CBD5E1] text-center">
-                <p className="text-xs text-muted-light">No management response yet</p>
+              <div className="p-3 bg-neutral-50 rounded-lg border border-dashed border-neutral-300 text-center">
+                <p className="text-xs text-neutral-500">No management response yet</p>
               </div>
             )}
           </div>
 
           {/* Evidence */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-light mb-2">Evidence</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 mb-2">Evidence</p>
             <div className="space-y-1.5">
               {evidence.length > 0 ? (
                 evidence.map((ev) => (
-                  <div key={ev.id} className="flex items-center gap-2 p-2 bg-background rounded-lg border border-border">
-                    <PaperClipIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                  <div key={ev.id} className="flex items-center gap-2 p-2 bg-neutral-50 rounded-lg border border-neutral-300">
+                    <PaperClipIcon className="w-3.5 h-3.5 text-neutral-500" />
                     <a
                       href={auditEvidenceFileUrl(clientId, ev.id)}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-xs text-foreground flex-1 hover:text-primary hover:underline truncate"
+                      className="text-xs text-neutral-900 flex-1 hover:text-neutral-900 hover:underline truncate"
                     >
                       {ev.fileName}
                     </a>
-                    <span className="text-[10px] text-muted-light">{ev.fileSize ? `${Math.round(ev.fileSize / 1024)} KB` : ''}</span>
+                    <span className="text-[10px] text-neutral-500">{ev.fileSize ? `${Math.round(ev.fileSize / 1024)} KB` : ''}</span>
                     <button onClick={() => handleDeleteEvidence(ev.id)} className="p-1 rounded hover:bg-negative-subtle">
-                      <TrashIcon className="w-3 h-3 text-muted-foreground hover:text-negative" />
+                      <TrashIcon className="w-3 h-3 text-neutral-500 hover:text-negative" />
                     </button>
                   </div>
                 ))
               ) : (
-                <div className="p-3 bg-background rounded-lg border border-dashed border-[#CBD5E1] text-center">
-                  <p className="text-xs text-muted-light">No evidence attached</p>
+                <div className="p-3 bg-neutral-50 rounded-lg border border-dashed border-neutral-300 text-center">
+                  <p className="text-xs text-neutral-500">No evidence attached</p>
                 </div>
               )}
-              {uploading && <p className="text-[10px] text-muted-light">Mengunggah...</p>}
+              {uploading && <p className="text-[10px] text-neutral-500">Mengunggah...</p>}
             </div>
           </div>
         </div>
 
         {/* Actions */}
-        <div className="flex-shrink-0 px-5 py-4 border-t border-border bg-background">
+        <div className="flex-shrink-0 px-5 py-4 border-t border-neutral-300 bg-neutral-50">
           <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected} />
           <div className="flex flex-wrap gap-2">
             {[
-              { label: 'Review', color: 'bg-[#EFF6FF] text-primary border-[#DBEAFE]' },
-              { label: 'Add Evidence', color: 'bg-ai-subtle text-ai border-[#EDE9FE]', icon: ArrowUpTrayIcon },
-              { label: 'Resolve', color: 'bg-positive-subtle text-positive border-[#A7F3D0]' },
-              { label: 'Escalate', color: 'bg-negative-subtle text-negative border-[#FECACA]' },
+              { label: 'Review', color: 'bg-neutral-800 text-white border-neutral-800 hover:bg-neutral-700' },
+              { label: 'Add Evidence', color: 'bg-white text-neutral-800 border-neutral-300 hover:border-neutral-700 hover:bg-neutral-50', icon: ArrowUpTrayIcon },
+              { label: 'Resolve', color: 'bg-white text-neutral-800 border-neutral-300 hover:border-neutral-700 hover:bg-neutral-50' },
+              { label: 'Escalate', color: 'bg-white text-red-700 border-red-300 hover:bg-red-50' },
             ].map(({ label, color }) => (
               <button
                 key={label}
                 onClick={() => handleAction(label)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-all hover:opacity-80 ${color} ${activeAction === label ? 'opacity-60' : ''}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border shadow-sm transition-colors ${color} ${activeAction === label ? 'opacity-60' : ''}`}
               >
                 {activeAction === label ? '✓ Done' : label}
               </button>
@@ -272,24 +298,24 @@ function RiskHeatmap({ findings, onFindingClick }: { findings: AuditFinding[]; o
 
   const cellColor = (likelihood: number, impact: number): string => {
     const score = likelihood * impact;
-    if (score >= 16) return 'bg-negative-subtle border-[#FECACA]';
-    if (score >= 9) return 'bg-[#FFF7ED] border-[#FED7AA]';
-    if (score >= 4) return 'bg-warning-bg border-[#FDE68A]';
-    return 'bg-positive-subtle border-[#A7F3D0]';
+    if (score >= 16) return 'bg-neutral-400 border-neutral-500';
+    if (score >= 9) return 'bg-neutral-300 border-neutral-400';
+    if (score >= 4) return 'bg-neutral-200 border-neutral-300';
+    return 'bg-neutral-100 border-neutral-200';
   };
 
   const dotColor = (risk: FindingRisk): string => {
-    if (risk === 'Critical') return 'bg-negative';
-    if (risk === 'High') return 'bg-[#EA580C]';
-    if (risk === 'Medium') return 'bg-warning';
-    return 'bg-positive';
+    if (risk === 'Critical') return 'bg-red-700';
+    if (risk === 'High') return 'bg-neutral-900';
+    if (risk === 'Medium') return 'bg-neutral-700';
+    return 'bg-neutral-500';
   };
 
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-foreground">Risk Matrix</h3>
-        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+        <h3 className="text-sm font-semibold text-neutral-900">Risk Matrix</h3>
+        <div className="flex items-center gap-3 text-[10px] text-neutral-500">
           {(['Critical', 'High', 'Medium', 'Low'] as FindingRisk[]).map(r => (
             <div key={r} className="flex items-center gap-1">
               <div className={`w-2 h-2 rounded-full ${dotColor(r)}`} />
@@ -301,7 +327,7 @@ function RiskHeatmap({ findings, onFindingClick }: { findings: AuditFinding[]; o
 
       <div className="relative">
         {/* Y-axis label */}
-        <div className="absolute -left-6 top-1/2 -translate-y-1/2 -rotate-90 text-[10px] font-semibold uppercase tracking-wider text-muted-light whitespace-nowrap">
+        <div className="absolute -left-6 top-1/2 -translate-y-1/2 -rotate-90 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 whitespace-nowrap">
           Likelihood →
         </div>
 
@@ -329,7 +355,7 @@ function RiskHeatmap({ findings, onFindingClick }: { findings: AuditFinding[]; o
                       </button>
                     ))}
                     {hoveredFinding && cellFindings.find(f => f.id === hoveredFinding) && (
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-40 bg-foreground text-white text-[10px] rounded-lg p-2 z-10 pointer-events-none">
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-40 bg-neutral-900 text-white text-[10px] rounded-lg p-2 z-10 pointer-events-none">
                         {cellFindings.find(f => f.id === hoveredFinding)?.description}
                       </div>
                     )}
@@ -342,10 +368,10 @@ function RiskHeatmap({ findings, onFindingClick }: { findings: AuditFinding[]; o
           {/* X-axis labels */}
           <div className="grid grid-cols-5 gap-1">
             {['Low', 'Minor', 'Moderate', 'Major', 'Critical'].map(label => (
-              <div key={label} className="text-center text-[9px] text-muted-light font-medium">{label}</div>
+              <div key={label} className="text-center text-[9px] text-neutral-500 font-medium">{label}</div>
             ))}
           </div>
-          <p className="text-center text-[10px] font-semibold uppercase tracking-wider text-muted-light mt-1">Impact →</p>
+          <p className="text-center text-[10px] font-semibold uppercase tracking-wider text-neutral-500 mt-1">Impact →</p>
         </div>
       </div>
     </div>
@@ -401,64 +427,54 @@ export default function AuditPage() {
   }
 
   const kpis = [
-    { label: 'Audit Completion', value: `${kpiData.completionPct}%`, color: '#0F7D4E', bg: '#ECFDF5', icon: '📊' },
-    { label: 'Open Findings', value: String(kpiData.openFindings), color: '#D97706', bg: '#FFFBEB', icon: '🔍' },
-    { label: 'High Risk', value: String(kpiData.highRisk), color: '#DC2626', bg: '#FEF2F2', icon: '⚠️' },
-    { label: 'Pending Evidence', value: String(kpiData.pendingEvidence), color: '#7C3AED', bg: '#F5F3FF', icon: '📎' },
-    { label: 'Adjustments', value: formatIDR(kpiData.totalAdjustments), color: '#0284C7', bg: '#F0F9FF', icon: '💰' },
-    { label: 'Controls Tested', value: `${kpiData.controlsTestedPct}%`, color: '#059669', bg: '#ECFDF5', icon: '✅' },
+    { label: 'Audit Completion', value: `${kpiData.completionPct}%`, icon: BarChart3, sub: `${auditStages.filter(x => x.done).length}/${auditStages.length} stages` },
+    { label: 'Open Findings', value: String(kpiData.openFindings), icon: Search, sub: `${findings.length} total findings` },
+    { label: 'High Risk', value: String(kpiData.highRisk), icon: TriangleAlert, sub: 'High + Critical' },
+    { label: 'Pending Evidence', value: String(kpiData.pendingEvidence), icon: Paperclip, sub: `${evidence.length} files attached` },
+    { label: 'Adjustments', value: formatIDR(kpiData.totalAdjustments), icon: Scale, sub: 'Total financial impact' },
+    { label: 'Controls Tested', value: `${kpiData.controlsTestedPct}%`, icon: ShieldCheck, sub: 'Control testing' },
   ];
 
   return (
     <>
-      <div className="space-y-6">
+      <div className={`mx-auto max-w-screen-2xl space-y-4 px-6 py-5 lg:px-8 xl:px-10 ${salesFont.className}`}>
         {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Audit Center</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Monitor audit procedures, findings, risks, and supporting evidence.</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-background border border-border rounded-lg">
-              <span className="text-xs font-medium text-muted-foreground">FY 2026</span>
-              <span className="w-1 h-1 rounded-full bg-[#CBD5E1]" />
-              <span className="text-xs font-semibold text-primary">{kpiData.completionPct}% Complete</span>
-              <span className="w-1 h-1 rounded-full bg-[#CBD5E1]" />
-              <span className="text-xs font-medium text-warning">
+        <PageHeading
+          title="Audit Center"
+          description="Monitor audit procedures, findings, risks, and supporting evidence."
+          actions={<>
+            <div className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 shadow-sm">
+              <span className="text-xs font-medium text-neutral-500">FY 2026</span>
+              <span className="h-1 w-1 rounded-full bg-neutral-300" />
+              <span className="text-xs font-semibold text-neutral-900">{kpiData.completionPct}% Complete</span>
+              <span className="h-1 w-1 rounded-full bg-neutral-300" />
+              <span className={`text-xs font-semibold ${kpiData.highRisk >= 3 ? 'text-red-700' : 'text-neutral-900'}`}>
                 Risk: {kpiData.highRisk === 0 ? 'Low' : kpiData.highRisk >= 3 ? 'High' : 'Moderate'}
               </span>
             </div>
-            <button
-              onClick={() => setShowNewFinding(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <PlusIcon style={{ width: 13, height: 13 }} />
-              New Finding
+            <button onClick={() => setShowNewFinding(true)} className={btnPrimary}>
+              <PlusIcon style={{ width: 13, height: 13 }} /> New Finding
             </button>
-            <button
-              onClick={() => toast.success('Audit report diekspor')}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-muted-foreground bg-white border border-border rounded-lg hover:bg-background transition-colors"
-            >
-              <ArrowDownTrayIcon style={{ width: 13, height: 13 }} />
-              Export
+            <button onClick={() => toast.success('Audit report diekspor')} className={btnOutline}>
+              <ArrowDownTrayIcon style={{ width: 13, height: 13 }} /> Export
             </button>
-          </div>
-        </div>
+          </>}
+        />
 
         {/* Audit Progress Hero */}
-        <div className="bg-white rounded-xl border border-border p-5">
+        <div className="relative rounded-xl border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-xl before:bg-neutral-800 p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-foreground">Audit Progress</h2>
-            <span className="text-xs text-muted-foreground">FY 2026 Annual Audit</span>
+            <h2 className="text-sm font-semibold text-neutral-900">Audit Progress</h2>
+            <span className="text-xs text-neutral-500">FY 2026 Annual Audit</span>
           </div>
           <div className="relative">
             {/* Progress line */}
-            <div className="absolute top-5 left-0 right-0 h-0.5 bg-border" />
-            <div className="absolute top-5 left-0 h-0.5 bg-primary transition-all" style={{ width: `${kpiData.completionPct}%` }} />
+            <div className="absolute top-5 left-0 right-0 h-0.5 bg-neutral-200" />
+            <div className="absolute top-5 left-0 h-0.5 bg-neutral-800 transition-all" style={{ width: `${kpiData.completionPct}%` }} />
 
             <div className="relative flex justify-between">
               {auditStages.length === 0 && (
-                <p className="text-xs text-muted-light py-2">No audit stages set up yet for this client.</p>
+                <p className="text-xs text-neutral-500 py-2">No audit stages set up yet for this client.</p>
               )}
               {auditStages.map((stage, i) => (
                 <button
@@ -468,24 +484,24 @@ export default function AuditPage() {
                 >
                   <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center z-10 transition-all ${
                     stage.done
-                      ? 'bg-primary border-primary'
+                      ? 'bg-neutral-800 border-neutral-800'
                       : stage.current
-                        ? 'bg-white border-primary ring-4 ring-[#DBEAFE]'
-                        : 'bg-white border-border'
+                        ? 'bg-white border-neutral-800 ring-4 ring-neutral-300'
+                        : 'bg-white border-neutral-300'
                   } ${activeStage === stage.id ? 'scale-110' : ''}`}>
                     {stage.done ? (
                       <CheckCircleIcon className="w-5 h-5 text-white" />
                     ) : stage.current ? (
-                      <div className="w-3 h-3 rounded-full bg-primary animate-pulse" />
+                      <div className="w-3 h-3 rounded-full bg-neutral-800 animate-pulse" />
                     ) : (
-                      <span className="text-xs font-bold text-[#CBD5E1]">{i + 1}</span>
+                      <span className="text-xs font-bold text-neutral-400">{i + 1}</span>
                     )}
                   </div>
                   <div className="text-center">
-                    <p className={`text-xs font-semibold ${stage.done || stage.current ? 'text-foreground' : 'text-muted-light'}`}>
+                    <p className={`text-xs font-semibold ${stage.done || stage.current ? 'text-neutral-900' : 'text-neutral-500'}`}>
                       {stage.label}
                     </p>
-                    <p className={`text-[10px] ${stage.current ? 'text-primary font-medium' : 'text-muted-light'}`}>
+                    <p className={`text-[10px] ${stage.current ? 'text-neutral-900 font-semibold' : 'text-neutral-500'}`}>
                       {stage.date}
                     </p>
                   </div>
@@ -498,31 +514,28 @@ export default function AuditPage() {
         {/* KPI Strip */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
           {kpis.map((kpi) => (
-            <div key={kpi.label} className="bg-card rounded-xl border border-border p-4 hover:shadow-sm transition-shadow">
-              <p className="text-[10px] font-medium text-muted-foreground mb-2">{kpi.label}</p>
-              <p className="number-display text-xl font-bold text-foreground leading-none" style={{ color: kpi.color }}>{fx(kpi.value)}</p>
-            </div>
+            <AuditKpiTile key={kpi.label} label={kpi.label} value={fx(kpi.value)} icon={kpi.icon} sub={kpi.sub} />
           ))}
         </div>
 
         {/* Findings + Risk Matrix */}
         <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
           {/* Findings Table */}
-          <div className="xl:col-span-3 bg-white rounded-xl border border-border overflow-hidden">
-            <div className="p-4 border-b border-border">
+          <div className="xl:col-span-3 relative rounded-xl border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-xl before:bg-neutral-800 overflow-hidden">
+            <div className="p-4 border-b border-neutral-300 bg-neutral-50 rounded-t-xl">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-foreground">Audit Findings</h2>
-                <span className="text-xs text-muted-foreground">{filteredFindings.length} findings</span>
+                <h2 className="text-sm font-semibold text-neutral-900">Audit Findings</h2>
+                <span className="text-xs text-neutral-500">{filteredFindings.length} findings</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                  <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-light" />
+                  <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-500" />
                   <input
                     type="text"
                     placeholder="Search findings..."
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30"
+                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
                   />
                 </div>
                 <div className="flex gap-1">
@@ -530,8 +543,8 @@ export default function AuditPage() {
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
-                      className={`px-2.5 py-1.5 text-[10px] font-medium rounded-md capitalize transition-colors ${
-                        activeTab === tab ? 'bg-[#EFF6FF] text-primary' : 'text-muted-foreground hover:bg-background'
+                      className={`px-2.5 py-1.5 text-[10px] font-semibold rounded-md capitalize transition-colors ${
+                        activeTab === tab ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:bg-neutral-100'
                       }`}
                     >
                       {tab.replace('-', ' ')}
@@ -542,11 +555,11 @@ export default function AuditPage() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full border-separate border-spacing-0">
                 <thead>
-                  <tr className="border-b border-muted">
+                  <tr className="bg-neutral-300">
                     {['ID', 'Area', 'Description', 'Amount', 'Risk', 'Assigned', 'Status'].map(h => (
-                      <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-wider text-muted-light px-4 py-2.5">{h}</th>
+                      <th key={h} className={TH}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -555,15 +568,15 @@ export default function AuditPage() {
                     <tr
                       key={finding.id}
                       onClick={() => setSelectedFinding(finding)}
-                      className="border-b border-background hover:bg-background cursor-pointer transition-colors"
+                      className="[&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200 cursor-pointer"
                     >
-                      <td className="px-4 py-3 text-xs font-mono font-bold text-primary">{finding.id}</td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{finding.area}</td>
-                      <td className="px-4 py-3 text-xs text-foreground max-w-[160px] truncate">{finding.description}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-negative">{fx(formatIDR(finding.amount))}</td>
-                      <td className="px-4 py-3"><RiskBadge risk={finding.risk} /></td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">{finding.assignedTo}</td>
-                      <td className="px-4 py-3"><StatusBadge status={finding.status} /></td>
+                      <td className="px-2 py-2 text-xs font-mono font-bold text-neutral-900">{finding.id}</td>
+                      <td className="px-2 py-2 text-xs text-neutral-500 whitespace-nowrap">{finding.area}</td>
+                      <td className="px-2 py-2 text-xs text-neutral-900 max-w-[160px] truncate">{finding.description}</td>
+                      <td className="px-2 py-2 text-xs font-mono text-negative">{fx(formatIDR(finding.amount))}</td>
+                      <td className="px-2 py-2"><RiskBadge risk={finding.risk} /></td>
+                      <td className="px-2 py-2 text-xs text-neutral-500">{finding.assignedTo}</td>
+                      <td className="px-2 py-2"><StatusBadge status={finding.status} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -572,22 +585,22 @@ export default function AuditPage() {
           </div>
 
           {/* Risk Heatmap */}
-          <div className="xl:col-span-2 bg-white rounded-xl border border-border p-5">
+          <div className="xl:col-span-2 relative rounded-xl border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-xl before:bg-neutral-800 p-5">
             <RiskHeatmap findings={findings} onFindingClick={setSelectedFinding} />
           </div>
         </div>
 
         {/* Audit Timeline */}
-        <div className="bg-white rounded-xl border border-border p-5">
-          <h2 className="text-sm font-semibold text-foreground mb-4">Audit Activity Timeline</h2>
+        <div className="relative rounded-xl border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-xl before:bg-neutral-800 p-5">
+          <h2 className="text-sm font-semibold text-neutral-900 mb-4">Audit Activity Timeline</h2>
           <div className="space-y-0">
             {auditActivities.map((activity, i) => {
               const typeColors: Record<string, string> = {
-                finding: 'bg-negative-subtle text-negative',
-                evidence: 'bg-ai-subtle text-ai',
-                test: 'bg-[#EFF6FF] text-primary',
-                resolved: 'bg-positive-subtle text-positive',
-                response: 'bg-warning-bg text-warning',
+                finding: 'bg-neutral-800 text-white',
+                evidence: 'bg-neutral-200 text-neutral-800',
+                test: 'bg-neutral-300 text-neutral-900',
+                resolved: 'bg-neutral-100 text-neutral-700 border border-neutral-300',
+                response: 'bg-neutral-200 text-neutral-800',
               };
               return (
                 <div key={activity.id} className="flex gap-4 pb-4">
@@ -595,17 +608,17 @@ export default function AuditPage() {
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${typeColors[activity.type]}`}>
                       {activity.user.split(' ')[0][0]}{activity.user.split(' ')[1]?.[0] ?? ''}
                     </div>
-                    {i < auditActivities.length - 1 && <div className="w-0.5 flex-1 bg-border mt-1" />}
+                    {i < auditActivities.length - 1 && <div className="w-0.5 flex-1 bg-neutral-300 mt-1" />}
                   </div>
                   <div className="flex-1 pb-2">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <span className="text-xs font-semibold text-foreground">{activity.user}</span>
-                        <span className="text-xs text-muted-foreground ml-2">{activity.action}</span>
+                        <span className="text-xs font-semibold text-neutral-900">{activity.user}</span>
+                        <span className="text-xs text-neutral-500 ml-2">{activity.action}</span>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="text-[10px] text-muted-light">{activity.time}</p>
-                        <p className="text-[10px] text-muted-light">{activity.date}</p>
+                        <p className="text-[10px] text-neutral-500">{activity.time}</p>
+                        <p className="text-[10px] text-neutral-500">{activity.date}</p>
                       </div>
                     </div>
                   </div>
@@ -616,40 +629,40 @@ export default function AuditPage() {
         </div>
 
         {/* Audit Trail */}
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
-          <div className="p-4 border-b border-border">
+        <div className="relative rounded-xl border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-xl before:bg-neutral-800 overflow-hidden">
+          <div className="p-4 border-b border-neutral-300 bg-neutral-50 rounded-t-xl">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <h2 className="text-sm font-semibold text-foreground">Audit Trail</h2>
-                <p className="text-[10px] text-muted-light mt-0.5">
+                <h2 className="text-sm font-semibold text-neutral-900">Audit Trail</h2>
+                <p className="text-[10px] text-neutral-500 mt-0.5">
                   {isTrailSample ? 'Showing sample data' : 'Connected to active client · from posted journal entries'}
                 </p>
               </div>
               <button
                 onClick={() => { setTrailFilter(''); toast.info('Filter audit trail direset'); }}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-900"
               >
                 <FunnelIcon style={{ width: 13, height: 13 }} />
                 Filter
               </button>
             </div>
             <div className="relative">
-              <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-light" />
+              <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-500" />
               <input
                 type="text"
                 placeholder="Filter by user, module, or action..."
                 value={trailFilter}
                 onChange={e => setTrailFilter(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30"
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
               />
             </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full border-separate border-spacing-0">
               <thead>
-                <tr className="border-b border-muted">
+                <tr className="bg-neutral-300">
                   {['User', 'Action', 'Module', 'Record', 'Timestamp', 'Previous Value', 'New Value'].map(h => (
-                    <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-wider text-muted-light px-4 py-2.5">{h}</th>
+                    <th key={h} className={TH}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -657,25 +670,25 @@ export default function AuditPage() {
                 {auditTrail
                   .filter(t => !trailFilter || t.user.toLowerCase().includes(trailFilter.toLowerCase()) || t.module.toLowerCase().includes(trailFilter.toLowerCase()) || t.action.toLowerCase().includes(trailFilter.toLowerCase()))
                   .map(trail => (
-                    <tr key={trail.id} className="border-b border-background hover:bg-background transition-colors">
-                      <td className="px-4 py-3 text-xs font-semibold text-foreground">{trail.user}</td>
-                      <td className="px-4 py-3">
-                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                          trail.action === 'Created' ? 'bg-positive-subtle text-positive' :
-                          trail.action === 'Posted' ? 'bg-[#EFF6FF] text-primary' :
-                          'bg-negative-subtle text-negative'
+                    <tr key={trail.id} className="[&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200">
+                      <td className="px-2 py-2 text-xs font-semibold text-neutral-900">{trail.user}</td>
+                      <td className="px-2 py-2">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
+                          trail.action === 'Created' ? 'bg-neutral-100 text-neutral-700 border border-neutral-300' :
+                          trail.action === 'Posted' ? 'bg-neutral-800 text-white' :
+                          'bg-red-50 text-red-700 border border-red-300'
                         }`}>{trail.action}</span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">{trail.module}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-primary">{trail.record}</td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{trail.timestamp}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-muted-foreground">{fx(trail.prevValue ?? '—')}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-foreground">{fx(trail.newValue ?? '—')}</td>
+                      <td className="px-2 py-2 text-xs text-neutral-500">{trail.module}</td>
+                      <td className="px-2 py-2 text-xs font-mono text-neutral-900">{trail.record}</td>
+                      <td className="px-2 py-2 text-xs text-neutral-500 whitespace-nowrap">{trail.timestamp}</td>
+                      <td className="px-2 py-2 text-xs font-mono text-neutral-500">{fx(trail.prevValue ?? '—')}</td>
+                      <td className="px-2 py-2 text-xs font-mono text-neutral-900">{fx(trail.newValue ?? '—')}</td>
                     </tr>
                   ))}
                 {auditTrail.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-xs text-muted-light">No journal activity yet for this client.</td>
+                    <td colSpan={7} className="px-2 py-6 text-center text-xs text-neutral-500">No journal activity yet for this client.</td>
                   </tr>
                 )}
               </tbody>
@@ -756,81 +769,81 @@ function NewFindingModal({ clientId, onClose, onCreated }: { clientId: string | 
         onClick={e => e.stopPropagation()}
         className="w-full max-w-lg bg-white rounded-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
       >
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-          <h2 className="text-sm font-bold text-foreground">New Audit Finding</h2>
-          <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-background transition-colors">
-            <XMarkIcon className="w-4 h-4 text-muted-foreground" />
+        <div className="px-5 py-4 border-b border-neutral-300 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-neutral-900">New Audit Finding</h2>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors">
+            <XMarkIcon className="w-4 h-4 text-neutral-500" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-3">
           <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Description *</label>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Description *</label>
             <textarea
               required
               value={form.description}
               onChange={e => update('description', e.target.value)}
               rows={2}
-              className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30"
+              className="mt-1 w-full text-xs px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Area</label>
-              <input value={form.area} onChange={e => update('area', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Area</label>
+              <input value={form.area} onChange={e => update('area', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
             </div>
             <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Account</label>
-              <input value={form.account} onChange={e => update('account', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Account</label>
+              <input value={form.account} onChange={e => update('account', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Financial Impact</label>
-              <input type="number" step="0.01" value={form.amount} onChange={e => update('amount', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Financial Impact</label>
+              <input type="number" step="0.01" value={form.amount} onChange={e => update('amount', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
             </div>
             <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Risk</label>
-              <select value={form.risk} onChange={e => update('risk', e.target.value as FindingRisk)} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Risk</label>
+              <select value={form.risk} onChange={e => update('risk', e.target.value as FindingRisk)} className="mt-1 w-full text-xs px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300">
                 {(['Low', 'Medium', 'High', 'Critical'] as const).map(r => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Assigned To</label>
-              <input value={form.assignedTo} onChange={e => update('assignedTo', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Assigned To</label>
+              <input value={form.assignedTo} onChange={e => update('assignedTo', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
             </div>
             <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Due Date</label>
-              <input type="date" value={form.dueDate} onChange={e => update('dueDate', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Due Date</label>
+              <input type="date" value={form.dueDate} onChange={e => update('dueDate', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Likelihood (1-5)</label>
-              <input type="number" min={1} max={5} value={form.likelihood} onChange={e => update('likelihood', Number(e.target.value))} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Likelihood (1-5)</label>
+              <input type="number" min={1} max={5} value={form.likelihood} onChange={e => update('likelihood', Number(e.target.value))} className="mt-1 w-full text-xs px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
             </div>
             <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Impact (1-5)</label>
-              <input type="number" min={1} max={5} value={form.impact} onChange={e => update('impact', Number(e.target.value))} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Impact (1-5)</label>
+              <input type="number" min={1} max={5} value={form.impact} onChange={e => update('impact', Number(e.target.value))} className="mt-1 w-full text-xs px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
             </div>
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Root Cause</label>
-            <textarea value={form.rootCause} onChange={e => update('rootCause', e.target.value)} rows={2} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Root Cause</label>
+            <textarea value={form.rootCause} onChange={e => update('rootCause', e.target.value)} rows={2} className="mt-1 w-full text-xs px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Recommendation</label>
-            <textarea value={form.recommendation} onChange={e => update('recommendation', e.target.value)} rows={2} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Recommendation</label>
+            <textarea value={form.recommendation} onChange={e => update('recommendation', e.target.value)} rows={2} className="mt-1 w-full text-xs px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
           </div>
         </div>
 
-        <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="px-3 py-2 text-xs font-medium text-muted-foreground bg-white border border-border rounded-lg hover:bg-background">
+        <div className="px-5 py-4 border-t border-neutral-300 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="px-3 py-2 text-xs font-medium text-neutral-500 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-100">
             Cancel
           </button>
-          <button type="submit" disabled={saving} className="px-3 py-2 text-xs font-medium text-white bg-primary rounded-lg hover:bg-blue-700 disabled:opacity-60">
+          <button type="submit" disabled={saving} className="px-3 py-2 text-xs font-medium text-white bg-neutral-800 border border-neutral-800 rounded-lg shadow-sm hover:bg-neutral-700 disabled:opacity-60">
             {saving ? 'Saving...' : 'Create Finding'}
           </button>
         </div>

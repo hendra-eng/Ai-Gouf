@@ -1,8 +1,9 @@
 'use client';
-import TabNav from '@/components/ui/TabNav';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { tabCls, tabNavCls } from '@/components/shared/moduleUi';
+import { btnOutline, btnPrimary, tabBarCls, tabCls, tabListCls } from '@/components/arap/arapSalesUi';
+import PageHeading from '@/components/shared/PageHeading';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
 import Link from 'next/link';
 import {
   PieChart, BarChart3, ShoppingCart, Package, Building2, CreditCard, FileText, Settings,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 
+// Tema elegant monokrom (neutral-*) disamakan dengan halaman Sales.
 // Katalog report per modul (desain: dataset/picture/report 1.jpeg).
 // `href: null` = halaman report-nya belum ada -> tombol tampil "Coming Soon".
 
@@ -83,17 +85,10 @@ const REPORTS: ReportDef[] = [
   { id: 'production-cost', tab: 'production', title: 'Production Cost', description: 'Material, labor, and overhead cost per production order.', icon: Settings, tone: 'violet', art: 'area', href: null },
 ];
 
-// Kelas penuh ditulis eksplisit (bukan dirakit) supaya ikut ter-generate Tailwind.
-// Catatan: palet `blue-*` di repo ini = hijau brand.
+// Semua nada tampil monokrom (abu + hitam); kunci Tone dipertahankan agar definisi REPORTS tidak berubah.
+const MONO = { tile: 'bg-neutral-100 ring-1 ring-neutral-200', icon: 'text-neutral-800', art: '#404040', artSoft: '#D4D4D4' };
 const TONE: Record<Tone, { tile: string; icon: string; art: string; artSoft: string }> = {
-  green: { tile: 'bg-blue-50', icon: 'text-blue-600', art: '#22C55E', artSoft: '#BBF7D0' },
-  emerald: { tile: 'bg-emerald-50', icon: 'text-emerald-600', art: '#10B981', artSoft: '#A7F3D0' },
-  violet: { tile: 'bg-violet-50', icon: 'text-violet-600', art: '#8B5CF6', artSoft: '#DDD6FE' },
-  orange: { tile: 'bg-orange-50', icon: 'text-orange-500', art: '#FB923C', artSoft: '#FED7AA' },
-  teal: { tile: 'bg-teal-50', icon: 'text-teal-600', art: '#14B8A6', artSoft: '#99F6E4' },
-  rose: { tile: 'bg-rose-50', icon: 'text-rose-500', art: '#F43F5E', artSoft: '#FECDD3' },
-  amber: { tile: 'bg-amber-50', icon: 'text-amber-500', art: '#F59E0B', artSoft: '#FDE68A' },
-  sky: { tile: 'bg-sky-50', icon: 'text-sky-600', art: '#0EA5E9', artSoft: '#BAE6FD' },
+  green: MONO, emerald: MONO, violet: MONO, orange: MONO, teal: MONO, rose: MONO, amber: MONO, sky: MONO,
 };
 
 const PERIODS = ['Jan – Dec 2026', 'Jan – Dec 2025', 'Jan – Dec 2024', 'Q1 2026', 'Q2 2026', 'Q3 2026', 'Q4 2026'];
@@ -193,26 +188,31 @@ function ReportCard({ report, favorite, onToggleFavorite }: {
 }) {
   const tone = TONE[report.tone];
   const Icon = report.icon;
-  const buttonClass = 'inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors';
+  const categoryLabel = TABS.find(t => t.id === report.tab)?.label ?? '';
   return (
-    <div className="relative bg-card border border-border rounded-xl shadow-sm hover:shadow-card transition-shadow p-5 overflow-hidden min-h-[176px] flex gap-4">
+    <div className="group relative bg-white border border-neutral-300 rounded-xl shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700 p-5 pt-6 overflow-hidden min-h-[176px] flex gap-4">
+      <span className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-neutral-900 via-neutral-400 to-transparent" />
       <div className={`w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0 ${tone.tile}`}>
         <Icon size={26} className={tone.icon} strokeWidth={1.8} />
       </div>
 
       <div className="flex-1 min-w-0 flex flex-col pr-6 relative z-10">
-        <h3 className="text-lg font-bold text-foreground leading-tight">{report.title}</h3>
-        <p className="text-sm text-muted-foreground mt-1.5 max-w-[16rem] leading-relaxed">{report.description}</p>
+        <p className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+          <span className={`h-1.5 w-1.5 rounded-full ${report.href ? 'bg-neutral-800' : 'bg-neutral-300'}`} />
+          {categoryLabel}
+        </p>
+        <h3 className="text-base font-semibold text-neutral-900 leading-tight">{report.title}</h3>
+        <p className="text-xs font-medium text-neutral-500 mt-1.5 max-w-[16rem] leading-relaxed">{report.description}</p>
         <div className="mt-auto pt-4">
           {report.href ? (
             <Link
               href={report.href}
-              className={`${buttonClass} border-blue-200 text-blue-700 bg-card hover:bg-blue-50`}
+              className={btnOutline}
             >
-              Open Report <ArrowRight size={15} />
+              Open Report <ArrowRight size={14} />
             </Link>
           ) : (
-            <span className={`${buttonClass} border-border text-muted-foreground bg-slate-50 cursor-not-allowed`} title="This report is not available yet">
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-neutral-100 px-3 py-1.5 text-xs font-semibold text-neutral-500 cursor-not-allowed" title="This report is not available yet">
               Coming Soon
             </span>
           )}
@@ -222,11 +222,11 @@ function ReportCard({ report, favorite, onToggleFavorite }: {
       <button
         type="button"
         onClick={onToggleFavorite}
-        className="absolute top-4 right-4 p-1 rounded-md hover:bg-slate-100 transition-colors z-10"
+        className="absolute top-4 right-4 p-1 rounded-md hover:bg-neutral-100 transition-colors z-10"
         aria-label={favorite ? `Remove ${report.title} from favorites` : `Add ${report.title} to favorites`}
         aria-pressed={favorite}
       >
-        <Star size={18} className={favorite ? 'text-amber-400 fill-amber-400' : 'text-slate-400'} />
+        <Star size={18} className={favorite ? 'text-neutral-900 fill-neutral-900' : 'text-neutral-400'} />
       </button>
 
       <div className="absolute right-4 bottom-3 pointer-events-none opacity-90 hidden sm:block">
@@ -281,30 +281,45 @@ export default function ReportsCatalog() {
     ?? clients.find(c => c.id === activeClientId)?.companyName
     ?? 'No company selected';
 
-  const selectClass = 'w-full appearance-none bg-card border border-border rounded-lg pl-10 pr-9 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400';
+  const selectClass = 'w-full appearance-none rounded-lg border-2 border-neutral-300 bg-white pl-9 pr-8 py-1.5 text-xs text-neutral-900 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300';
 
   return (
-    <div className="space-y-5 fade-in">
+    <div className={`mx-auto max-w-screen-2xl space-y-4 px-6 py-5 lg:px-8 xl:px-10 fade-in ${salesFont.className}`}>
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Reports</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Explore operational and financial reports across your business modules.</p>
+      <PageHeading title="Reports" description="Explore operational and financial reports across your business modules." />
+
+      {/* Tabs -- gaya Sales (garis bawah hitam) */}
+      <div className={tabBarCls}>
+        <nav className={tabListCls}>
+          {TABS.map(tab => {
+            const active = !showFavorites && tab.id === activeTab;
+            const Icon = tab.icon;
+            return (
+              <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); setShowFavorites(false); }} aria-current={active ? 'page' : undefined} className={tabCls(active)}>
+                <Icon size={16} /> {tab.label}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
-      {/* Tabs */}
-      <TabNav
-        activeKey={showFavorites ? '' : activeTab}
-        onSelect={(key) => { setActiveTab(key as TabId); setShowFavorites(false); }}
-        items={TABS.map(tab => ({ key: tab.id, label: tab.label, icon: tab.icon }))}
-      />
-
       {/* Filter bar */}
-      <div className="bg-card border border-border rounded-xl shadow-sm p-5 flex flex-col lg:flex-row lg:items-end gap-4">
+      <div className="relative overflow-hidden bg-white border border-neutral-300 rounded-xl shadow-sm">
+        <span className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-neutral-900 via-neutral-400 to-transparent" />
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50 px-5 pb-2.5 pt-4">
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-neutral-700">
+            <span className="h-3.5 w-1 rounded-full bg-neutral-800" /> Report Settings
+          </p>
+          <p className="text-xs font-medium text-neutral-500">
+            {showFavorites ? 'My Favorites' : TABS.find(t => t.id === activeTab)?.label} · {visibleReports.length} reports · {visibleReports.filter(r => r.href).length} available
+          </p>
+        </div>
+        <div className="p-5 flex flex-col lg:flex-row lg:items-end gap-4">
         <div className="flex flex-col sm:flex-row gap-4 flex-1">
           <label className="block sm:w-[22rem]">
-            <span className="block text-sm font-semibold text-foreground mb-2">Company</span>
+            <span className="block text-xs font-medium text-neutral-500 mb-1">Company</span>
             <div className="relative">
-              <Building2 size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Building2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
               <select
                 value={activeClientId ?? ''}
                 onChange={e => {
@@ -317,46 +332,45 @@ export default function ReportsCatalog() {
                 {clients.length === 0 && <option value="">{companyName}</option>}
                 {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
               </select>
-              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
             </div>
           </label>
           <label className="block sm:w-60">
-            <span className="block text-sm font-semibold text-foreground mb-2">Period</span>
+            <span className="block text-xs font-medium text-neutral-500 mb-1">Period</span>
             <div className="relative">
-              <Calendar size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
               <select value={period} onChange={e => setPeriod(e.target.value)} className={selectClass} aria-label="Period">
                 {PERIODS.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
             </div>
           </label>
         </div>
 
-        <div className="flex items-center gap-3 lg:pl-6 lg:border-l lg:border-border lg:self-stretch lg:items-end">
+        <div className="flex items-center gap-3 lg:pl-6 lg:border-l lg:border-neutral-300 lg:self-stretch lg:items-end">
           <button
             onClick={() => downloadCatalogCsv(visibleReports, companyName, period)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-blue-200 text-blue-700 text-sm font-medium bg-card hover:bg-blue-50 transition-colors"
+            className={btnOutline}
           >
-            <Download size={16} /> Export Catalog
+            <Download size={14} /> Export Catalog
           </button>
           <button
             onClick={() => setShowFavorites(v => !v)}
             aria-pressed={showFavorites}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
-              showFavorites ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700' : 'border-blue-200 text-blue-700 bg-card hover:bg-blue-50'
-            }`}
+            className={showFavorites ? btnPrimary : btnOutline}
           >
-            <Star size={16} className={showFavorites ? 'fill-white' : ''} /> My Favorites ({favorites.length})
+            <Star size={14} className={showFavorites ? 'fill-white' : ''} /> My Favorites ({favorites.length})
           </button>
+        </div>
         </div>
       </div>
 
       {/* Report cards */}
       {visibleReports.length === 0 ? (
-        <div className="bg-card border border-dashed border-border rounded-xl p-12 text-center">
-          <Star size={28} className="mx-auto text-slate-300 mb-3" />
-          <p className="text-sm font-semibold text-foreground">No favorite reports yet</p>
-          <p className="text-xs text-muted-foreground mt-1">Click the star on any report card to pin it here.</p>
+        <div className="bg-white border border-dashed border-neutral-300 rounded-xl p-12 text-center">
+          <Star size={28} className="mx-auto text-neutral-300 mb-3" />
+          <p className="text-sm font-semibold text-neutral-900">No favorite reports yet</p>
+          <p className="text-xs font-medium text-neutral-500 mt-1">Click the star on any report card to pin it here.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
