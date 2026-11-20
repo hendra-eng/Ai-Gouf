@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
+import InteractiveDonutChart, { type DonutLivePreview } from '@/components/shared/InteractiveDonutChart';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Clock, FileText, Filter, Search, Timer } from 'lucide-react';
 import {
   BUCKET_COLOR, BUCKET_LABEL, BUCKETS, fetchArApAging, fmtDate, rupiah, useArApData,
@@ -50,7 +50,20 @@ export default function AgingTab({ cfg, clientId, asOf, ov, goTab }: {
   });
   const dso = ov?.kpi.avg_days_to_settle ?? null;
   const dsoLalu = ov?.kpi.avg_days_to_settle_prev ?? null;
-  const pie = BUCKETS.map(b => ({ bucket: b, name: BUCKET_LABEL[b], value: tot?.buckets[b] ?? 0 })).filter(x => x.value > 0);
+  const pie = BUCKETS.map(b => ({ bucket: b, name: BUCKET_LABEL[b], value: tot?.buckets[b] ?? 0, color: BUCKET_COLOR[b] })).filter(x => x.value > 0);
+
+  // Interaksi donut sama seperti "Cash Flow Composition": klik segmen / baris legenda -> segmen membesar,
+  // segmen lain memudar, dan callout (nama, persen, nilai) tampil di tengah; klik lagi untuk melepas.
+  // `live` terisi saat garis pemisah putih ditarik (simulasi what-if).
+  const [aktif, setAktif] = useState<number | null>(null);
+  const [live, setLive] = useState<DonutLivePreview[] | null>(null);
+  useEffect(() => { setAktif(null); }, [pie.length, asOf]);
+  const pilihBucket = (b: AgingBucket) => {
+    const pi = pie.findIndex(x => x.bucket === b);
+    if (pi < 0) return;
+    setAktif(prev => (prev === pi ? null : pi));
+  };
+  const bucketAktif = aktif !== null ? pie[aktif]?.bucket ?? null : null;
   const labelEmber: Record<string, string> = { all: 'All balances', overdue: 'Overdue only', ...BUCKET_LABEL };
 
   return (
@@ -100,7 +113,6 @@ export default function AgingTab({ cfg, clientId, asOf, ov, goTab }: {
                 {BUCKETS.map(b => (
                   <th key={b} className="px-2 py-2.5 text-center font-medium">
                     {BUCKET_LABEL[b]}
-                    {b === 'current' && <span className="block text-[10px] font-normal text-neutral-500">(not yet due)</span>}
                   </th>
                 ))}
                 <th className="px-3 py-2.5" />
@@ -164,29 +176,33 @@ export default function AgingTab({ cfg, clientId, asOf, ov, goTab }: {
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_1fr_1.2fr]">
         <Card title={`${cfg.side === 'ar' ? 'Receivable' : 'Payable'} Age Distribution`} subtitle="Share of the total balance by aging bucket.">
-          <div className="flex flex-col items-center gap-4 px-5 pb-5 sm:flex-row">
+          <div className="flex flex-col items-center gap-3 px-5 pb-5 sm:flex-row">
             <div className="relative h-48 w-48 shrink-0">
               {pie.length ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={pie} dataKey="value" nameKey="name" innerRadius={58} outerRadius={88} paddingAngle={1.5} stroke="none">
-                      {pie.map(p => <Cell key={p.bucket} fill={BUCKET_COLOR[p.bucket]} />)}
-                    </Pie>
-                    <Tooltip formatter={(v: number) => rupiah(v)} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <InteractiveDonutChart
+                  data={pie}
+                  height={192}
+                  activeIndex={aktif}
+                  onActiveChange={setAktif}
+                  onLiveChange={setLive}
+                  rawValue
+                  formatValue={v => rupiah(v)}
+                />
               ) : <div className="h-full w-full rounded-full border-[18px] border-neutral-100" />}
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-xs font-semibold text-neutral-900">{rupiah(total)}</span>
-                <span className="text-[10px] text-neutral-500">Total {cfg.side === 'ar' ? 'Receivable' : 'Payable'}</span>
-              </div>
+              {aktif === null && live === null && (
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <span className="whitespace-nowrap text-[11px] font-semibold text-neutral-900">{rupiah(total)}</span>
+                  <span className="whitespace-nowrap text-[9px] text-neutral-500">Total {cfg.side === 'ar' ? 'Receivable' : 'Payable'}</span>
+                </div>
+              )}
             </div>
-            <ul className="w-full space-y-2.5 text-xs">
+            <ul className="w-full min-w-0 space-y-2 text-[11px]">
               {BUCKETS.map(b => {
                 const v = tot?.buckets[b] ?? 0;
                 return (
-                  <li key={b} className="grid grid-cols-[1fr_auto_40px] items-center gap-3">
-                    <span className="flex items-center gap-2 text-neutral-500"><span className="h-2.5 w-2.5 rounded-full" style={{ background: BUCKET_COLOR[b] }} />{BUCKET_LABEL[b]}</span>
+                  <li key={b} onClick={() => pilihBucket(b)}
+                    className={`-mx-2 grid cursor-pointer grid-cols-[minmax(0,1fr)_auto_30px] items-center gap-2 whitespace-nowrap rounded-md px-2 py-1 transition-colors ${bucketAktif === b ? 'bg-neutral-100' : 'hover:bg-neutral-50'}`}>
+                    <span className={`flex items-center gap-1.5 ${bucketAktif === b ? 'font-bold text-neutral-900' : 'text-neutral-500'}`}><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: BUCKET_COLOR[b] }} />{BUCKET_LABEL[b]}</span>
                     <span className="text-right font-semibold text-neutral-900">{rupiah(v)}</span>
                     <span className="text-right text-neutral-500">{total ? Math.round((v / total) * 100) : 0}%</span>
                   </li>

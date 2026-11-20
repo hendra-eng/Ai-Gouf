@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, LayoutGrid } from 'lucide-react';
+import { LayoutGrid } from 'lucide-react';
+import { BsDropdown } from './bs/BsMono';
 import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
 import FsShell, { LoadingBlock, NoClient } from './FsShell';
@@ -44,18 +45,13 @@ export default function CashFlowClient() {
       title="Cash Flow Statement"
       subtitle={<>{cur.subtitle} · built from posted General Ledger and the client COA mapping</>}
       actions={
-        <label className="relative inline-flex items-center">
-          <LayoutGrid size={16} className="absolute left-3 text-blue-700 pointer-events-none" />
-          <select
-            value={view}
-            onChange={e => choose(e.target.value as Method)}
-            aria-label="View"
-            className="appearance-none pl-9 pr-9 py-2.5 rounded-lg border border-border bg-white text-sm font-medium text-foreground hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-100 cursor-pointer"
-          >
-            {VIEWS.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
-          </select>
-          <ChevronDown size={15} className="absolute right-3 text-muted-foreground pointer-events-none" />
-        </label>
+        <BsDropdown
+          align="right"
+          icon={LayoutGrid}
+          value={view}
+          onChange={v => choose(v as Method)}
+          options={VIEWS.map(v => ({ value: v.id, label: v.label }))}
+        />
       }
     >
       {!hydrated ? <LoadingBlock /> : !activeClientId ? <NoClient /> : (

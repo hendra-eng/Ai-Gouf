@@ -1,10 +1,19 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { LayoutDashboard, Database, FileText, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import TabNav, { type TabNavItem } from '@/components/ui/TabNav';
 
 export type OtherTabKey = 'overview' | 'source' | 'transaction' | 'preview' | 'exceptions' | 'posted';
+
+// Gaya tab -- disamakan dengan halaman Sales (tema monokrom: garis bawah hitam, ikon garis tipis).
+const tabBarCls = 'flex flex-col gap-2 border-b border-neutral-300 lg:flex-row lg:items-center lg:justify-between';
+const tabListCls = '-mb-px flex gap-1 overflow-x-auto';
+const tabCls = (active: boolean) =>
+  `group flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm tracking-tight transition-colors ${active ? 'border-neutral-900 font-semibold text-neutral-900' : 'border-transparent font-medium text-neutral-500 hover:border-neutral-300 hover:text-neutral-900'}`;
+const tabBadgeCls = 'inline-flex min-w-[18px] items-center justify-center rounded-full bg-neutral-800 px-1.5 py-px text-[10px] font-semibold text-white';
+
+interface OtherTabItem { key: OtherTabKey; label: string; href: string; icon: React.ElementType; badge?: number }
 
 const descriptions: Record<OtherTabKey, string> = {
   overview: 'Ringkasan jurnal lain-lain (di luar Sales, Purchase, dan Bank & Cash) — tambah jurnal, approve, lalu posting ke Buku Besar.',
@@ -18,7 +27,7 @@ const descriptions: Record<OtherTabKey, string> = {
 // Header + tab bar halaman Other (pola sama dengan JournalEntryTabs / PurchaseTabs).
 // Badge tab Exceptions dihitung dari data asli, bukan angka statis.
 export default function OtherTabs({ activeTab, exceptionCount = 0 }: { activeTab: OtherTabKey; exceptionCount?: number }) {
-  const tabs: TabNavItem[] = [
+  const tabs: OtherTabItem[] = [
     { key: 'overview', label: 'Overview', href: '/transactions/other', icon: LayoutDashboard },
     { key: 'source', label: 'Source Data', href: '/transactions/other/source-data', icon: Database },
     { key: 'transaction', label: 'Other Transaction', href: '/transactions/other/transaction', icon: FileText },
@@ -29,9 +38,25 @@ export default function OtherTabs({ activeTab, exceptionCount = 0 }: { activeTab
 
   return (
     <div className="mb-4">
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">Other</h1>
-      <p className="text-sm text-muted-foreground mt-0.5">{descriptions[activeTab]}</p>
-      <TabNav items={tabs} activeKey={activeTab} className="mt-4" />
+      <div className="mb-4 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Other</h1>
+          <p className="mt-1 text-sm font-medium text-neutral-500">{descriptions[activeTab]}</p>
+        </div>
+      </div>
+      <div className={tabBarCls}>
+        <nav className={tabListCls}>
+          {tabs.map(tab => {
+            const active = tab.key === activeTab;
+            return (
+              <Link key={tab.key} href={tab.href} className={tabCls(active)} aria-current={active ? 'page' : undefined}>
+                <tab.icon size={16} strokeWidth={active ? 2 : 1.5} /> {tab.label}
+                {tab.badge !== undefined && <span className={tabBadgeCls}>{tab.badge}</span>}
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
     </div>
   );
 }

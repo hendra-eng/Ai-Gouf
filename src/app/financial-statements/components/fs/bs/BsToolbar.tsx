@@ -15,11 +15,13 @@ export interface ViewProps {
   printedBy?: string;
 }
 
-export function BsToolbar({ filters, loading, exportReady, buildExport }: {
+export function BsToolbar({ filters, loading, exportReady, buildExport, salesFont = false }: {
   filters: React.ReactNode;
   loading?: boolean;
   exportReady: boolean;
   buildExport: () => PrintReport;
+  /** true = font tombol Print/Download gaya Sales (text-xs). */
+  salesFont?: boolean;
 }) {
   const { clients, activeClientId } = useActiveClient();
   // Laporan format 'statement' (BS / P&L) memakai kop logo + alamat klien aktif.
@@ -33,10 +35,10 @@ export function BsToolbar({ filters, loading, exportReady, buildExport }: {
       <div className="flex flex-wrap items-center gap-3">{filters}</div>
       {loading && <Loader2 size={16} className="animate-spin text-blue-600" />}
       <div className="ml-auto flex items-center gap-2">
-        <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border bg-white text-sm font-medium text-foreground hover:bg-slate-50">
+        <button type="button" onClick={() => window.print()} className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border bg-white ${salesFont ? 'text-xs font-medium text-neutral-900' : 'text-sm font-medium text-foreground'} hover:bg-slate-50`}>
           <Printer size={16} /> Print
         </button>
-        <DownloadMenu disabled={!exportReady} build={build} />
+        <DownloadMenu disabled={!exportReady} build={build} fontCls={salesFont ? 'text-xs font-semibold' : undefined} />
       </div>
     </div>
   );

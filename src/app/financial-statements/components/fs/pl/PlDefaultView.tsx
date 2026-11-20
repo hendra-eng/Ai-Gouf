@@ -8,8 +8,8 @@ import { ErrorBlock, LoadingBlock } from '../FsShell';
 import { fmtAmount, fmtDate, todayIso } from '../fsFormat';
 import { fmtCompact, pctChange } from '../bs/bsData';
 import { BsDropdown, BsToolbar, ChartTooltip, Delta, Panel, filterLabelCls, inputCls, thCls, thRowCls } from '../bs/BsMono';
-import { PL_COLORS, margin, monthName, monthPeriod, plMovers, usePlSeries, ym, type PlMerged, type ViewProps } from './plData';
-import { Bridge, KpiDelta, NumberedInsights, Num, PctCell, PlKpiRow, PlKpiTile, PlTable, profitSteps, ratioPct, type CellCtx } from './PlUi';
+import { margin, monthName, monthPeriod, plMovers, usePlSeries, ym, type PlMerged, type ViewProps } from './plData';
+import { Bridge, KpiDelta, NumberedInsights, Num, PctCell, PL_BLUE, PlKpiRow, PlKpiTile, PlTable, profitSteps, ratioPct, type CellCtx } from './PlUi';
 import { fmtLongDate, plTemplateReport, todayLong } from '../statementTemplate';
 
 // (a) Profit & Loss default -- 1 bulan vs bulan lalu & bulan yang sama tahun
@@ -190,7 +190,7 @@ function RevenueTrend({ m, periods, lyLbl }: { m: PlMerged; periods: { start: st
             <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#737373' }} interval={0} tickLine={false} axisLine={false} tickFormatter={(s: string) => s.split(' ')[0]} />
             <Tooltip cursor={{ fill: '#F5F5F5' }} content={<ChartTooltip fmt={v => `IDR ${fmtAmount(v)}`} />} />
             <Bar dataKey="value" name="Revenue" radius={[3, 3, 0, 0]} isAnimationActive={false}>
-              {data.map((d, i) => <Cell key={i} fill={d.last ? PL_COLORS.brand : '#D4D4D4'} />)}
+              {data.map((d, i) => <Cell key={i} fill={d.last ? PL_BLUE.end : PL_BLUE.start} />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>

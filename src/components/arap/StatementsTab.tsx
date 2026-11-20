@@ -361,7 +361,7 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
           />
         </>}>
         <div className="overflow-x-auto px-5">
-          <table className="w-full min-w-[1100px] text-xs">
+          <table className="w-full min-w-[1200px] whitespace-nowrap text-[11px]">
             <thead>
               <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:border-y [&>th]:border-neutral-800 [&>th]:py-2 [&>th]:font-bold">
                 <th className="px-3 py-2.5 text-left font-medium">{cfg.party}</th>
@@ -378,26 +378,30 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
               ) : halamanLog.map(l => (
                 <tr key={l.id} className="hover:bg-neutral-200">
                   <td className="px-3 py-2.5">
-                    <span className="font-medium text-neutral-900">{l.party}</span>
-                    {l.party_code && <span className="ml-2 rounded-md bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-600">{l.party_code}</span>}
-                    {l.open_items_only && <span className="ml-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Open items</span>}
+                    <span className="block font-semibold text-neutral-900">{l.party}</span>
+                    {(l.party_code || l.open_items_only) && (
+                      <span className="mt-1 flex items-center gap-1">
+                        {l.party_code && <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">{l.party_code}</span>}
+                        {l.open_items_only && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Open items</span>}
+                      </span>
+                    )}
                   </td>
-                  <td className="px-3 py-2.5 text-neutral-500">{fmtDate(l.date_from)} - {fmtDate(l.date_to)}</td>
-                  <td className="px-3 py-2.5 text-right font-semibold text-neutral-900">{rupiah(l.closing_balance)}</td>
-                  <td className="px-3 py-2.5 text-xs">
+                  <td className="px-3 py-2.5 text-[11px] text-neutral-500">{fmtDate(l.date_from)} - {fmtDate(l.date_to)}</td>
+                  <td className="px-3 py-2.5 text-right text-[11px] font-semibold text-neutral-900">{rupiah(l.closing_balance)}</td>
+                  <td className="px-3 py-2.5 text-[11px]">
                     <span className="text-neutral-900">{fmtDateTime(l.generated_at)}</span>
                     <span className="block text-neutral-500">by {l.generated_by_name || '—'}</span>
                   </td>
-                  <td className="px-3 py-2.5 text-xs">
+                  <td className="px-3 py-2.5 text-[11px]">
                     <span className="inline-flex items-center gap-2">
                       {l.delivery_method === 'email' ? <Mail size={13} className="text-sky-600" /> : l.delivery_method === 'download' ? <Download size={13} className="text-sky-600" /> : <FileText size={13} className="text-neutral-500" />}
                       <span className="text-neutral-900">{l.delivery_method === 'email' ? 'Email' : l.delivery_method === 'download' ? 'Download' : '—'}</span>
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${DELIVERY[l.delivery_status].cls}`}>{DELIVERY[l.delivery_status].label}</span>
                     </span>
-                    {l.recipient_email && <span className="block truncate text-[11px] text-neutral-500" title={l.recipient_email}>{l.recipient_email}</span>}
+                    {l.recipient_email && <span className="block max-w-[220px] truncate text-[10px] text-neutral-500" title={l.recipient_email}>{l.recipient_email}</span>}
                   </td>
                   <td className="px-3 py-2.5">
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-nowrap items-center gap-1 [&_button]:whitespace-nowrap [&_button]:text-[11px]">
                       <button type="button" className={btnSmall} disabled={!!busy} onClick={() => bukaEmail(l)}><Mail size={13} /> Email Statement</button>
                       <button type="button" className={btnSmall} disabled={!!busy} onClick={() => unduh(l)}>
                         {busy === `dl:${l.id}` ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} Download PDF

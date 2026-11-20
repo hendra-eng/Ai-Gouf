@@ -7,7 +7,7 @@ import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, ExternalLink
 import { fetchSegments, type SegmentType } from '@/lib/fsStore';
 import { fmtAmount, glHref } from '../fsFormat';
 import { fmtCompact, pctChange, type MLine, type MSection } from '../bs/bsData';
-import { PL_COLORS, PL_LAYOUT, type PlMerged, type Segment } from './plData';
+import { PL_LAYOUT, type PlMerged, type Segment } from './plData';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 import { salesFont } from '@/app/transactions/sales/components/salesFont';
 import { Select, trCls } from '../bs/BsMono';
@@ -60,7 +60,8 @@ export function PlTable({ m, head, cells, colCount, glRange, title, minWidth = 8
   compact?: boolean;
 }) {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
-  const [closed, setClosed] = useState<Set<string>>(new Set());
+  // Posisi awal: semua seksi (Revenue, Cost of Sales, Operating Expenses, ...) tertutup; subtotal tetap tampil.
+  const [closed, setClosed] = useState<Set<string>>(() => new Set(PL_LAYOUT.filter(x => x.kind === 'section').map(x => x.key)));
   const [openLines, setOpenLines] = useState<Set<string>>(new Set());
   const toggle = (set: React.Dispatch<React.SetStateAction<Set<string>>>, k: string) => set(prev => {
     const n = new Set(prev);
@@ -78,7 +79,7 @@ export function PlTable({ m, head, cells, colCount, glRange, title, minWidth = 8
     return (
       <React.Fragment key={k}>
         <tr className={`${trCls} cursor-pointer`} onClick={() => toggle(setOpenLines, k)}>
-          <td className="pl-9 pr-3 py-1.5 text-neutral-800">
+          <td className="pl-9 pr-3 py-1.5 whitespace-nowrap text-neutral-800">
             <span className="inline-flex items-center gap-1">
               {open ? <ChevronDown size={13} className="text-neutral-500" /> : <ChevronRight size={13} className="text-neutral-500" />}
               {l.label}
@@ -88,7 +89,7 @@ export function PlTable({ m, head, cells, colCount, glRange, title, minWidth = 8
         </tr>
         {open && l.accounts.map((a, i) => (
           <tr key={`${a.code ?? 'calc'}-${i}`} className={trCls}>
-            <td className="pl-14 pr-3 py-1">
+            <td className="pl-14 pr-3 py-1 whitespace-nowrap">
               <span className="inline-flex items-center gap-2 min-w-0 text-neutral-500">
                 {a.code ? <span className="font-mono text-[11px]">{kodeAkun(a.code)}</span> : <span className="rounded bg-neutral-200 px-1.5 text-[10px] font-semibold uppercase text-neutral-700">Auto</span>}
                 <span className="truncate">{a.name}</span>
@@ -123,7 +124,7 @@ export function PlTable({ m, head, cells, colCount, glRange, title, minWidth = 8
               if (item.kind === 'subtotal') {
                 return (
                   <tr key={item.key} className="text-xs [&>td]:bg-neutral-200 [&>td]:shadow-[inset_0_-1px_0_#171717,inset_0_1px_0_#171717]">
-                    <td className={`px-3 ${py} font-bold text-neutral-900`}>{item.label}</td>
+                    <td className={`px-3 ${py} whitespace-nowrap font-bold text-neutral-900`}>{item.label}</td>
                     {cells(m.sub(item.key), { bold: true, upIsGood: true, level: 'subtotal' })}
                   </tr>
                 );
@@ -133,7 +134,7 @@ export function PlTable({ m, head, cells, colCount, glRange, title, minWidth = 8
               return (
                 <React.Fragment key={item.key}>
                   <tr className={`${trCls} cursor-pointer`} onClick={() => toggle(setClosed, item.key)}>
-                    <td className={`px-3 ${py} font-semibold text-neutral-900`}>
+                    <td className={`px-3 ${py} whitespace-nowrap font-semibold text-neutral-900`}>
                       <span className="inline-flex items-center gap-1.5">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}{item.label}</span>
                     </td>
                     {cells(s.v, { bold: true, upIsGood: item.upIsGood, level: 'section' })}
@@ -156,37 +157,86 @@ export function PlTable({ m, head, cells, colCount, glRange, title, minWidth = 8
 
 export interface BridgeStep { name: string; delta: number }
 
-/** Grafik jembatan: nilai awal -> langkah (+ hijau / - merah) -> nilai akhir. */
-export function Bridge({ startLabel, start, steps, endLabel, end, height = 190 }: {
+// Warna chart (biru): awal = biru muda, naik = biru, turun = merah lembut, akhir = biru tua.
+export const PL_BLUE = { start: '#BFDBFE', up: '#3B82F6', down: '#F87171', end: '#1D4ED8' };
+
+// Label sumbu-X: nama langkah diringkas (kamus + singkatan), lalu dipecah maks 2 baris @ 9 karakter
+// supaya tidak bertabrakan. Nama lengkap tetap muncul saat hover.
+const BR_MAX_CHARS = 9;
+const BR_SHORT: Record<string, string> = {
+  'revenue': 'Revenue', 'cost of sales': 'Cost of Sales', 'operating expenses': 'OpEx', 'other income': 'Other Inc.',
+  'income tax': 'Tax', 'gross profit': 'Gross Profit', 'net profit': 'Net Profit',
+};
+const BR_ABBR: [RegExp, string][] = [
+  [/\bOperating\b/gi, 'Oper.'], [/\bExpenses?\b/gi, 'Exp.'], [/\bAdministration\b/gi, 'Admin'],
+  [/\bDepreciation\b/gi, 'Depr.'], [/\bAmortization\b/gi, 'Amort.'], [/\bReceivables?\b/gi, 'A/R'], [/\bPayables?\b/gi, 'A/P'],
+  [/\s*&\s*/g, ' '], [/\band\b/gi, ' '],
+];
+function brShortLabel(text: string): string {
+  const base = text.trim().replace(/\s+(Increase|Decrease)$/i, '');
+  const hit = BR_SHORT[base.toLowerCase()];
+  if (hit) return hit;
+  return BR_ABBR.reduce((acc, [re, to]) => acc.replace(re, to), base).replace(/\s+/g, ' ').trim();
+}
+function brWrapLabel(text: string): string[] {
+  const clip = (t: string) => (t.length > BR_MAX_CHARS ? `${t.slice(0, BR_MAX_CHARS - 1)}…` : t);
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of brShortLabel(text).split(/\s+/).filter(Boolean)) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (next.length <= BR_MAX_CHARS) { cur = next; continue; }
+    if (cur) lines.push(cur);
+    cur = w;
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > 2) return [clip(lines[0]), clip(lines.slice(1).join(' '))];
+  return lines.map(clip);
+}
+function BridgeTick({ x, y, payload }: { x?: number; y?: number; payload?: { value: string } }) {
+  const full = String(payload?.value ?? '');
+  const lines = brWrapLabel(full);
+  return (
+    <text x={x} y={(y ?? 0) + 10} textAnchor="middle" fontSize={10} fill="#737373">
+      <title>{full}</title>
+      {lines.map((ln, i) => <tspan key={i} x={x} dy={i === 0 ? 0 : 11}>{ln}</tspan>)}
+    </text>
+  );
+}
+
+/** Grafik jembatan: nilai awal -> langkah (naik biru / turun merah) -> nilai akhir. Batang melayang [bawah, atas]. */
+export function Bridge({ startLabel, start, steps, endLabel, end, height = 200 }: {
   startLabel: string; start: number; steps: BridgeStep[]; endLabel: string; end: number; height?: number;
 }) {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
+  type Bar = { name: string; range: [number, number]; fill: string; label: string; up?: boolean };
   let run = start;
-  const bars = [{ name: startLabel, base: Math.min(0, start), value: Math.abs(start), fill: PL_COLORS.muted, label: fmtCompact(start, 1) }];
+  const bars: Bar[] = [{ name: startLabel, range: [Math.min(0, start), Math.max(0, start)], fill: PL_BLUE.start, label: fmtCompact(start, 1) }];
   steps.filter(s => Math.abs(s.delta) >= 0.5).forEach(s => {
     const lo = s.delta >= 0 ? run : run + s.delta;
-    bars.push({ name: s.name, base: lo, value: Math.abs(s.delta), fill: s.delta >= 0 ? PL_COLORS.profit : PL_COLORS.expense, label: `${s.delta >= 0 ? '+' : '-'}${fmtCompact(Math.abs(s.delta), 1)}` });
+    bars.push({ name: s.name, range: [lo, lo + Math.abs(s.delta)], up: s.delta >= 0, fill: s.delta >= 0 ? PL_BLUE.up : PL_BLUE.down, label: `${s.delta >= 0 ? '+' : '-'}${fmtCompact(Math.abs(s.delta), 1)}` });
     run += s.delta;
   });
-  bars.push({ name: endLabel, base: Math.min(0, end), value: Math.abs(end), fill: PL_COLORS.brand, label: fmtCompact(end, 1) });
+  bars.push({ name: endLabel, range: [Math.min(0, end), Math.max(0, end)], fill: PL_BLUE.end, label: fmtCompact(end, 1) });
 
-  // Recharts tidak mendukung base negatif pada stack; geser semua ke atas kalau perlu.
-  const levels = bars.flatMap(b => [b.base, b.base + b.value]);
+  const levels = bars.flatMap(b => b.range);
   const lo = Math.min(...levels), hi = Math.max(...levels);
-  const shift = lo < 0 ? -lo : 0;
-  const data = bars.map(b => ({ ...b, base: b.base + shift }));
   const pad = (hi - lo) * 0.2 || Math.abs(hi) * 0.05 || 1;
-  const floor = shift > 0 ? 0 : Math.max(0, lo - pad);
+  const domain: [number, number] = [lo < 0 ? lo - pad * 0.3 : 0, hi + pad * 0.4];
+  // Selisih sangat kecil diberi tinggi minimum ~4% sumbu agar tetap terlihat (hanya gambar; label tetap nilai asli).
+  const minH = (domain[1] - domain[0]) * 0.04;
+  const data = bars.map(b => {
+    if (b.up === undefined || b.range[1] - b.range[0] >= minH) return b;
+    const range: [number, number] = b.up ? [b.range[0], b.range[0] + minH] : [b.range[1] - minH, b.range[1]];
+    return { ...b, range };
+  });
 
   return (
     <div style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 18, right: 4, left: 4, bottom: 0 }}>
-          <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#737373' }} interval={0} tickLine={false} axisLine={false}
-            tickFormatter={(s: string) => (s.length > 16 ? `${s.slice(0, 15)}…` : s)} />
-          <YAxis hide domain={[floor, hi + shift + pad * 0.4]} allowDataOverflow />
-          <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
-          <Bar dataKey="value" stackId="w" radius={[3, 3, 0, 0]} isAnimationActive={false}>
+          <XAxis dataKey="name" tick={<BridgeTick />} interval={0} tickLine={false} axisLine={false} height={34} />
+          <YAxis hide domain={domain} allowDataOverflow />
+          <Bar dataKey="range" radius={[3, 3, 0, 0]} isAnimationActive={false}>
             {data.map((b, i) => <Cell key={i} fill={b.fill} />)}
             <LabelList dataKey="label" position="top" style={{ fontSize: 10, fontWeight: 600, fill: '#262626' }} />
           </Bar>

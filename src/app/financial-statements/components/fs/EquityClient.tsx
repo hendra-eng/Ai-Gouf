@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { ChevronDown, ChevronRight, ExternalLink, Printer } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
 import { fetchChangesInEquity, type ChangesInEquity, type PeriodQuery } from '@/lib/fsStore';
@@ -14,6 +14,9 @@ import { CheckBanner, WarningsPanel } from './CheckBanner';
 import PeriodPicker, { defaultPeriod } from './PeriodPicker';
 import { fmtAmount, fmtDate, glHref } from './fsFormat';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
+import { thCls, thRowCls, trCls } from './bs/BsMono';
+import { Num } from './pl/PlUi';
 
 // Task Plan 18 -- Statement of Changes in Equity: saldo awal komponen
 // ekuitas + mutasi (setoran modal, prive/dividen, laba periode, transfer ke
@@ -68,88 +71,97 @@ export default function EquityClient() {
     <FsShell
       title="Statement of Changes in Equity"
       subtitle={<>Movement of each equity component from opening to closing balance{company ? ` · ${company}` : ''}</>}
-      actions={<DownloadMenu disabled={!data} build={() => buildReport(data!, company, user?.nama || user?.username)} />}
     >
       {!hydrated ? <LoadingBlock /> : !activeClientId ? <NoClient /> : (
         <>
-          <PeriodPicker value={period} onApply={setPeriod} loading={loading} hideCompare />
+          <PeriodPicker
+            mono
+            value={period}
+            onApply={setPeriod}
+            loading={loading}
+            hideCompare
+            trailing={
+              <>
+                <button type="button" onClick={() => window.print()}
+                  className="inline-flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-medium text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
+                  <Printer size={14} className="text-neutral-500" /> Print
+                </button>
+                <DownloadMenu variant="mono" disabled={!data} build={() => buildReport(data!, company, user?.nama || user?.username)} />
+              </>
+            }
+          />
           {error && <ErrorBlock message={error} />}
           {loading && !data && <LoadingBlock />}
           {data && (
             <div className={`space-y-3 ${loading ? 'opacity-60' : ''}`}>
               <CheckBanner
+                fontCls="text-xs font-medium"
                 ok={data.check.reconciled}
                 okText={`Reconciled — closing equity ${fmtAmount(data.check.closing_equity)} equals total equity on the Balance Sheet at ${fmtDate(data.period.end)}`}
                 failText={`Not reconciled with the Balance Sheet — difference ${fmtAmount(data.check.difference)}`}
               />
-              <WarningsPanel warnings={data.warnings} />
-              <div className="bg-card border border-border rounded-xl overflow-x-auto scrollbar-thin">
-                <table className="w-full text-sm min-w-[760px]">
-                  <thead>
-                    <tr className="text-[11px] uppercase tracking-wide text-muted-foreground bg-slate-50 border-b border-border">
-                      <th className="text-left font-semibold px-5 py-2.5">Description</th>
-                      {data.components.map(c => <th key={c.key} className="text-right font-semibold px-3 py-2.5">{c.label}</th>)}
-                      <th className="text-right font-semibold px-4 py-2.5">Total Equity</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.rows.map(r => {
-                      const strong = r.type !== 'movement';
-                      const drill = Object.values(r.accounts).some(l => l.length > 0);
-                      const isOpen = open.has(r.key);
-                      return (
-                        <React.Fragment key={r.key}>
-                          <tr
-                            className={`border-t border-border ${strong ? 'bg-blue-50/60 font-semibold' : 'hover:bg-slate-50'} ${drill ? 'cursor-pointer' : ''}`}
-                            onClick={drill ? () => toggle(r.key) : undefined}
-                          >
-                            <td className="px-5 py-2.5 text-foreground">
-                              <span className="inline-flex items-center gap-1.5">
-                                {drill ? (isOpen ? <ChevronDown size={15} className="text-muted-foreground" /> : <ChevronRight size={15} className="text-muted-foreground" />) : <span className="w-[15px]" />}
-                                {rowLabel(r.label)}
-                              </span>
-                            </td>
-                            {data.components.map(c => (
-                              <td key={c.key} className={`px-3 py-2.5 text-right tabular-nums ${r.values[c.key] < 0 ? 'text-rose-700' : ''}`}>{fmtAmount(r.values[c.key])}</td>
-                            ))}
-                            <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${r.total < 0 ? 'text-rose-700' : ''}`}>{fmtAmount(r.total)}</td>
-                          </tr>
-                          {isOpen && (
-                            <tr className="bg-slate-50/60">
-                              <td colSpan={data.components.length + 2} className="px-10 py-3">
-                                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                                  {data.components.filter(c => r.accounts[c.key]?.length).map(c => (
-                                    <div key={c.key} className="bg-card border border-border rounded-lg p-3">
-                                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{c.label}</p>
-                                      <ul className="space-y-1 text-[13px]">
-                                        {r.accounts[c.key].map((a, i) => (
-                                          <li key={`${a.code ?? 'auto'}-${i}`} className="flex items-center justify-between gap-3">
-                                            <span className="inline-flex items-center gap-1.5 min-w-0">
-                                              {a.code ? <span className="font-mono text-xs text-muted-foreground">{kodeAkun(a.code)}</span> : <span className="text-[10px] font-semibold uppercase bg-violet-50 text-violet-700 rounded px-1.5">Auto</span>}
-                                              <span className="truncate">{a.name}</span>
-                                              {a.code && (
-                                                <Link href={glHref(a.code, data.period.start, data.period.end)} target="_blank" title="Open in General Ledger" className="text-muted-foreground hover:text-blue-700">
-                                                  <ExternalLink size={12} />
-                                                </Link>
-                                              )}
-                                            </span>
-                                            <span className="tabular-nums">{fmtAmount(a.amount)}</span>
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  ))}
-                                </div>
+              <WarningsPanel fontCls="text-xs font-medium" warnings={data.warnings} />
+              {/* Gaya tabel disamakan dengan Profit & Loss / Balance Sheet: header abu, baris saldo abu muda
+                  bergaris tebal, garis pemisah tipis, hover abu, teks kolom pertama tidak turun baris. */}
+              <section className={`card-elevated-md rounded-xl ${salesFont.className}`}>
+                <div className="overflow-x-auto scrollbar-thin p-3">
+                  <table className="w-full border-separate border-spacing-0 text-xs" style={{ minWidth: 760 }}>
+                    <thead>
+                      <tr className={thRowCls}>
+                        <th className={`${thCls} pl-8 text-left`}>Description</th>
+                        {data.components.map(c => <th key={c.key} className={`${thCls} text-right`}>{c.label}</th>)}
+                        <th className={`${thCls} text-right`}>Total Equity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.rows.map(r => {
+                        const strong = r.type !== 'movement';
+                        const drill = Object.values(r.accounts).some(l => l.length > 0);
+                        const isOpen = open.has(r.key);
+                        const chevron = drill
+                          ? (isOpen ? <ChevronDown size={14} className="text-neutral-500" /> : <ChevronRight size={14} className="text-neutral-500" />)
+                          : <span className="w-[14px]" />;
+                        return (
+                          <React.Fragment key={r.key}>
+                            <tr
+                              className={strong
+                                ? `text-xs [&>td]:bg-neutral-200 [&>td]:shadow-[inset_0_-1px_0_#171717,inset_0_1px_0_#171717] ${drill ? 'cursor-pointer' : ''}`
+                                : `${trCls} ${drill ? 'cursor-pointer' : ''}`}
+                              onClick={drill ? () => toggle(r.key) : undefined}
+                            >
+                              <td className={`px-3 ${strong ? 'py-2.5 font-bold' : 'py-2'} whitespace-nowrap text-neutral-900`}>
+                                <span className="inline-flex items-center gap-1.5">{chevron}{rowLabel(r.label)}</span>
                               </td>
+                              {data.components.map(c => <Num key={c.key} v={r.values[c.key]} bold={strong} className="py-2" />)}
+                              <Num v={r.total} bold={strong} className="py-2" />
                             </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <p className="text-xs text-muted-foreground">
+                            {isOpen && data.components.filter(c => r.accounts[c.key]?.length).flatMap(c =>
+                              r.accounts[c.key].map((a, i) => (
+                                <tr key={`${r.key}-${c.key}-${a.code ?? 'auto'}-${i}`} className={trCls}>
+                                  <td className="pl-14 pr-3 py-1 whitespace-nowrap">
+                                    <span className="inline-flex items-center gap-2 min-w-0 text-neutral-500">
+                                      {a.code ? <span className="font-mono text-[11px]">{kodeAkun(a.code)}</span> : <span className="rounded bg-neutral-200 px-1.5 text-[10px] font-semibold uppercase text-neutral-700">Auto</span>}
+                                      <span className="truncate">{a.name}</span>
+                                      {a.code && (
+                                        <Link href={glHref(a.code, data.period.start, data.period.end)} target="_blank" title="Open in General Ledger" onClick={e => e.stopPropagation()} className="hover:text-neutral-900">
+                                          <ExternalLink size={12} />
+                                        </Link>
+                                      )}
+                                    </span>
+                                  </td>
+                                  {data.components.map(cc => (cc.key === c.key ? <Num key={cc.key} v={a.amount} className="py-1" /> : <td key={cc.key} className="px-3 py-1" />))}
+                                  <Num v={a.amount} className="py-1" />
+                                </tr>
+                              ))
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+              <p className="text-xs font-medium text-neutral-500">
                 Columns follow the equity component mapping of each equity account (Mapping tab). Current year earnings are computed from the
                 Profit &amp; Loss; at the start of a new year they move to retained earnings automatically. Click a row to see the accounts behind it.
               </p>

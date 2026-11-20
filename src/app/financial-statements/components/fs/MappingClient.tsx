@@ -3,13 +3,17 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, Loader2, Pencil, RotateCcw, Search, Wand2 } from 'lucide-react';
+import { Activity, AlertTriangle, BookmarkCheck, Layers, ListChecks, Loader2, Pencil, RotateCcw, Search, Wand2 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import {
   applyFsMappingDefaults, fetchFsMapping, resetFsMapping, saveFsMapping, type FsMapping, type MappedAccount, type MappingFields,
 } from '@/lib/fsStore';
 import FsShell, { ErrorBlock, LoadingBlock, NoClient } from './FsShell';
-import { Field, Select, inputCls } from './PeriodPicker';
+import { Field, Select } from './PeriodPicker';
+import { KpiCard, inputCls, thCls, thRowCls, trCls } from './bs/BsMono';
+
+// Font gaya Sales: input teks text-xs neutral-900, label kecil neutral-500, tabel text-xs (header bold hitam).
+const fieldCls = inputCls;
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Master mapping laporan keuangan per klien (Task Plan 16-19): seksi &
@@ -18,8 +22,8 @@ import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 // override disimpan di management_client_fs_mappings.
 
 const SOURCE: Record<MappedAccount['mapping_source'], { label: string; cls: string }> = {
-  client: { label: 'Client', cls: 'bg-blue-50 text-blue-700' },
-  default: { label: 'Default', cls: 'bg-slate-100 text-slate-600' },
+  client: { label: 'Client', cls: 'bg-neutral-800 text-white' },
+  default: { label: 'Default', cls: 'bg-neutral-200 text-neutral-700' },
   none: { label: 'Unmapped', cls: 'bg-amber-50 text-amber-700' },
 };
 
@@ -51,56 +55,56 @@ function Editor({ a, m, clientId, onDone }: { a: MappedAccount; m: FsMapping; cl
   };
 
   return (
-    <div className="bg-slate-50 border-t border-border px-5 py-4 space-y-3">
+    <div className="border-t border-neutral-300 bg-neutral-100 px-5 py-4 space-y-3">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Field label="Report section">
-          <Select value={f.fs_section ?? ''} onChange={v => set('fs_section', v)}>
+        <Field salesFont label="Report section">
+          <Select salesFont value={f.fs_section ?? ''} onChange={v => set('fs_section', v)}>
             <option value="">Default ({sections.find(x => x.key === a.section)?.label ?? a.section})</option>
             {sections.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
           </Select>
         </Field>
-        <Field label="Report line">
-          <input value={f.fs_line ?? ''} onChange={e => set('fs_line', e.target.value)} placeholder={`Default: ${a.line}`} className={inputCls} />
+        <Field salesFont label="Report line">
+          <input value={f.fs_line ?? ''} onChange={e => set('fs_line', e.target.value)} placeholder={`Default: ${a.line}`} className={fieldCls} />
         </Field>
         {effectiveSection === 'equity' && (
-          <Field label="Equity component">
-            <Select value={f.equity_component ?? ''} onChange={v => set('equity_component', v)}>
+          <Field salesFont label="Equity component">
+            <Select salesFont value={f.equity_component ?? ''} onChange={v => set('equity_component', v)}>
               <option value="">Default{a.equity_component ? ` (${m.options.equity_components.find(x => x.key === a.equity_component)?.label})` : ' (none)'}</option>
               {m.options.equity_components.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
             </Select>
           </Field>
         )}
-        <Field label="CALK note">
-          <Select value={f.note_key ?? ''} onChange={v => set('note_key', v)}>
+        <Field salesFont label="CALK note">
+          <Select salesFont value={f.note_key ?? ''} onChange={v => set('note_key', v)}>
             <option value="">Default{a.note_key ? ` (${m.options.notes.find(x => x.key === a.note_key)?.label ?? a.note_key})` : ' (none)'}</option>
             {m.options.notes.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
           </Select>
         </Field>
         {bs && (
           <>
-            <Field label="Cash flow category">
-              <Select value={f.cash_flow_category ?? ''} onChange={v => set('cash_flow_category', v)}>
+            <Field salesFont label="Cash flow category">
+              <Select salesFont value={f.cash_flow_category ?? ''} onChange={v => set('cash_flow_category', v)}>
                 <option value="">Default{a.cash_flow_category ? ` (${m.options.cash_flow_categories.find(x => x.key === a.cash_flow_category)?.label})` : ' (unmapped)'}</option>
                 {m.options.cash_flow_categories.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
               </Select>
             </Field>
-            <Field label="Cash flow line" className="xl:col-span-2">
-              <input value={f.cash_flow_line ?? ''} onChange={e => set('cash_flow_line', e.target.value)} placeholder={a.cash_flow_line ? `Default: ${a.cash_flow_line}` : 'e.g. (Increase)/decrease in trade receivables'} className={inputCls} />
+            <Field salesFont label="Cash flow line" className="xl:col-span-2">
+              <input value={f.cash_flow_line ?? ''} onChange={e => set('cash_flow_line', e.target.value)} placeholder={a.cash_flow_line ? `Default: ${a.cash_flow_line}` : 'e.g. (Increase)/decrease in trade receivables'} className={fieldCls} />
             </Field>
           </>
         )}
       </div>
       <div className="flex items-center gap-2">
-        <button type="button" disabled={busy} onClick={save} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
+        <button type="button" disabled={busy} onClick={save} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50">
           {busy ? <Loader2 size={14} className="animate-spin" /> : 'Save mapping'}
         </button>
         {a.saved && (
-          <button type="button" disabled={busy} onClick={reset} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm bg-card hover:bg-slate-100">
+          <button type="button" disabled={busy} onClick={reset} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 text-xs font-medium">
             <RotateCcw size={14} /> Reset to default
           </button>
         )}
-        <button type="button" onClick={() => onDone(false)} className="px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground">Cancel</button>
-        <span className="ml-auto text-[11px] text-muted-foreground">Empty fields follow the COA head/sub and the default rule for <span className="font-mono">{a.standard_account_code ?? '—'}</span>.</span>
+        <button type="button" onClick={() => onDone(false)} className="rounded-lg px-3 py-2 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-200 hover:text-neutral-900">Cancel</button>
+        <span className="ml-auto text-[11px] font-medium text-neutral-500">Empty fields follow the COA head/sub and the default rule for <span className="font-mono">{a.standard_account_code ?? '—'}</span>.</span>
       </div>
     </div>
   );
@@ -156,16 +160,6 @@ export default function MappingClient() {
     <FsShell
       title="Financial Statement Mapping"
       subtitle="Master mapping per client: how each COA account flows into the Balance Sheet, Profit & Loss, Changes in Equity, Cash Flow and CALK"
-      actions={
-        <>
-          <button type="button" disabled={!data || applying} onClick={() => applyDefaults(false)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-            {applying ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />} Apply defaults
-          </button>
-          <button type="button" disabled={!data || applying} onClick={() => applyDefaults(true)} className="px-3.5 py-2.5 rounded-lg border border-border text-sm font-medium bg-card hover:bg-slate-50 disabled:opacity-50" title="Re-apply default rules to every account, replacing saved cash flow / equity / note values">
-            Re-apply &amp; overwrite
-          </button>
-        </>
-      }
     >
       {!hydrated ? <LoadingBlock /> : !activeClientId ? <NoClient /> : (
         <>
@@ -173,50 +167,52 @@ export default function MappingClient() {
           {loading && !data && <LoadingBlock />}
           {data && (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                {[
-                  ['Accounts', data.summary.accounts, ''],
-                  ['Saved for client', data.summary.saved, ''],
-                  ['With warnings', data.summary.with_warnings, data.summary.with_warnings ? 'text-amber-700' : ''],
-                  ['No cash flow mapping', data.summary.no_cash_flow_mapping, data.summary.no_cash_flow_mapping ? 'text-rose-700' : ''],
-                  ['No equity component', data.summary.no_equity_component, data.summary.no_equity_component ? 'text-rose-700' : ''],
-                ].map(([l, v, c]) => (
-                  <div key={l as string} className="bg-card border border-border rounded-xl px-4 py-3">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">{l}</p>
-                    <p className={`text-lg font-bold tabular-nums mt-0.5 ${c}`}>{v}</p>
-                  </div>
-                ))}
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+                <KpiCard label="Accounts" icon={ListChecks} value={data.summary.accounts} />
+                <KpiCard label="Saved for client" icon={BookmarkCheck} value={data.summary.saved} />
+                <KpiCard label="With warnings" icon={AlertTriangle} value={<span className={data.summary.with_warnings ? 'text-amber-700' : ''}>{data.summary.with_warnings}</span>} />
+                <KpiCard label="No cash flow mapping" icon={Activity} value={<span className={data.summary.no_cash_flow_mapping ? 'text-red-700' : ''}>{data.summary.no_cash_flow_mapping}</span>} />
+                <KpiCard label="No equity component" icon={Layers} value={<span className={data.summary.no_equity_component ? 'text-red-700' : ''}>{data.summary.no_equity_component}</span>} />
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="card-elevated-md flex flex-wrap items-center gap-3 rounded-xl px-4 py-3">
                 <div className="relative">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                  <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search code, name or line" className={`${inputCls} pl-8 w-64`} />
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                  <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search code, name or line" className={`${fieldCls} pl-8 w-64`} />
                 </div>
-                <div className="w-48">
+                <div className="w-52">
                   <Select value={statement} onChange={v => setStatement(v as 'all' | 'BS' | 'PL')}>
                     <option value="all">All accounts</option>
                     <option value="BS">Balance sheet accounts</option>
                     <option value="PL">Profit &amp; loss accounts</option>
                   </Select>
                 </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={onlyIssues} onChange={e => setOnlyIssues(e.target.checked)} className="rounded border-slate-300" /> Only accounts with warnings
+                <label className="flex items-center gap-2 text-xs font-medium text-neutral-700">
+                  <input type="checkbox" checked={onlyIssues} onChange={e => setOnlyIssues(e.target.checked)} className="rounded border-neutral-400 accent-neutral-800" /> Only accounts with warnings
                 </label>
-                <span className="ml-auto text-xs text-muted-foreground">{rows.length} shown</span>
+                <span className="text-xs font-medium text-neutral-500">{rows.length} shown</span>
+                <div className="ml-auto flex items-center gap-2">
+                  <button type="button" disabled={!data || applying} onClick={() => applyDefaults(true)} className="px-3 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 text-xs font-medium disabled:opacity-50" title="Re-apply default rules to every account, replacing saved cash flow / equity / note values">
+                    Re-apply &amp; overwrite
+                  </button>
+                  <button type="button" disabled={!data || applying} onClick={() => applyDefaults(false)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50">
+                    {applying ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} Apply defaults
+                  </button>
+                </div>
               </div>
 
-              <div className="bg-card border border-border rounded-xl overflow-x-auto scrollbar-thin">
-                <table className="w-full text-sm min-w-[1100px]">
+              <section className="card-elevated-md rounded-xl">
+                <div className="overflow-x-auto scrollbar-thin p-3">
+                <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-xs">
                   <thead>
-                    <tr className="text-[11px] uppercase tracking-wide text-muted-foreground bg-slate-50 border-b border-border">
-                      <th className="text-left font-semibold px-4 py-2.5">Account</th>
-                      <th className="text-left font-semibold px-3 py-2.5">Report section / line</th>
-                      <th className="text-left font-semibold px-3 py-2.5">Equity</th>
-                      <th className="text-left font-semibold px-3 py-2.5">Cash flow</th>
-                      <th className="text-left font-semibold px-3 py-2.5">CALK note</th>
-                      <th className="text-left font-semibold px-3 py-2.5">Source</th>
-                      <th className="w-20" />
+                    <tr className={thRowCls}>
+                      <th className={`${thCls} pl-4 text-left`}>Account</th>
+                      <th className={`${thCls} text-left`}>Report section / line</th>
+                      <th className={`${thCls} text-left`}>Equity</th>
+                      <th className={`${thCls} text-left`}>Cash flow</th>
+                      <th className={`${thCls} text-left`}>CALK note</th>
+                      <th className={`${thCls} text-left`}>Source</th>
+                      <th className={`${thCls} w-20`} />
                     </tr>
                   </thead>
                   <tbody>
@@ -224,35 +220,35 @@ export default function MappingClient() {
                       const k = a.coa_id ?? a.code;
                       return (
                         <React.Fragment key={k}>
-                          <tr className={`border-t border-border ${editing === k ? 'bg-slate-50' : 'hover:bg-slate-50'}`}>
+                          <tr className={`${trCls} ${editing === k ? '[&>td]:bg-neutral-200' : ''}`}>
                             <td className="px-4 py-2">
                               <div className="flex items-center gap-2">
-                                <span className="font-mono text-xs text-muted-foreground">{kodeAkun(a.code)}</span>
-                                <span className="text-foreground">{a.name}</span>
+                                <span className="font-mono text-[11px] text-neutral-500">{kodeAkun(a.code)}</span>
+                                <span className="text-neutral-900">{a.name}</span>
                                 {a.warnings.length > 0 && (
                                   <span title={a.warnings.map(w => o?.warnings[w] ?? w).join('\n')}><AlertTriangle size={13} className="text-amber-500" /></span>
                                 )}
-                                {!a.is_active && <span className="text-[10px] uppercase bg-slate-100 text-slate-500 rounded px-1">inactive</span>}
+                                {!a.is_active && <span className="text-[10px] uppercase bg-neutral-200 text-neutral-600 rounded px-1">inactive</span>}
                               </div>
-                              <div className="text-[11px] text-muted-foreground">{a.classification ?? 'not in COA'}{a.account_head ? ` · ${a.account_head}` : ''}</div>
+                              <div className="text-[11px] font-medium text-neutral-500">{a.classification ?? 'not in COA'}{a.account_head ? ` · ${a.account_head}` : ''}</div>
                             </td>
                             <td className="px-3 py-2">
-                              <div className="text-foreground">{sectionLabel(a)}</div>
-                              <div className="text-[11px] text-muted-foreground">{a.line}</div>
+                              <div className="text-neutral-900">{sectionLabel(a)}</div>
+                              <div className="text-[11px] font-medium text-neutral-500">{a.line}</div>
                             </td>
-                            <td className="px-3 py-2 text-[13px]">{a.section === 'equity' ? label(o?.equity_components, a.equity_component) : <span className="text-muted-foreground">—</span>}</td>
-                            <td className="px-3 py-2 text-[13px]">
+                            <td className="px-3 py-2 text-neutral-700">{a.section === 'equity' ? label(o?.equity_components, a.equity_component) : <span className="text-neutral-500">—</span>}</td>
+                            <td className="px-3 py-2 text-neutral-700">
                               {a.jenis === 'BS' ? (
                                 a.cash_flow_category
-                                  ? <><div>{label(o?.cash_flow_categories, a.cash_flow_category)}</div><div className="text-[11px] text-muted-foreground">{a.cash_flow_line}</div></>
-                                  : <span className="text-rose-700 font-medium">Not mapped</span>
-                              ) : <span className="text-muted-foreground">Via net profit</span>}
+                                  ? <><div>{label(o?.cash_flow_categories, a.cash_flow_category)}</div><div className="text-[11px] font-medium text-neutral-500">{a.cash_flow_line}</div></>
+                                  : <span className="text-red-700 font-medium">Not mapped</span>
+                              ) : <span className="text-neutral-500">Via net profit</span>}
                             </td>
-                            <td className="px-3 py-2 text-[13px]">{label(o?.notes, a.note_key)}</td>
+                            <td className="px-3 py-2 text-neutral-700">{label(o?.notes, a.note_key)}</td>
                             <td className="px-3 py-2"><span className={`text-[10px] font-semibold uppercase rounded px-1.5 py-0.5 ${SOURCE[a.mapping_source].cls}`}>{SOURCE[a.mapping_source].label}</span></td>
                             <td className="px-3 py-2 text-right">
                               {a.coa_id && (
-                                <button type="button" onClick={() => setEditing(editing === k ? null : k)} className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline">
+                                <button type="button" onClick={() => setEditing(editing === k ? null : k)} className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
                                   <Pencil size={12} /> Edit
                                 </button>
                               )}
@@ -268,8 +264,9 @@ export default function MappingClient() {
                     })}
                   </tbody>
                 </table>
-              </div>
-              <p className="text-xs text-muted-foreground">
+                </div>
+              </section>
+              <p className="text-xs font-medium text-neutral-500">
                 “Default” means the account follows its COA head/sub and the standard rule for its standard account code — new COA accounts are picked up
                 automatically. “Apply defaults” copies those rules into this client&apos;s own mapping so they can be reviewed and edited.
                 Editing requires Supervisor (Tahap 3) or above.

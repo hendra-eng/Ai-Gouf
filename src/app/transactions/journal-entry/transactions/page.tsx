@@ -268,13 +268,13 @@ export default function JournalEntryTransactionPage() {
               </div>
             </div>
             <div className="overflow-x-auto scrollbar-thin">
-              <table className="w-full min-w-[1100px]">
+              <table className="w-full min-w-[1100px] select-text border-separate border-spacing-0">
                 <thead>
-                  <tr>
-                    {TABLE_COLUMNS.map((col, i) => (
+                  <tr className="bg-neutral-300">
+                    {TABLE_COLUMNS.map(col => (
                       <th
                         key={col.field}
-                        className={`py-3 ${i === 0 ? 'pl-3 pr-2' : 'px-2'} ${col.align === 'right' ? 'text-right' : 'text-left'} text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800`}
+                        className={`py-2 px-2 ${col.align === 'right' ? 'text-right' : 'text-left'} text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800`}
                       >
                         <button
                           type="button"
@@ -286,7 +286,7 @@ export default function JournalEntryTransactionPage() {
                         </button>
                       </th>
                     ))}
-                    <th className="text-left py-3 px-2 text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800">Actions</th>
+                    <th className="text-left py-2 px-2 text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -302,7 +302,7 @@ export default function JournalEntryTransactionPage() {
                       onClick={() => openDetail(row)}
                       className={`cursor-pointer [&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200 text-xs ${selectedRow?.id === row.id ? '[&>td]:bg-neutral-100' : ''}`}
                     >
-                      <td className="py-2 pl-3 pr-2 whitespace-nowrap text-blue-700 font-medium">{row.jeNumber}</td>
+                      <td className="py-2 px-2 whitespace-nowrap text-blue-700 font-medium">{row.jeNumber}</td>
                       <td className="py-2 px-2 whitespace-nowrap text-neutral-500">{row.date}</td>
                       <td className="py-2 px-2 max-w-[200px] truncate text-neutral-500" title={row.description}>{row.description}</td>
                       <td className="py-2 px-2 whitespace-nowrap text-neutral-500">{row.sourceType}</td>

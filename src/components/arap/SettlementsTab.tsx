@@ -104,7 +104,7 @@ export default function SettlementsTab({ cfg, clientId, mode, data, loading }: {
       </>}
     >
       <div className="overflow-x-auto px-5">
-        <table className="w-full min-w-[1040px] text-xs">
+        <table className="w-full min-w-[1040px] whitespace-nowrap text-[11px]">
           <thead>
             <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:border-y [&>th]:border-neutral-800 [&>th]:py-2 [&>th]:font-bold">
               <SortTh label="Number" k="tx_number" sort={sort} onSort={onSort} />
@@ -130,10 +130,10 @@ export default function SettlementsTab({ cfg, clientId, mode, data, loading }: {
                   </td>
                   <td className="px-3 py-2.5 text-neutral-500">{fmtDate(s.tx_date)}</td>
                   <td className="max-w-[200px] truncate px-3 py-2.5 text-neutral-900" title={s.counterparty ?? ''}>{s.counterparty || '—'}</td>
-                  <td className="max-w-[220px] truncate px-3 py-2.5 text-xs text-neutral-500" title={docs.join(', ')}>
+                  <td className="max-w-[220px] truncate px-3 py-2.5 text-[11px] text-neutral-500" title={docs.join(', ')}>
                     {docs.length ? docs.join(', ') : (s.unapplied ? 'Unapplied' : '—')}
                   </td>
-                  <td className="px-3 py-2.5 text-xs text-neutral-500">
+                  <td className="px-3 py-2.5 text-[11px] text-neutral-500">
                     {s.payment_method ? PAYMENT_METHOD_LABEL[s.payment_method] : '—'}
                     <span className="block">{kodeAkun(s.bank_account_code)} · {s.bank_account_name}</span>
                   </td>
@@ -143,7 +143,7 @@ export default function SettlementsTab({ cfg, clientId, mode, data, loading }: {
                     {s.status === 'reversed' && <span className="block text-[10px] text-neutral-500">on {fmtDate(s.reversal_date)}</span>}
                   </td>
                   <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-nowrap items-center gap-1 [&_button]:whitespace-nowrap [&_button]:text-[11px]">
                       <button type="button" onClick={() => setLihat(s)} className={btnSmall}>View</button>
                       {busy === s.id ? <Loader2 size={14} className="animate-spin text-neutral-500" /> : (
                         <Menu width="w-48" button={() => <button type="button" className={`${btnSmall} px-2`} aria-label="More actions"><MoreHorizontal size={14} /></button>}>
@@ -167,7 +167,7 @@ export default function SettlementsTab({ cfg, clientId, mode, data, loading }: {
           </tbody>
           {tersaring.length > 0 && (
             <tfoot>
-              <tr className="border-t-2 border-neutral-300 bg-neutral-50 text-sm font-semibold">
+              <tr className="border-t-2 border-neutral-300 bg-neutral-50 text-[11px] font-semibold">
                 <td className="px-3 py-2.5" colSpan={5}>Total excl. reversed ({tersaring.length})</td>
                 <td className="px-3 py-2.5 text-right">{rupiah(total)}</td>
                 <td colSpan={2} />

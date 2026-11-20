@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import {
-  AlertTriangle, BarChart3, CheckCircle2, Coins, Download, FileText, Loader2, MoreHorizontal, Network, Paperclip, ShieldCheck, Undo2, User,
+  AlertTriangle, BarChart3, CheckCircle2, Coins, Download, FileText, Loader2, MoreHorizontal, Network, Paperclip, ShieldCheck, Undo2, User, XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { fmtDate, fmtDateTime, rupiah, todayIso } from '@/lib/receivablesPayablesStore';
@@ -16,7 +16,7 @@ import {
   type BulkAction, type OtherTx, type TxStatus, type TypeKey,
 } from '@/lib/otherTransactionStore';
 import { btnSmall, Drawer, Field, inputCls } from '@/components/arap/arapUi';
-import { JournalLines, Pill, ReasonDialog } from '@/components/shared/moduleUi';
+import { Pill, ReasonDialog } from '@/components/shared/moduleUi';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // ============================================================
@@ -130,6 +130,52 @@ export function TypeIcon({ type, size = 'sm' }: { type: TypeKey; size?: 'sm' | '
 
 export const StatusPill = ({ s }: { s: TxStatus }) => <Pill label={TX_STATUS[s]?.label ?? s} style={TX_STATUS[s]?.style ?? 'bg-slate-100 text-slate-600'} />;
 
+export function MonoTypeIcon({ type, size = 'sm' }: { type: TypeKey; size?: 'sm' | 'md' }) {
+  const Ikon = (TYPE_UI[type] ?? TYPE_UI.other_event).icon;
+  const box = size === 'md' ? 'h-9 w-9' : 'h-7 w-7';
+  return <span className={`flex ${box} shrink-0 items-center justify-center rounded-md bg-neutral-50 text-neutral-600 ring-1 ring-neutral-200`}><Ikon size={size === 'md' ? 17 : 14} strokeWidth={1.5} /></span>;
+}
+
+// Tabel baris jurnal bergaya elegan monokrom (angka tabular, header kapital, total bergaris tegas).
+export function PreviewLines({ lines }: { lines: OtherTx['lines'] }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
+  const d = lines.reduce((n, l) => n + l.debit, 0);
+  const k = lines.reduce((n, l) => n + l.credit, 0);
+  const f = (n: number) => (n ? n.toLocaleString('id-ID', { maximumFractionDigits: 2 }) : '');
+  const th = 'px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-600';
+  return (
+    <table className="w-full border-separate border-spacing-0 text-xs">
+      <thead>
+        <tr className="bg-neutral-50 text-left">
+          <th className={`${th} border-y border-neutral-200`}>Account</th>
+          <th className={`${th} border-y border-neutral-200 text-right`}>Debit</th>
+          <th className={`${th} border-y border-neutral-200 text-right`}>Credit</th>
+        </tr>
+      </thead>
+      <tbody>
+        {lines.map((l, i) => (
+          <tr key={i} className="[&>td]:border-b [&>td]:border-neutral-100 [&:hover>td]:bg-neutral-50">
+            <td className="px-3 py-2 pr-2 align-top">
+              <span className="font-mono font-semibold text-neutral-900">{kodeAkun(l.account_code)}</span>
+              <span className="text-neutral-800"> · {l.account_name}</span>
+              {l.description && <span className="mt-0.5 block text-[10px] font-medium text-neutral-500">{l.description}</span>}
+            </td>
+            <td className="px-3 py-2 text-right align-top font-medium tabular-nums text-neutral-900">{f(l.debit)}</td>
+            <td className="px-3 py-2 text-right align-top font-medium tabular-nums text-neutral-900">{f(l.credit)}</td>
+          </tr>
+        ))}
+      </tbody>
+      <tfoot>
+        <tr className="bg-neutral-50 [&>td]:border-t [&>td]:border-neutral-800">
+          <td className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-700">Total</td>
+          <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-neutral-900">{f(d)}</td>
+          <td className="px-3 py-2 text-right text-xs font-semibold tabular-nums text-neutral-900">{f(k)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  );
+}
+
 export const createHref = (type: TypeKey, templateId?: string | null) =>
   `/transactions/other/create?type=${type}${templateId ? `&template=${templateId}` : ''}`;
 export const editHref = (id: string) => `/transactions/other/create?id=${id}`;
@@ -155,19 +201,19 @@ export function SearchBox({ value, onChange, placeholder, className = '' }: { va
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <div className={`relative ${className}`}>
-      <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className={`${inputCls} pl-9`} />
+      <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full rounded-lg border border-neutral-300 bg-card py-2 pl-9 pr-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
     </div>
   );
 }
 
 export function IssueList({ issues }: { issues: OtherTx['issues'] }) {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
-  if (!issues.length) return <p className="flex items-center gap-1.5 text-xs text-emerald-700"><CheckCircle2 size={14} /> All checks passed.</p>;
+  if (!issues.length) return <p className="flex items-center gap-1.5 text-xs font-medium text-neutral-700"><CheckCircle2 size={14} className="text-neutral-800" /> All checks passed.</p>;
   return (
-    <ul className="space-y-1 rounded-xl border border-border p-3 text-xs">
+    <ul className="space-y-1.5 rounded-[10px] border border-neutral-200 bg-neutral-50 p-3 text-xs">
       {issues.map(i => (
-        <li key={i.message} className={`flex gap-2 ${i.level === 'error' ? 'text-rose-600' : 'text-amber-700'}`}><AlertTriangle size={13} className="mt-0.5 shrink-0" />{i.message}</li>
+        <li key={i.message} className={`flex gap-2 ${i.level === 'error' ? 'font-semibold text-neutral-900' : 'font-medium text-neutral-600'}`}>{i.level === 'error' ? <XCircle size={13} className="mt-0.5 shrink-0" /> : <AlertTriangle size={13} className="mt-0.5 shrink-0 text-neutral-500" />}{i.message}</li>
       ))}
     </ul>
   );
@@ -190,7 +236,7 @@ export function TransactionDrawer({ clientId, txId, canPost, onClose }: { client
   if (!d.data || d.data.id !== txId) {
     return (
       <Drawer open onClose={onClose} title="Transaction">
-        {d.error ? <p className="text-sm text-rose-600">{d.error}</p> : <div className="h-40 animate-pulse rounded-xl bg-slate-100" />}
+        {d.error ? <p className="text-sm font-semibold text-neutral-900">{d.error}</p> : <div className="h-40 animate-pulse rounded-[10px] bg-neutral-100" />}
       </Drawer>
     );
   }
@@ -208,34 +254,34 @@ function DrawerIsi({ clientId, tx, canPost, onClose }: { clientId: string; tx: O
   };
   const tombol = (label: string, action: BulkAction, utama = false) => (
     <button type="button" disabled={!!busy} onClick={() => jalan(label, () => runBulk(clientId, action, [tx.id]))}
-      className={utama ? `${btnSmall} border-transparent bg-[#0F7D4E] text-white hover:bg-[#0c6a42]` : btnSmall}>
+      className={utama ? `${btnSmall} border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700` : btnSmall}>
       {busy === label && <Loader2 size={12} className="animate-spin" />} {label}
     </button>
   );
   const ui = TYPE_UI[tx.type_key];
   const detail = ui.details.filter(d => tx.details[d.key] !== undefined && tx.details[d.key] !== '');
   return (
-    <Drawer open onClose={onClose} title={<span className="flex items-center gap-2"><TypeIcon type={tx.type_key} /> {tx.journal_no}</span>}
+    <Drawer open onClose={onClose} title={<span className="flex items-center gap-2"><MonoTypeIcon type={tx.type_key} /> {tx.journal_no}</span>}
       subtitle={`${tx.type_name} · ${tx.subtype_label} · ${fmtDate(tx.journal_date)}`}
       footer={<>
         {EDITABLE.includes(tx.status) && tx.source !== 'legacy' && <Link href={editHref(tx.id)} className={btnSmall}>Edit</Link>}
         {EDITABLE.includes(tx.status) && (
-          <button type="button" disabled={!!busy} className={`${btnSmall} text-rose-600`} onClick={() => {
+          <button type="button" disabled={!!busy} className={`${btnSmall} text-neutral-900`} onClick={() => {
             if (!window.confirm(`Delete ${tx.journal_no}?`)) return;
             jalan('Delete', async () => { try { toast.success((await deleteTransaction(clientId, tx.id)).message); return true; } catch (e) { toast.error((e as Error).message); return false; } });
           }}>Delete</button>
         )}
         {['pending_review', 'approved', 'rejected'].includes(tx.status) && tombol('Return to Draft', 'return-to-draft')}
-        {['pending_review', 'approved'].includes(tx.status) && <button type="button" className={`${btnSmall} text-rose-600`} onClick={() => setDialog('reject')}>Reject</button>}
+        {['pending_review', 'approved'].includes(tx.status) && <button type="button" className={`${btnSmall} text-neutral-900`} onClick={() => setDialog('reject')}>Reject</button>}
         {['draft', 'rejected'].includes(tx.status) && tombol('Submit for Review', 'submit', !tx.has_error)}
         {tx.status === 'pending_review' && tombol('Approve', 'approve', !tx.has_error)}
         {tx.status === 'approved' && canPost && tombol('Post to GL', 'post', true)}
-        {tx.status === 'posted' && canPost && <button type="button" className={`${btnSmall} text-rose-600`} onClick={() => setDialog('reverse')}>Reverse</button>}
+        {tx.status === 'posted' && canPost && <button type="button" className={`${btnSmall} text-neutral-900`} onClick={() => setDialog('reverse')}>Reverse</button>}
       </>}>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-2xl font-bold text-[#0F7D4E]">{rupiah(tx.amount_idr)}</p>
-          {tx.currency !== 'IDR' && <p className="text-xs text-muted-foreground">{tx.currency} {tx.amount.toLocaleString('id-ID')} @ {tx.exchange_rate.toLocaleString('id-ID')}</p>}
+          <p className="text-2xl font-semibold tabular-nums tracking-tight text-neutral-900">{rupiah(tx.amount_idr)}</p>
+          {tx.currency !== 'IDR' && <p className="text-xs text-neutral-600">{tx.currency} {tx.amount.toLocaleString('id-ID')} @ {tx.exchange_rate.toLocaleString('id-ID')}</p>}
         </div>
         <StatusPill s={tx.status} />
       </div>
@@ -254,22 +300,22 @@ function DrawerIsi({ clientId, tx, canPost, onClose }: { clientId: string; tx: O
         <Field label="Requires Approval">{tx.requires_approval ? 'Yes' : 'No'}</Field>
       </div>
       <div>
-        <p className="mb-1 text-xs font-semibold">Journal</p>
-        <JournalLines lines={tx.lines} />
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-600">Journal</p>
+        <div className="overflow-x-auto rounded-[10px] border border-neutral-200"><PreviewLines lines={tx.lines} /></div>
       </div>
       {tx.status !== 'posted' && tx.status !== 'reversed' && <IssueList issues={tx.issues} />}
-      {tx.status === 'rejected' && tx.rejected_reason && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">Rejected by {tx.rejected_by_name ?? '—'}: {tx.rejected_reason}</p>}
-      {tx.status === 'reversed' && <p className="rounded-lg bg-slate-100 px-3 py-2 text-xs">Reversed on {fmtDate(tx.reversal_date)} by {tx.reversed_by_name ?? '—'} (journal RV-{tx.journal_no}). Reason: {tx.reversal_reason}</p>}
-      {tx.notes && <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs">Notes: {tx.notes}</p>}
+      {tx.status === 'rejected' && tx.rejected_reason && <p className="rounded-[10px] border border-neutral-800 bg-neutral-100 px-3 py-2 text-xs font-medium text-neutral-900">Rejected by {tx.rejected_by_name ?? '—'}: {tx.rejected_reason}</p>}
+      {tx.status === 'reversed' && <p className="rounded-[10px] border border-neutral-300 bg-neutral-100 px-3 py-2 text-xs text-neutral-800">Reversed on {fmtDate(tx.reversal_date)} by {tx.reversed_by_name ?? '—'} (journal RV-{tx.journal_no}). Reason: {tx.reversal_reason}</p>}
+      {tx.notes && <p className="rounded-[10px] border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-800">Notes: {tx.notes}</p>}
       <div>
-        <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold"><Paperclip size={13} /> Supporting Documents</p>
-        {!tx.attachments?.length ? <p className="text-xs text-muted-foreground">{tx.attachment_count ? `${tx.attachment_count} document(s)` : 'No documents attached.'}</p> : (
+        <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-600"><Paperclip size={13} /> Supporting Documents</p>
+        {!tx.attachments?.length ? <p className="text-xs text-neutral-600">{tx.attachment_count ? `${tx.attachment_count} document(s)` : 'No documents attached.'}</p> : (
           <ul className="space-y-1 text-xs">
             {tx.attachments.map(a => (
-              <li key={a.id} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
-                <FileText size={14} className="text-muted-foreground" /><span className="flex-1 truncate">{a.file_name}</span>
-                <span className="text-muted-foreground">{(a.size_bytes / 1024).toFixed(0)} KB</span>
-                <a href={attachmentUrl(clientId, a.id)} target="_blank" rel="noreferrer" className="text-[#0F7D4E]"><Download size={14} /></a>
+              <li key={a.id} className="flex items-center gap-2 rounded-[10px] border border-neutral-200 px-3 py-2">
+                <FileText size={14} className="text-neutral-600" /><span className="flex-1 truncate">{a.file_name}</span>
+                <span className="text-neutral-600">{(a.size_bytes / 1024).toFixed(0)} KB</span>
+                <a href={attachmentUrl(clientId, a.id)} target="_blank" rel="noreferrer" className="text-neutral-800 hover:text-neutral-900"><Download size={14} /></a>
               </li>
             ))}
           </ul>
@@ -277,11 +323,11 @@ function DrawerIsi({ clientId, tx, canPost, onClose }: { clientId: string; tx: O
       </div>
       {!!tx.events?.length && (
         <div>
-          <p className="mb-1 text-xs font-semibold">Activity</p>
-          <ol className="space-y-1.5 border-l border-border pl-3 text-[11px]">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-600">Activity</p>
+          <ol className="space-y-1.5 border-l border-neutral-300 pl-3 text-[11px]">
             {tx.events.map((e, i) => (
-              <li key={i}><span className="font-medium">{AKSI[e.action] ?? e.action}</span> · {e.actor_name ?? '—'} · <span className="text-muted-foreground">{fmtDateTime(e.created_at)}</span>
-                {e.note && <span className="block text-muted-foreground">{e.note}</span>}</li>
+              <li key={i}><span className="font-medium">{AKSI[e.action] ?? e.action}</span> · {e.actor_name ?? '—'} · <span className="text-neutral-600">{fmtDateTime(e.created_at)}</span>
+                {e.note && <span className="block text-neutral-600">{e.note}</span>}</li>
             ))}
           </ol>
         </div>

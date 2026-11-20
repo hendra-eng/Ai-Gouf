@@ -9,7 +9,7 @@ import { formatDate, useLockStatus } from '@/lib/yearEndClosingStore';
 import { salesFont } from '@/app/transactions/sales/components/salesFont';
 
 // Gaya tab disamakan dengan halaman Sales (garis bawah hitam, ikon tipis, Inter).
-const tabBarCls = 'flex flex-col gap-2 border-b border-neutral-300 lg:flex-row lg:items-center lg:justify-between';
+const tabBarCls = 'flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between';
 const tabListCls = '-mb-px flex gap-1 overflow-x-auto';
 const tabCls = (active: boolean) =>
   `group flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm tracking-tight transition-colors ${active ? 'border-neutral-900 font-semibold text-neutral-900' : 'border-transparent font-medium text-neutral-500 hover:border-neutral-300 hover:text-neutral-900'}`;
@@ -20,8 +20,8 @@ const tabCls = (active: boolean) =>
 export const FS_TABS = [
   { href: '/financial-statements/profit-loss', label: 'Profit & Loss', icon: TrendingUp },
   { href: '/financial-statements/balance-sheet', label: 'Balance Sheet', icon: Scale },
-  { href: '/financial-statements/changes-in-equity', label: 'Changes in Equity', icon: RefreshCcw },
   { href: '/financial-statements/cash-flow', label: 'Cash Flow', icon: Activity },
+  { href: '/financial-statements/changes-in-equity', label: 'Changes in Equity', icon: RefreshCcw },
   { href: '/financial-statements/notes', label: 'Notes (CALK)', icon: NotebookText },
   { href: '/financial-statements/mapping', label: 'Mapping', icon: SlidersHorizontal },
 ];

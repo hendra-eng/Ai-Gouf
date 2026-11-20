@@ -171,7 +171,9 @@ function ValueCells({ v, bold, upIsGood }: { v: number[]; bold?: boolean; upIsGo
 }
 
 function DefaultTable({ m, labels, glRange }: { m: Merged; labels: [string, string, string]; glRange: { start: string; end: string } }) {
-  const [closed, setClosed] = useState<Set<string>>(new Set());
+  // Posisi awal: grup Assets & Liabilities & Equity terbuka, tapi semua section di dalamnya
+  // (Current/Non-current Assets, Current/Non-current Liabilities, Equity) tertutup.
+  const [closed, setClosed] = useState<Set<string>>(() => new Set([...ASSET_SECTIONS, ...LIAB_SECTIONS, 'equity']));
   const [openLines, setOpenLines] = useState<Set<string>>(new Set());
   const toggle = (set: React.Dispatch<React.SetStateAction<Set<string>>>, k: string) => set(prev => {
     const n = new Set(prev);
@@ -289,6 +291,63 @@ function DefaultTable({ m, labels, glRange }: { m: Merged; labels: [string, stri
 
 // ── Sidebar ──────────────────────────────────────────────────────────
 
+// Label sumbu-X Variance Summary: nama akun diringkas dulu (kamus + singkatan umum), lalu dipecah
+// maks 2 baris @ 9 karakter supaya antar-label tidak bertabrakan. Nama lengkap tetap muncul saat hover.
+const WF_MAX_CHARS = 9;
+const WF_SHORT: Record<string, string> = {
+  'cash & cash equivalents': 'Cash', 'cash and cash equivalents': 'Cash', 'cash and bank': 'Cash', 'cash & bank': 'Cash',
+  'accumulated depreciation': 'Accum. Depr.', 'accumulated amortization': 'Accum. Amort.',
+  'inventories': 'Inventory', 'inventory': 'Inventory',
+  'trade & other receivables': 'A/R', 'trade and other receivables': 'A/R', 'trade receivables': 'A/R', 'accounts receivable': 'A/R',
+  'trade payables': 'A/P', 'trade & other payables': 'A/P', 'accounts payable': 'A/P',
+  'prepaid taxes & expenses': 'Prepaid', 'prepaid expenses': 'Prepaid', 'prepaid taxes': 'Prepaid Tax',
+  'property & equipment': 'Fixed Assets', 'property, plant & equipment': 'Fixed Assets', 'fixed assets': 'Fixed Assets',
+  'taxes payable': 'Tax Payable', 'accrued expenses & other liabilities': 'Accruals', 'accrued expenses': 'Accruals',
+  'retained earnings': 'Retained Earnings', 'share capital': 'Share Capital', 'current year earnings': 'Curr. Year',
+  'other comprehensive income': 'OCI', 'other': 'Other',
+};
+const WF_ABBR: [RegExp, string][] = [
+  [/\bAccumulated\b/gi, 'Accum.'], [/\bDepreciation\b/gi, 'Depr.'], [/\bAmortization\b/gi, 'Amort.'],
+  [/\bEquivalents?\b/gi, 'Equiv.'], [/\bReceivables?\b/gi, 'A/R'], [/\bPayables?\b/gi, 'A/P'],
+  [/\bLiabilities\b/gi, 'Liab.'], [/\bExpenses\b/gi, 'Exp.'], [/\bInvestments?\b/gi, 'Invest.'],
+  [/\bProperty\b/gi, 'Prop.'], [/\bEquipment\b/gi, 'Equip.'], [/\bAllowance\b/gi, 'Allow.'],
+  [/\bNon-current\b/gi, 'NC'], [/\bShort-term\b/gi, 'ST'], [/\bLong-term\b/gi, 'LT'],
+  [/\s*&\s*/g, ' '], [/\band\b/gi, ' '],
+];
+function shortLabel(text: string): string {
+  const t = text.trim();
+  const hit = WF_SHORT[t.toLowerCase()];
+  if (hit) return hit;
+  return WF_ABBR.reduce((acc, [re, to]) => acc.replace(re, to), t).replace(/\s+/g, ' ').trim();
+}
+function wrapLabel(text: string): string[] {
+  const clip = (t: string) => (t.length > WF_MAX_CHARS ? `${t.slice(0, WF_MAX_CHARS - 1)}…` : t);
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of shortLabel(text).split(/\s+/).filter(Boolean)) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (next.length <= WF_MAX_CHARS) { cur = next; continue; }
+    if (cur) lines.push(cur);
+    cur = w;
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > 2) return [clip(lines[0]), clip(lines.slice(1).join(' '))];
+  return lines.map(clip);
+}
+function WaterfallTick({ x, y, payload }: { x?: number; y?: number; payload?: { value: string } }) {
+  const full = String(payload?.value ?? '');
+  const lines = wrapLabel(full);
+  return (
+    <text x={x} y={(y ?? 0) + 10} textAnchor="middle" fontSize={10} fill="#737373">
+      <title>{full}</title>
+      {lines.map((ln, i) => <tspan key={i} x={x} dy={i === 0 ? 0 : 11}>{ln}</tspan>)}
+    </text>
+  );
+}
+
+// Warna batang Variance Summary (biru): awal = biru muda, naik = biru, turun = merah lembut, akhir = biru tua.
+const WF_COLORS = { start: '#BFDBFE', up: '#3B82F6', down: '#F87171', end: '#1D4ED8' };
+
 function VarianceSummary({ m, prevLbl, lyLbl, curLbl }: { m: Merged; prevLbl: string; lyLbl: string; curLbl: string }) {
   const [metric, setMetric] = useState<Metric>('assets');
   const def = METRICS.find(x => x.id === metric)!;
@@ -301,20 +360,28 @@ function VarianceSummary({ m, prevLbl, lyLbl, curLbl }: { m: Merged; prevLbl: st
     const other = total - movers.reduce((t, x) => t + x.delta, 0);
     const steps = [...movers.map(x => ({ name: x.label, delta: x.delta })), ...(Math.abs(other) >= 0.5 ? [{ name: 'Other', delta: other }] : [])];
     let run = v[PREV];
-    const out = [{ name: prevLbl, base: 0, value: v[PREV], fill: '#D4D4D4', label: fmtCompact(v[PREV], 1) }];
+    const out: { name: string; range: [number, number]; fill: string; label: string; up?: boolean }[] = [{ name: prevLbl, range: [0, v[PREV]], fill: WF_COLORS.start, label: fmtCompact(v[PREV], 1) }];
     steps.forEach(s => {
       const base = s.delta >= 0 ? run : run + s.delta;
-      out.push({ name: s.name, base, value: Math.abs(s.delta), fill: s.delta >= 0 ? BS_COLORS.assetsSoft : BS_COLORS.equity, label: `${s.delta >= 0 ? '+' : '-'}${fmtCompact(Math.abs(s.delta), 1)}` });
+      out.push({ name: s.name, range: [base, base + Math.abs(s.delta)], up: s.delta >= 0, fill: s.delta >= 0 ? WF_COLORS.up : WF_COLORS.down, label: `${s.delta >= 0 ? '+' : '-'}${fmtCompact(Math.abs(s.delta), 1)}` });
       run += s.delta;
     });
-    out.push({ name: curLbl, base: 0, value: v[CUR], fill: BS_COLORS.assets, label: fmtCompact(v[CUR], 1) });
+    out.push({ name: curLbl, range: [0, v[CUR]], fill: WF_COLORS.end, label: fmtCompact(v[CUR], 1) });
     return out;
   }, [m, def, v, prevLbl, curLbl]);
 
-  const levels = bars.flatMap(b => [b.base || b.value, b.base + b.value]);
+  const levels = bars.flatMap(b => [b.range[0] || b.range[1], b.range[1]]);
   const lo = Math.min(...levels), hi = Math.max(...levels);
   const pad = (hi - lo) * 0.25 || Math.abs(hi) * 0.05 || 1;
-  const domain: [number, number] = [Math.max(0, lo - pad), hi + pad * 0.4];
+  const domain: [number, number] = [Math.max(0, lo - pad * 0.6), hi + pad * 0.5];
+  // Selisih kecil (mis. -10M di antara +198M) hampir tak terlihat; beri tinggi minimum ~5% sumbu
+  // HANYA untuk gambar. Angka di label tetap nilai sebenarnya.
+  const minH = (domain[1] - domain[0]) * 0.05;
+  const shown = bars.map(b => {
+    if (b.up === undefined || b.range[1] - b.range[0] >= minH) return b;
+    const range: [number, number] = b.up ? [b.range[0], b.range[0] + minH] : [b.range[1] - minH, b.range[1]];
+    return { ...b, range };
+  });
 
   return (
     <Panel
@@ -335,15 +402,14 @@ function VarianceSummary({ m, prevLbl, lyLbl, curLbl }: { m: Merged; prevLbl: st
           );
         })}
       </div>
-      <div className="h-48 mt-3">
+      <div className="h-52 mt-3">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={bars} margin={{ top: 18, right: 4, left: 4, bottom: 0 }}>
-            <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#737373' }} interval={0} tickLine={false} axisLine={false}
-              tickFormatter={(s: string) => (s.length > 14 ? `${s.slice(0, 13)}…` : s)} />
+          <BarChart data={shown} margin={{ top: 18, right: 4, left: 4, bottom: 0 }}>
+            <XAxis dataKey="name" tick={<WaterfallTick />} interval={0} tickLine={false} axisLine={false} height={34} />
             <YAxis hide domain={domain} allowDataOverflow />
-            <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
-            <Bar dataKey="value" stackId="w" radius={[3, 3, 0, 0]} isAnimationActive={false}>
-              {bars.map((b, i) => <Cell key={i} fill={b.fill} />)}
+            {/* Batang melayang [bawah, atas] -- tanpa batang transparan bertumpuk, jadi tidak ada garis putih di tengah kotak */}
+            <Bar dataKey="range" radius={[3, 3, 0, 0]} isAnimationActive={false}>
+              {shown.map((b, i) => <Cell key={i} fill={b.fill} />)}
               <LabelList dataKey="label" position="top" style={{ fontSize: 10, fontWeight: 600, fill: '#171717' }} />
             </Bar>
           </BarChart>
@@ -369,7 +435,7 @@ function AssetsTrend({ m, dates, lyLbl }: { m: Merged; dates: string[]; lyLbl: s
               tickFormatter={(s: string) => s.split(' ')[0]} />
             <Tooltip cursor={{ fill: '#F5F5F5' }} content={<ChartTooltip fmt={v => `IDR ${fmtAmount(v)}`} />} />
             <Bar dataKey="value" name="Total Assets" radius={[3, 3, 0, 0]} isAnimationActive={false}>
-              {data.map((d, i) => <Cell key={i} fill={d.last ? BS_COLORS.assets : '#D4D4D4'} />)}
+              {data.map((d, i) => <Cell key={i} fill={d.last ? WF_COLORS.end : WF_COLORS.start} />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>

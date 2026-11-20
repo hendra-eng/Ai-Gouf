@@ -12,10 +12,10 @@ import { fmtAmount, fmtDate, todayIso } from './fsFormat';
 // Halaman indeks Financial Statements: ringkasan cepat + pintu ke tiap laporan.
 
 const CARDS = [
-  { href: '/financial-statements/balance-sheet', title: 'Balance Sheet', icon: Scale, text: 'Assets, liabilities and equity at a date, with comparative period and drill-down to the GL.' },
   { href: '/financial-statements/profit-loss', title: 'Profit & Loss', icon: TrendingUp, text: 'Revenue to net profit by month, year to date or custom range, with segment filters.' },
-  { href: '/financial-statements/changes-in-equity', title: 'Changes in Equity', icon: RefreshCcw, text: 'Opening to closing equity by component, reconciled to the Balance Sheet.' },
+  { href: '/financial-statements/balance-sheet', title: 'Balance Sheet', icon: Scale, text: 'Assets, liabilities and equity at a date, with comparative period and drill-down to the GL.' },
   { href: '/financial-statements/cash-flow', title: 'Cash Flow', icon: Activity, text: 'Indirect method from the GL using the client cash flow mapping; flags unmapped accounts.' },
+  { href: '/financial-statements/changes-in-equity', title: 'Changes in Equity', icon: RefreshCcw, text: 'Opening to closing equity by component, reconciled to the Balance Sheet.' },
   { href: '/financial-statements/notes', title: 'Notes (CALK)', icon: NotebookText, text: 'Template, client and period notes with GL-linked tables, controlled overrides and audit trail.' },
   { href: '/financial-statements/mapping', title: 'Mapping', icon: SlidersHorizontal, text: 'Per-client master mapping of COA accounts to statement lines, equity components, cash flow and notes.' },
 ];

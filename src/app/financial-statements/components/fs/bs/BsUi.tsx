@@ -18,7 +18,7 @@ export const TONE: Record<Tone, string> = {
   sky: 'bg-sky-50 text-sky-600',
 };
 
-export function Panel({ title, icon: Icon, tone = 'brand', right, children, className = '', bodyClass = 'p-5' }: {
+export function Panel({ title, icon: Icon, tone = 'brand', right, children, className = '', bodyClass = 'p-5', titleCls = 'text-base font-bold text-foreground' }: {
   title?: React.ReactNode;
   icon?: React.ElementType;
   tone?: Tone;
@@ -26,13 +26,15 @@ export function Panel({ title, icon: Icon, tone = 'brand', right, children, clas
   children: React.ReactNode;
   className?: string;
   bodyClass?: string;
+  /** Kelas font judul panel (default = gaya lama; halaman bergaya Sales mengirim sendiri). */
+  titleCls?: string;
 }) {
   return (
     <section className={`bg-white border border-border rounded-2xl shadow-sm ${className}`}>
       {title && (
         <header className="flex items-center gap-3 px-5 pt-4 pb-1">
           {Icon && <span className={`w-9 h-9 rounded-xl flex items-center justify-center ${TONE[tone]}`}><Icon size={18} /></span>}
-          <h2 className="text-base font-bold text-foreground">{title}</h2>
+          <h2 className={titleCls}>{title}</h2>
           {right && <div className="ml-auto flex items-center gap-2">{right}</div>}
         </header>
       )}
@@ -100,21 +102,23 @@ export function Legend({ items }: { items: { label: string; color: string }[] })
   );
 }
 
-export function ChartTooltip({ active, payload, label, fmt }: {
+export function ChartTooltip({ active, payload, label, fmt, sales = false }: {
   active?: boolean;
   payload?: { name: string; value: number; color?: string; fill?: string; stroke?: string }[];
   label?: string;
   fmt?: (v: number) => string;
+  /** true = warna teks gaya Sales (neutral-*). */
+  sales?: boolean;
 }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-white border border-border rounded-lg p-3 shadow-lg text-xs min-w-[180px]">
-      <p className="font-semibold text-foreground mb-1.5">{label}</p>
+      <p className={`font-semibold mb-1.5 ${sales ? 'text-neutral-900' : 'text-foreground'}`}>{label}</p>
       {payload.map(p => (
         <div key={p.name} className="flex items-center gap-2 py-0.5">
           <span className="w-2 h-2 rounded-full" style={{ background: p.color || p.stroke || p.fill }} />
-          <span className="text-muted-foreground">{p.name}</span>
-          <span className="ml-auto font-semibold text-foreground tabular-nums">{fmt ? fmt(p.value) : p.value}</span>
+          <span className={sales ? 'text-neutral-500' : 'text-muted-foreground'}>{p.name}</span>
+          <span className={`ml-auto font-semibold tabular-nums ${sales ? 'text-neutral-900' : 'text-foreground'}`}>{fmt ? fmt(p.value) : p.value}</span>
         </div>
       ))}
     </div>

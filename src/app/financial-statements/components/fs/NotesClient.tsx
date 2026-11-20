@@ -14,7 +14,11 @@ import {
   type FsNote, type FsNotes, type NoteAudit, type NoteRow, type PeriodQuery,
 } from '@/lib/fsStore';
 import FsShell, { ErrorBlock, LoadingBlock, NoClient } from './FsShell';
-import PeriodPicker, { Field, Select, defaultPeriod, inputCls } from './PeriodPicker';
+import PeriodPicker, { Field, Select, defaultPeriod } from './PeriodPicker';
+import { inputCls as monoInputCls, thCls, thRowCls, trCls } from './bs/BsMono';
+
+// Font gaya Sales: input teks text-xs neutral-900 (tanpa medium), label kecil neutral-500, tabel text-xs.
+const fieldCls = monoInputCls;
 import { fmtAmount, fmtDate, glHref, startOfYear } from './fsFormat';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
@@ -46,18 +50,18 @@ function OverrideEditor({ row, onSave, onCancel }: { row: NoteRow; onSave: (v: n
   const num = Number(value.replace(/\./g, '').replace(',', '.'));
   const valid = value.trim() !== '' && Number.isFinite(num) && reason.trim().length >= 3;
   return (
-    <div className="flex flex-wrap items-end gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 mt-1">
-      <Field label={`Override value (system ${fmtAmount(row.system_amount)})`} className="w-56">
-        <input value={value} onChange={e => setValue(e.target.value)} inputMode="decimal" className={inputCls} />
+    <div className="mt-1 flex flex-wrap items-end gap-2 rounded-lg border border-neutral-300 border-l-[3px] border-l-amber-600 bg-neutral-50 p-3">
+      <Field salesFont label={`Override value (system ${fmtAmount(row.system_amount)})`} className="w-56">
+        <input value={value} onChange={e => setValue(e.target.value)} inputMode="decimal" className={fieldCls} />
       </Field>
-      <Field label="Reason (required, kept in audit trail)" className="flex-1 min-w-[16rem]">
-        <input value={reason} onChange={e => setReason(e.target.value)} className={inputCls} placeholder="e.g. Audit adjustment not yet journaled" />
+      <Field salesFont label="Reason (required, kept in audit trail)" className="flex-1 min-w-[16rem]">
+        <input value={reason} onChange={e => setReason(e.target.value)} className={fieldCls} placeholder="e.g. Audit adjustment not yet journaled" />
       </Field>
       <button type="button" disabled={!valid || busy} onClick={async () => { setBusy(true); try { await onSave(num, reason.trim()); } finally { setBusy(false); } }}
-        className="px-3.5 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50">
+        className="px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50">
         {busy ? <Loader2 size={14} className="animate-spin" /> : 'Save override'}
       </button>
-      <button type="button" onClick={onCancel} className="px-3 py-2 rounded-lg border border-border text-sm bg-card hover:bg-slate-50">Cancel</button>
+      <button type="button" onClick={onCancel} className="px-3 py-2 rounded-lg text-xs font-medium border border-neutral-300 bg-white text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">Cancel</button>
     </div>
   );
 }
@@ -96,23 +100,23 @@ function NoteCard({ note, d, clientId, onChanged }: { note: FsNote; d: FsNotes; 
   const glStart = (statement: string) => (statement === 'BALANCE_SHEET' ? startOfYear(d.as_of) : d.period.start);
 
   return (
-    <section id={`note-${note.id}`} className="bg-card border border-border rounded-xl p-5 scroll-mt-24">
+    <section id={`note-${note.id}`} className="card-elevated-md rounded-xl p-5 scroll-mt-24">
       <div className="flex flex-wrap items-start gap-2">
         <div className="flex-1 min-w-0">
           {renaming ? (
             <div className="flex items-center gap-2">
-              <input value={title} onChange={e => setTitle(e.target.value)} className={`${inputCls} max-w-md`} />
+              <input value={title} onChange={e => setTitle(e.target.value)} className={`${fieldCls} max-w-md`} />
               <button type="button" disabled={!title.trim() || busy} onClick={() => run(async () => { await updateNote(clientId, note.id, { title: title.trim() }); setRenaming(false); }, 'Title updated')}
-                className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold disabled:opacity-50">Save</button>
-              <button type="button" onClick={() => { setRenaming(false); setTitle(note.title); }} className="p-2 text-muted-foreground"><X size={14} /></button>
+                className="px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50">Save</button>
+              <button type="button" onClick={() => { setRenaming(false); setTitle(note.title); }} className="p-2 text-neutral-500"><X size={14} /></button>
             </div>
           ) : (
-            <h2 className="text-lg font-bold text-foreground">{note.no}. {note.title}</h2>
+            <h2 className="text-base font-semibold tracking-tight text-neutral-900">{note.no}. {note.title}</h2>
           )}
           <div className="flex flex-wrap items-center gap-1.5 mt-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wide bg-slate-100 text-slate-600 rounded px-1.5 py-0.5">{STATEMENT_LABEL[note.statement] ?? note.statement}</span>
-            {note.is_custom && <span className="text-[10px] font-semibold uppercase tracking-wide bg-violet-50 text-violet-700 rounded px-1.5 py-0.5">Custom</span>}
-            <span className={`text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 ${note.status === 'final' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{note.status}</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200 rounded px-1.5 py-0.5">{STATEMENT_LABEL[note.statement] ?? note.statement}</span>
+            {note.is_custom && <span className="text-[10px] font-semibold uppercase tracking-wide bg-neutral-800 text-white rounded px-1.5 py-0.5">Custom</span>}
+            <span className={`text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 ${note.status === 'final' ? 'bg-neutral-800 text-white' : 'bg-neutral-100 text-neutral-600 ring-1 ring-neutral-300'}`}>{note.status}</span>
             {note.has_override && <span className="text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 rounded px-1.5 py-0.5">Overridden</span>}
           </div>
         </div>
@@ -120,19 +124,19 @@ function NoteCard({ note, d, clientId, onChanged }: { note: FsNote; d: FsNotes; 
           {perms.edit_narrative && (
             <>
               <button type="button" disabled={busy} onClick={() => run(() => saveNoteContent(clientId, note.id, { period_end: d.as_of, status: note.status === 'final' ? 'draft' : 'final' }), note.status === 'final' ? 'Marked as draft' : 'Marked as final')}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs font-medium bg-card hover:bg-slate-50">
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-neutral-300 bg-white text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
                 <CheckCircle2 size={13} /> {note.status === 'final' ? 'Reopen draft' : 'Mark final'}
               </button>
-              <button type="button" onClick={() => setRenaming(true)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs font-medium bg-card hover:bg-slate-50">
+              <button type="button" onClick={() => setRenaming(true)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-neutral-300 bg-white text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
                 <Pencil size={13} /> Rename
               </button>
               <button type="button" disabled={busy} onClick={() => run(() => (note.is_custom ? deleteNote(clientId, note.id) : updateNote(clientId, note.id, { is_enabled: false })), note.is_custom ? 'Note deleted' : 'Note hidden')}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs font-medium bg-card hover:bg-slate-50 text-rose-700">
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-300 bg-white text-xs font-medium text-red-700 shadow-sm transition-colors hover:border-red-700 hover:bg-neutral-50">
                 <Trash2 size={13} /> {note.is_custom ? 'Delete' : 'Hide'}
               </button>
             </>
           )}
-          <button type="button" onClick={toggleAudit} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs font-medium bg-card hover:bg-slate-50">
+          <button type="button" onClick={toggleAudit} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-neutral-300 bg-white text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
             <History size={13} /> Audit trail
           </button>
         </div>
@@ -142,27 +146,27 @@ function NoteCard({ note, d, clientId, onChanged }: { note: FsNote; d: FsNotes; 
       <div className="mt-3">
         {editing ? (
           <div className="space-y-2">
-            <textarea value={text} onChange={e => setText(e.target.value)} rows={5} className={`${inputCls} leading-relaxed`} />
-            <p className="text-[11px] text-muted-foreground">Placeholders: {'{company}'} {'{period_start}'} {'{period_end}'} {'{year}'}</p>
+            <textarea value={text} onChange={e => setText(e.target.value)} rows={5} className={`${fieldCls} leading-relaxed`} />
+            <p className="text-[11px] font-medium text-neutral-500">Placeholders: {'{company}'} {'{period_start}'} {'{period_end}'} {'{year}'}</p>
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={scope} onChange={v => setScope(v as 'period' | 'client')}>
+              <Select mono value={scope} onChange={v => setScope(v as 'period' | 'client')}>
                 <option value="period">Save for this period only (as at {fmtDate(d.as_of)})</option>
                 <option value="client">Save as client standard text (all periods)</option>
               </Select>
-              <button type="button" disabled={busy} onClick={saveNarrative} className="px-3.5 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
+              <button type="button" disabled={busy} onClick={saveNarrative} className="px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50">
                 {busy ? <Loader2 size={14} className="animate-spin" /> : 'Save narrative'}
               </button>
-              <button type="button" onClick={() => { setEditing(false); setText(note.narrative_raw); }} className="px-3 py-2 rounded-lg border border-border text-sm bg-card hover:bg-slate-50">Cancel</button>
+              <button type="button" onClick={() => { setEditing(false); setText(note.narrative_raw); }} className="px-3 py-2 rounded-lg text-xs font-medium border border-neutral-300 bg-white text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">Cancel</button>
             </div>
           </div>
         ) : (
           <div className="group">
-            <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-line">{note.narrative || <span className="italic text-muted-foreground">No narrative yet.</span>}</p>
-            <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] text-muted-foreground">
+            <p className="text-sm text-neutral-800 leading-relaxed whitespace-pre-line">{note.narrative || <span className="italic text-neutral-500">No narrative yet.</span>}</p>
+            <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] font-medium text-neutral-500">
               <span>{SOURCE_LABEL[note.narrative_source]}</span>
               {perms.edit_narrative && (
                 <>
-                  <button type="button" onClick={() => setEditing(true)} className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:underline"><Pencil size={11} /> Edit narrative</button>
+                  <button type="button" onClick={() => setEditing(true)} className="inline-flex items-center gap-1 font-semibold text-neutral-900 hover:underline"><Pencil size={11} /> Edit narrative</button>
                   {note.narrative_source === 'period' && (
                     <button type="button" disabled={busy} onClick={() => run(() => saveNoteContent(clientId, note.id, { period_end: d.as_of, narrative: '' }), 'Period text removed')} className="inline-flex items-center gap-1 hover:underline">
                       <RotateCcw size={11} /> Use standard text
@@ -182,28 +186,28 @@ function NoteCard({ note, d, clientId, onChanged }: { note: FsNote; d: FsNotes; 
 
       {/* Tabel angka dari GL */}
       {note.note_type === 'account' && note.groups.length === 0 && (
-        <p className="mt-3 text-xs italic text-muted-foreground">No balances for accounts mapped to this note in the selected period.</p>
+        <p className="mt-3 text-xs italic text-neutral-500">No balances for accounts mapped to this note in the selected period.</p>
       )}
       {note.groups.map(g => (
         <div key={g.label} className="mt-4 overflow-x-auto scrollbar-thin">
-          <table className="w-full text-sm min-w-[560px]">
+          <table className="w-full min-w-[560px] border-separate border-spacing-0 text-xs">
             <thead>
-              <tr className="border-b-2 border-slate-700">
-                <th className="text-left font-semibold py-1.5 pr-3">{g.label}</th>
-                <th className="text-right font-semibold py-1.5 px-3 w-40">{fmtDate(d.as_of)}</th>
-                {d.compare_period && <th className="text-right font-semibold py-1.5 px-3 w-40 text-muted-foreground">{fmtDate(d.compare_period.end)}</th>}
-                {perms.override && <th className="w-28" />}
+              <tr className={thRowCls}>
+                <th className={`${thCls} text-left`}>{g.label}</th>
+                <th className={`${thCls} w-40 text-right`}>{fmtDate(d.as_of)}</th>
+                {d.compare_period && <th className={`${thCls} w-40 text-right`}>{fmtDate(d.compare_period.end)}</th>}
+                {perms.override && <th className={`${thCls} w-28`} />}
               </tr>
             </thead>
             <tbody>
               {g.rows.map(r => (
                 <React.Fragment key={r.code}>
-                  <tr className={`border-b border-border ${r.override ? 'bg-amber-50/70' : ''}`}>
-                    <td className="py-1.5 pr-3">
+                  <tr className={`${trCls} ${r.override ? '[&>td]:bg-amber-50' : ''}`}>
+                    <td className="px-3 py-2">
                       <span className="inline-flex items-center gap-2">
-                        <span className="font-mono text-xs text-muted-foreground">{kodeAkun(r.code)}</span>
-                        <span>{r.name}</span>
-                        <Link href={glHref(r.code, glStart(g.statement), d.as_of)} target="_blank" title="Open in General Ledger" className="text-muted-foreground hover:text-blue-700"><ExternalLink size={12} /></Link>
+                        <span className="font-mono text-[11px] text-neutral-500">{kodeAkun(r.code)}</span>
+                        <span className="text-neutral-700">{r.name}</span>
+                        <Link href={glHref(r.code, glStart(g.statement), d.as_of)} target="_blank" title="Open in General Ledger" className="text-neutral-500 hover:text-neutral-900"><ExternalLink size={12} /></Link>
                         {r.override && (
                           <span title={`System: ${fmtAmount(r.system_amount)}\nReason: ${r.override.reason ?? ''}\nBy: ${r.override.created_by_name ?? '-'}`} className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase text-amber-700">
                             <AlertTriangle size={12} /> override
@@ -211,15 +215,15 @@ function NoteCard({ note, d, clientId, onChanged }: { note: FsNote; d: FsNotes; 
                         )}
                       </span>
                     </td>
-                    <td className="py-1.5 px-3 text-right tabular-nums">{fmtAmount(r.amount)}</td>
-                    {d.compare_period && <td className="py-1.5 px-3 text-right tabular-nums text-muted-foreground">{fmtAmount(r.compare_amount)}</td>}
+                    <td className="px-3 py-2 text-right tabular-nums text-neutral-900">{fmtAmount(r.amount)}</td>
+                    {d.compare_period && <td className="px-3 py-2 text-right tabular-nums text-neutral-500">{fmtAmount(r.compare_amount)}</td>}
                     {perms.override && (
-                      <td className="py-1.5 pl-2 text-right whitespace-nowrap">
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
                         {r.override ? (
                           <button type="button" disabled={busy} onClick={() => run(() => removeNoteOverride(clientId, note.id, r.override!.id, 'Reverted to system value'), 'Override removed')}
-                            className="text-[11px] font-semibold text-rose-700 hover:underline">Remove override</button>
+                            className="text-[11px] font-semibold text-red-700 hover:underline">Remove override</button>
                         ) : (
-                          <button type="button" onClick={() => setOverrideRow(overrideRow === r.code ? null : r.code)} className="text-[11px] font-semibold text-blue-700 hover:underline">Override</button>
+                          <button type="button" onClick={() => setOverrideRow(overrideRow === r.code ? null : r.code)} className="text-[11px] font-semibold text-neutral-900 hover:underline">Override</button>
                         )}
                       </td>
                     )}
@@ -238,15 +242,15 @@ function NoteCard({ note, d, clientId, onChanged }: { note: FsNote; d: FsNotes; 
                   )}
                 </React.Fragment>
               ))}
-              <tr className="border-t-2 border-slate-700 font-bold">
-                <td className="py-1.5 pr-3">Total</td>
-                <td className="py-1.5 px-3 text-right tabular-nums border-b-4 border-double border-slate-700">{fmtAmount(g.total)}</td>
-                {d.compare_period && <td className="py-1.5 px-3 text-right tabular-nums text-muted-foreground">{fmtAmount(g.compare_total)}</td>}
+              <tr className="text-xs font-bold text-neutral-900 [&>td]:bg-neutral-200 [&>td]:shadow-[inset_0_-1px_0_#171717,inset_0_1px_0_#171717]">
+                <td className="px-3 py-2.5">Total</td>
+                <td className="px-3 py-2.5 text-right tabular-nums">{fmtAmount(g.total)}</td>
+                {d.compare_period && <td className="px-3 py-2.5 text-right tabular-nums text-neutral-600">{fmtAmount(g.compare_total)}</td>}
                 {perms.override && <td />}
               </tr>
             </tbody>
           </table>
-          <p className={`mt-1 text-[11px] ${g.reconciled ? 'text-emerald-700' : 'text-amber-700'}`}>
+          <p className={`mt-1 text-[11px] font-medium ${g.reconciled ? 'text-neutral-600' : 'text-amber-700'}`}>
             {g.reconciled
               ? `Reconciles to ${g.statement === 'BALANCE_SHEET' ? 'Balance Sheet' : 'Profit & Loss'} (${fmtAmount(g.system_total)})`
               : `Differs from ${g.statement === 'BALANCE_SHEET' ? 'Balance Sheet' : 'Profit & Loss'} (${fmtAmount(g.system_total)}) by ${fmtAmount(g.difference)} because of overrides`}
@@ -255,17 +259,17 @@ function NoteCard({ note, d, clientId, onChanged }: { note: FsNote; d: FsNotes; 
       ))}
 
       {audit && (
-        <div className="mt-4 border-t border-border pt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Audit trail</p>
-          {audit.length === 0 ? <p className="text-xs italic text-muted-foreground">No changes recorded yet.</p> : (
+        <div className="mt-4 border-t border-neutral-300 pt-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-600 mb-2">Audit trail</p>
+          {audit.length === 0 ? <p className="text-xs italic text-neutral-500">No changes recorded yet.</p> : (
             <ul className="space-y-1.5 text-xs">
               {audit.map(a => (
                 <li key={a.id} className="flex flex-wrap gap-x-2">
-                  <span className="text-muted-foreground">{new Date(a.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                  <span className="font-semibold">{a.user_name || '—'}</span>
+                  <span className="text-neutral-500">{new Date(a.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="font-semibold text-neutral-900">{a.user_name || '—'}</span>
                   <span>{AUDIT_LABEL[a.action] ?? a.action}{a.field ? ` (${a.field})` : ''}{a.period_end ? ` · period ${fmtDate(a.period_end)}` : ''}</span>
-                  {(a.old_value || a.new_value) && a.field !== 'narrative' && <span className="text-muted-foreground">{a.old_value ?? '∅'} → {a.new_value ?? '∅'}</span>}
-                  {a.reason && <span className="italic text-muted-foreground">“{a.reason}”</span>}
+                  {(a.old_value || a.new_value) && a.field !== 'narrative' && <span className="text-neutral-500">{a.old_value ?? '∅'} → {a.new_value ?? '∅'}</span>}
+                  {a.reason && <span className="italic text-neutral-500">“{a.reason}”</span>}
                 </li>
               ))}
             </ul>
@@ -294,15 +298,15 @@ function ManageNotes({ d, clientId, onChanged }: { d: FsNotes; clientId: string;
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   return (
-    <section className="bg-card border border-dashed border-border rounded-xl p-5 space-y-4">
-      <p className="text-sm font-semibold text-foreground">Manage notes</p>
+    <section className="rounded-xl border border-dashed border-neutral-400 bg-white p-5 space-y-4">
+      <p className="text-sm font-semibold text-neutral-900">Manage notes</p>
       {d.disabled_notes.length > 0 && (
         <div>
-          <p className="text-xs text-muted-foreground mb-1.5">Hidden notes</p>
+          <p className="text-xs font-medium text-neutral-500 mb-1.5">Hidden notes</p>
           <div className="flex flex-wrap gap-2">
             {d.disabled_notes.map(n => (
               <button key={n.id} type="button" onClick={async () => { try { await updateNote(clientId, n.id, { is_enabled: true }); toast.success('Note shown'); onChanged(); } catch (e) { toast.error(errMsg(e)); } }}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border text-xs bg-card hover:bg-slate-50">
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-neutral-300 bg-white text-xs font-medium text-neutral-700 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
                 <Plus size={12} /> {n.title}
               </button>
             ))}
@@ -310,31 +314,31 @@ function ManageNotes({ d, clientId, onChanged }: { d: FsNotes; clientId: string;
         </div>
       )}
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="New note title" className="flex-1 min-w-[14rem]">
-          <input value={title} onChange={e => setTitle(e.target.value)} className={inputCls} placeholder="e.g. Commitments and Contingencies" />
+        <Field salesFont label="New note title" className="flex-1 min-w-[14rem]">
+          <input value={title} onChange={e => setTitle(e.target.value)} className={fieldCls} placeholder="e.g. Commitments and Contingencies" />
         </Field>
-        <Field label="Statement" className="w-40">
-          <Select value={statement} onChange={setStatement}>
+        <Field salesFont label="Statement" className="w-40">
+          <Select mono value={statement} onChange={setStatement}>
             {Object.entries(STATEMENT_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </Select>
         </Field>
-        <Field label="Type" className="w-44">
-          <Select value={type} onChange={v => setType(v as 'policy' | 'account')}>
+        <Field salesFont label="Type" className="w-44">
+          <Select mono value={type} onChange={v => setType(v as 'policy' | 'account')}>
             <option value="policy">Narrative only</option>
             <option value="account">Narrative + GL table</option>
           </Select>
         </Field>
         {type === 'account' && (
-          <Field label="Note key (map accounts to it)" className="w-52">
-            <input value={key} onChange={e => setKey(e.target.value)} className={inputCls} placeholder="e.g. commitments" />
+          <Field salesFont label="Note key (map accounts to it)" className="w-52">
+            <input value={key} onChange={e => setKey(e.target.value)} className={fieldCls} placeholder="e.g. commitments" />
           </Field>
         )}
         <button type="button" disabled={busy || !title.trim() || (type === 'account' && !key.trim())} onClick={add}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50">
           <Plus size={15} /> Add note
         </button>
       </div>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-[11px] font-medium text-neutral-500">
         A GL table note shows every account whose mapping note key equals the note key (set it per account in the <Link href="/financial-statements/mapping" className="underline">Mapping tab</Link>).
       </p>
     </section>
@@ -366,11 +370,11 @@ export default function NotesClient() {
 
   const downloadMenu = data && activeClientId ? (
     <div className="flex items-center gap-2">
-      <button type="button" onClick={async () => { const { downloadNotesPdf } = await import('./notesPdf'); downloadNotesPdf(data, user?.nama || user?.username); }} className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg border border-border text-sm font-medium bg-card hover:bg-slate-50">
-        <FileText size={15} className="text-rose-500" /> PDF
+      <button type="button" onClick={async () => { const { downloadNotesPdf } = await import('./notesPdf'); downloadNotesPdf(data, user?.nama || user?.username); }} className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium border border-neutral-300 bg-white text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
+        <FileText size={14} className="text-neutral-500" /> PDF
       </button>
-      <a href={notesDocxUrl(activeClientId, period)} className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
-        <Download size={15} /> Word (.docx)
+      <a href={notesDocxUrl(activeClientId, period)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold">
+        <Download size={14} /> Word (.docx)
       </a>
     </div>
   ) : null;
@@ -379,35 +383,34 @@ export default function NotesClient() {
     <FsShell
       title="Notes to Financial Statements"
       subtitle={<>CALK framework — template, client and period-specific notes with GL-linked tables{company ? ` · ${company}` : ''}</>}
-      actions={downloadMenu}
     >
       {!hydrated ? <LoadingBlock /> : !activeClientId ? <NoClient /> : (
         <>
-          <PeriodPicker value={period} onApply={setPeriod} loading={loading} />
+          <PeriodPicker mono value={period} onApply={setPeriod} loading={loading} trailing={downloadMenu} />
           {error && <ErrorBlock message={error} />}
           {loading && !data && <LoadingBlock />}
           {data && (
             <div className={`grid gap-5 lg:grid-cols-[15rem_minmax(0,1fr)] ${loading ? 'opacity-60' : ''}`}>
               <aside className="hidden lg:block">
-                <nav className="sticky top-4 bg-card border border-border rounded-xl p-2 max-h-[calc(100vh-6rem)] overflow-y-auto scrollbar-thin">
+                <nav className="card-elevated-md sticky top-4 max-h-[calc(100vh-6rem)] overflow-y-auto rounded-xl p-2 scrollbar-thin">
                   {data.notes.map(n => (
-                    <a key={n.id} href={`#note-${n.id}`} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] hover:bg-slate-50">
-                      <span className="text-muted-foreground tabular-nums w-5">{n.no}.</span>
+                    <a key={n.id} href={`#note-${n.id}`} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200 hover:text-neutral-900">
+                      <span className="text-neutral-500 tabular-nums w-5">{n.no}.</span>
                       <span className="truncate flex-1">{n.title}</span>
                       {n.has_override && <AlertTriangle size={12} className="text-amber-500" />}
-                      <span className={`w-2 h-2 rounded-full ${n.status === 'final' ? 'bg-emerald-500' : 'bg-amber-400'}`} title={n.status} />
+                      <span className={`w-2 h-2 rounded-full ${n.status === 'final' ? 'bg-neutral-800' : 'border border-neutral-400 bg-white'}`} title={n.status} />
                     </a>
                   ))}
                 </nav>
               </aside>
               <div className="space-y-4 min-w-0">
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs font-medium text-neutral-500">
                   As at {fmtDate(data.as_of)} · profit &amp; loss figures for {fmtDate(data.period.start)} – {fmtDate(data.as_of)}
                   {data.compare_period ? ` · comparative ${fmtDate(data.compare_period.end)}` : ''}.
                   {!data.permissions.edit_narrative && ' You have read-only access (editing narratives requires Supervisor or above).'}
                 </p>
                 {data.accounts_without_note.length > 0 && (
-                  <div className="flex items-start gap-2 border border-amber-200 bg-amber-50 text-amber-900 rounded-xl px-4 py-2.5 text-sm">
+                  <div className="flex items-start gap-2 rounded-lg border border-neutral-300 border-l-[3px] border-l-amber-600 bg-neutral-50 px-4 py-3 text-xs font-medium text-neutral-800">
                     <AlertTriangle size={16} className="text-amber-500 mt-0.5" />
                     <span>
                       {data.accounts_without_note.length} account{data.accounts_without_note.length > 1 ? 's' : ''} with balances are not shown in any note:{' '}
