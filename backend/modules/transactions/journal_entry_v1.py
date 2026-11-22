@@ -142,6 +142,7 @@ class JeDraftCreateRequest(BaseModel):
     period_label: str = Field(..., max_length=50)
     description: Optional[str] = None
     source_type: str = Field("Manual", max_length=20)
+    is_adjustment: bool = Field(False, description="Jurnal penyesuaian (adjusting entry) -- tampil di Reports > Adjustment.")
     source_reference: Optional[str] = Field(None, max_length=100)
     source_record_id: Optional[str] = None
     total_debit: float = 0
@@ -207,6 +208,7 @@ class JeDraftWithLinesCreateRequest(BaseModel):
     period_label: str = Field(..., max_length=50)
     description: Optional[str] = None
     source_type: str = Field("Manual", max_length=20)
+    is_adjustment: bool = Field(False, description="Jurnal penyesuaian (adjusting entry) -- tampil di Reports > Adjustment.")
     source_reference: Optional[str] = Field(None, max_length=100)
     source_record_id: Optional[str] = None
     currency: str = Field("USD", max_length=10)
@@ -236,6 +238,7 @@ class JeDraftFullUpdateRequest(BaseModel):
     description: Optional[str] = None
     source_reference: Optional[str] = Field(None, max_length=100)
     notes: Optional[str] = None
+    is_adjustment: bool = Field(False, description="Tandai/lepas tanda jurnal penyesuaian (hanya terkirim kalau diisi).")
     lines: Optional[List[JeDraftLineInput]] = Field(None, min_length=2)
 
 

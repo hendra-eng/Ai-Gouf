@@ -122,6 +122,20 @@ function openingLabel(a: GlAccount): string {
     : 'Opening Balance';
 }
 
+const POSTED_STATUS = new Set(['posted', 'reversed']);
+const isUnposted = (status?: string) => !!status && !POSTED_STATUS.has(status);
+const statusText = (status?: string) => (status ? status.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase()) : '');
+
+/** Status transaksi sumber: posted = netral, belum posted (draft/pending/approved) = amber. */
+function StatusBadge({ status }: { status?: string }) {
+  if (!status) return <span className="text-neutral-400">–</span>;
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${isUnposted(status) ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-neutral-300 bg-neutral-100 text-neutral-700'}`}>
+      {statusText(status)}
+    </span>
+  );
+}
+
 // Chip klasifikasi akun: monokrom (sama dengan chip/pill netral di Purchase & Sales).
 const CLASS_CHIP = 'rounded-full border border-neutral-300 bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-700';
 
@@ -139,7 +153,7 @@ function buildPrintReport(gl: GeneralLedger, companyName: string, printedBy?: st
       if (r.kind === 'line') {
         const l = r.line;
         push({
-          date: l.date, source: l.source, number: l.number, description: l.description,
+          date: l.date, source: l.source, number: l.number, status: statusText(l.status), description: l.description,
           debit: l.debit || null, credit: l.credit || null, balance: l.balance,
           cost_center: l.cost_center || '', branch: l.branch || '', project: l.project || '', department: l.department || '',
         });
@@ -165,6 +179,7 @@ function buildPrintReport(gl: GeneralLedger, companyName: string, printedBy?: st
         { key: 'date', header: 'Date', width: 14 },
         { key: 'source', header: 'Source', width: 14 },
         { key: 'number', header: 'Ref No.', width: 22 },
+        { key: 'status', header: 'Status', width: 12 },
         { key: 'description', header: 'Description', width: 48 },
         { key: 'debit', header: 'Debit', type: 'money', width: 18 },
         { key: 'credit', header: 'Credit', type: 'money', width: 18 },
@@ -376,12 +391,13 @@ function AccountGroup({ account, expanded, onToggle }: { account: GlAccount; exp
 
       {expanded && hasLines && (
         <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full text-xs min-w-[860px]">
+          <table className="w-full text-xs min-w-[960px]">
             <thead>
               <tr className="bg-neutral-300 text-xs uppercase tracking-wide text-black">
                 <th className="text-left font-bold border-t border-b border-neutral-800 px-4 py-2.5 w-32">Date</th>
                 <th className="text-left font-bold border-t border-b border-neutral-800 px-3 py-2.5 w-32">Source</th>
                 <th className="text-left font-bold border-t border-b border-neutral-800 px-3 py-2.5 w-48">Ref No.</th>
+                <th className="text-left font-bold border-t border-b border-neutral-800 px-3 py-2.5 w-28">Status</th>
                 <th className="text-left font-bold border-t border-b border-neutral-800 px-3 py-2.5">Description</th>
                 <th className="text-right font-bold border-t border-b border-neutral-800 px-3 py-2.5 w-36">Debit</th>
                 <th className="text-right font-bold border-t border-b border-neutral-800 px-3 py-2.5 w-36">Credit</th>
@@ -390,14 +406,14 @@ function AccountGroup({ account, expanded, onToggle }: { account: GlAccount; exp
             </thead>
             <tbody>
               <tr className="border-t border-neutral-200 bg-neutral-50">
-                <td className="px-4 py-2 text-neutral-500" colSpan={6}><span className="italic">{openingLabel(account)}</span></td>
+                <td className="px-4 py-2 text-neutral-500" colSpan={7}><span className="italic">{openingLabel(account)}</span></td>
                 <td className="px-4 py-2 text-right tabular-nums font-medium">{fmtBalance(account.opening_balance)}</td>
               </tr>
               {detailRows(account).map((r, i) => {
                 if (r.kind === 'month') {
                   return (
                     <tr key={`m-${r.month.month}`} className="border-t border-neutral-300 bg-neutral-100 text-xs">
-                      <td className="px-4 py-2 font-semibold text-neutral-900" colSpan={4}>Balance end of {fmtMonth(r.month.month)}</td>
+                      <td className="px-4 py-2 font-semibold text-neutral-900" colSpan={5}>Balance end of {fmtMonth(r.month.month)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-neutral-900">{fmtAmount(r.month.debit)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-neutral-900">{fmtAmount(r.month.credit)}</td>
                       <td className="px-4 py-2 text-right tabular-nums font-semibold text-neutral-900">{fmtBalance(r.month.closing_balance)}</td>
@@ -407,7 +423,7 @@ function AccountGroup({ account, expanded, onToggle }: { account: GlAccount; exp
                 if (r.kind === 'year') {
                   return (
                     <tr key={`y-${r.year}`} className="border-t border-neutral-300 bg-neutral-200">
-                      <td className="px-4 py-2 text-xs font-semibold text-neutral-800" colSpan={7}>
+                      <td className="px-4 py-2 text-xs font-semibold text-neutral-800" colSpan={8}>
                         Fiscal year {r.year} — P&amp;L balance starts from 0
                       </td>
                     </tr>
@@ -419,6 +435,7 @@ function AccountGroup({ account, expanded, onToggle }: { account: GlAccount; exp
                     <td className="px-4 py-2 whitespace-nowrap text-neutral-900">{fmtDate(l.date)}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-neutral-500">{l.source}</td>
                     <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-neutral-900">{l.number || '–'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap"><StatusBadge status={l.status} /></td>
                     <td className="px-3 py-2 text-neutral-900">{l.description || '–'}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtAmount(l.debit)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtAmount(l.credit)}</td>
@@ -427,7 +444,7 @@ function AccountGroup({ account, expanded, onToggle }: { account: GlAccount; exp
                 );
               })}
               <tr className="border-t-2 border-neutral-800 bg-neutral-50 font-semibold">
-                <td className="px-4 py-2.5 text-neutral-900" colSpan={4}>Closing Balance</td>
+                <td className="px-4 py-2.5 text-neutral-900" colSpan={5}>Closing Balance</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{fmtAmount(account.total_debit)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{fmtAmount(account.total_credit)}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-neutral-900">{fmtBalance(account.closing_balance)}</td>
@@ -535,8 +552,10 @@ export default function GeneralLedgerClient() {
     runQuery({ startDate, endDate, include, accountCodes });
   };
 
-  // Drill-down dari Financial Statements: /reports/general-ledger?account=X&start=..&end=..
-  // -> filter diisi & langsung dijalankan sekali begitu klien aktif siap.
+  // Dari Financial Statements (drill-down): /reports/general-ledger?account=X&start=..&end=..
+  //   -> filter diisi (akun terpilih) & langsung dijalankan sekali begitu klien aktif siap.
+  // Dari halaman Reports: /reports/general-ledger?start=..&end=.. (tanpa account)
+  //   -> hanya periode yang diisi, akun mengikuti filter default.
   const searchParams = useSearchParams();
   const drillDone = useRef(false);
   useEffect(() => {
@@ -544,14 +563,18 @@ export default function GeneralLedgerClient() {
     const acc = searchParams.get('account');
     const s = searchParams.get('start');
     const e = searchParams.get('end');
-    if (!acc || !s || !e || !/^\d{4}-\d{2}-\d{2}$/.test(s) || !/^\d{4}-\d{2}-\d{2}$/.test(e)) return;
+    if (!s || !e || !/^\d{4}-\d{2}-\d{2}$/.test(s) || !/^\d{4}-\d{2}-\d{2}$/.test(e) || s > e) return;
     drillDone.current = true;
     setPeriod('custom');
     setStartDate(s);
     setEndDate(e);
-    setInclude('selected');
-    setAccountCodes([acc]);
-    runQuery({ startDate: s, endDate: e, include: 'selected', accountCodes: [acc] }, [acc]);
+    if (acc) {
+      setInclude('selected');
+      setAccountCodes([acc]);
+      runQuery({ startDate: s, endDate: e, include: 'selected', accountCodes: [acc] }, [acc]);
+    } else {
+      runQuery({ startDate: s, endDate: e, include, accountCodes });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- dijalankan sekali per kunjungan drill-down
   }, [hydrated, activeClientId, searchParams]);
 
@@ -593,6 +616,7 @@ export default function GeneralLedgerClient() {
   };
 
   const withLines = data ? data.accounts.filter(a => a.line_count > 0).length : 0;
+  const unpostedLines = data ? data.accounts.reduce((s, a) => s + a.lines.filter(l => isUnposted(l.status)).length, 0) : 0;
   const balanced = data ? Math.abs(data.totals.debit - data.totals.credit) < 0.005 : true;
 
   return (
@@ -770,6 +794,12 @@ export default function GeneralLedgerClient() {
               </button>
             </div>
           </div>
+
+          {unpostedLines > 0 && (
+            <div className="rounded-[10px] border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+              {unpostedLines.toLocaleString('id-ID')} ledger lines come from journals that are not posted yet (draft, pending, or approved). They are included here, and the Trial Balance shows them too. Use the Status column to tell them apart.
+            </div>
+          )}
 
           {visibleAccounts.length === 0 ? (
             <div className="bg-white border border-dashed border-neutral-300 rounded-[10px] p-10 text-center">

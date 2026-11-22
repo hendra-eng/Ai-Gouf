@@ -8,9 +8,13 @@ import Link from 'next/link';
 import {
   PieChart, BarChart3, ShoppingCart, Package, Building2, CreditCard, FileText, Settings,
   ArrowUpDown, BookOpen, Scale, Star, ArrowRight, Download, Calendar, ChevronDown,
-  Users, Clock, Landmark, Receipt, Percent, Boxes, Factory, Wallet, ListChecks,
+  Users, Clock, Landmark, Receipt, Percent, Boxes, Factory, Wallet, ListChecks, SlidersHorizontal,
 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
+import { useActivePeriod } from '@/lib/activePeriod';
+import { fetchTrialBalancePeriods, type TbPeriods } from '@/lib/trialBalanceStore';
+import { downloadReportsWorkbook } from '@/lib/reportsWorkbook';
+import { withReportPeriod } from '@/lib/reportPeriodQuery';
 
 // Tema elegant monokrom (neutral-*) disamakan dengan halaman Sales.
 // Katalog report per modul (desain: dataset/picture/report 1.jpeg).
@@ -18,7 +22,7 @@ import { useActiveClient } from '@/lib/activeClient';
 
 type TabId = 'overview' | 'sales' | 'purchases' | 'inventory' | 'fixed-assets' | 'banking' | 'tax' | 'production';
 type Tone = 'green' | 'emerald' | 'violet' | 'orange' | 'teal' | 'rose' | 'amber' | 'sky';
-type Art = 'bars' | 'line' | 'area' | 'rows' | 'doc' | 'table';
+type Art = 'bars' | 'line' | 'area' | 'rows' | 'doc' | 'table' | 'adjust';
 
 interface ReportDef {
   id: string;
@@ -29,6 +33,8 @@ interface ReportDef {
   tone: Tone;
   art: Art;
   href: string | null;
+  /** Tampilkan lencana "New" di kartu. */
+  isNew?: boolean;
 }
 
 const TABS: { id: TabId; label: string; icon: React.ComponentType<{ size?: number | string; className?: string }> }[] = [
@@ -49,7 +55,8 @@ const REPORTS: ReportDef[] = [
   { id: 'cash-flow', tab: 'overview', title: 'Cash Flow Statement', description: 'Analyze operating, investing, and financing cash movements.', icon: ArrowUpDown, tone: 'violet', art: 'area', href: '/financial-statements/cash-flow' },
   { id: 'general-ledger', tab: 'overview', title: 'General Ledger', description: 'Inspect all account-level postings and transaction movements.', icon: BookOpen, tone: 'orange', art: 'rows', href: '/reports/general-ledger' },
   { id: 'journal-report', tab: 'overview', title: 'Journal Report', description: 'Browse journal entries created during the selected period.', icon: FileText, tone: 'teal', art: 'doc', href: '/transactions/journal-entry/posted' },
-  { id: 'trial-balance', tab: 'overview', title: 'Trial Balance', description: 'Compare opening balance, movements, and ending balances by account.', icon: Scale, tone: 'rose', art: 'table', href: null },
+  { id: 'trial-balance', tab: 'overview', title: 'Trial Balance', description: 'Compare opening balance, movements, and ending balances by account.', icon: Scale, tone: 'rose', art: 'table', href: '/reports/trial-balance' },
+    { id: 'adjustment', tab: 'overview', title: 'Adjustment', description: 'Review adjusting journals and their effect on the trial balance.', icon: SlidersHorizontal, tone: 'sky', art: 'adjust', href: '/reports/adjustment' },
 
   // Sales
   { id: 'sales-register', tab: 'sales', title: 'Sales Register', description: 'List every sales invoice with tax and posting status.', icon: Receipt, tone: 'green', art: 'rows', href: '/transactions/sales' },
@@ -91,7 +98,14 @@ const TONE: Record<Tone, { tile: string; icon: string; art: string; artSoft: str
   green: MONO, emerald: MONO, violet: MONO, orange: MONO, teal: MONO, rose: MONO, amber: MONO, sky: MONO,
 };
 
-const PERIODS = ['Jan – Dec 2026', 'Jan – Dec 2025', 'Jan – Dec 2024', 'Q1 2026', 'Q2 2026', 'Q3 2026', 'Q4 2026'];
+// Periode report = Tahun + "Sampai bulan" (kumulatif sejak 1 Januari) -- sama dengan
+// Trial Balance & Adjustment (year + end_month). Daftar tahun diambil dari data klien.
+const FIRST_YEAR = 2015;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function periodLabelOf(year: number, endMonth: number): string {
+  return `${endMonth === 1 ? 'Jan' : `Jan – ${MONTHS[endMonth - 1]}`} ${year}`;
+}
 
 const FAVORITES_KEY = 'reports.favorites';
 
@@ -178,11 +192,27 @@ function CardArt({ art, tone }: { art: Art; tone: Tone }) {
           ))}
         </svg>
       );
+    case 'adjust':
+      return (
+        <svg {...common}>
+          <rect x="4" y="4" width="96" height="78" rx="8" fill={s} opacity="0.35" />
+          {[16, 36, 56].map(y => (
+            <g key={y}>
+              <rect x="14" y={y} width="36" height="7" rx="3.5" fill={s} />
+              <rect x="58" y={y} width="16" height="7" rx="3.5" fill={c} opacity="0.5" />
+              <path d={`M86 ${y + 3.5} h8`} stroke={c} strokeWidth="2" strokeLinecap="round" />
+            </g>
+          ))}
+          <path d="M90 12 v8 M86 16 h8 M90 52 v8 M86 56 h8" stroke={c} strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
   }
 }
 
-function ReportCard({ report, favorite, onToggleFavorite }: {
+function ReportCard({ report, href, favorite, onToggleFavorite }: {
   report: ReportDef;
+  /** Href tujuan (sudah membawa periode terpilih untuk report yang mendukungnya). */
+  href: string | null;
   favorite: boolean;
   onToggleFavorite: () => void;
 }) {
@@ -200,13 +230,16 @@ function ReportCard({ report, favorite, onToggleFavorite }: {
         <p className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
           <span className={`h-1.5 w-1.5 rounded-full ${report.href ? 'bg-neutral-800' : 'bg-neutral-300'}`} />
           {categoryLabel}
+          {report.isNew && (
+            <span className="ml-1 rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-white">New</span>
+          )}
         </p>
         <h3 className="text-base font-semibold text-neutral-900 leading-tight">{report.title}</h3>
         <p className="text-xs font-medium text-neutral-500 mt-1.5 max-w-[16rem] leading-relaxed">{report.description}</p>
         <div className="mt-auto pt-4">
-          {report.href ? (
+          {href ? (
             <Link
-              href={report.href}
+              href={href}
               className={btnOutline}
             >
               Open Report <ArrowRight size={14} />
@@ -255,14 +288,51 @@ function downloadCatalogCsv(reports: ReportDef[], company: string, period: strin
 }
 
 export default function ReportsCatalog() {
-  const { clients, activeClientId, activeClientName, setActiveClient } = useActiveClient();
+  const { clients, activeClientId, activeClientName, setActiveClient, hydrated } = useActiveClient();
+  const { period: activePeriod } = useActivePeriod();
 
   const [activeTab, setActiveTab] = useState<TabId>('overview');
-  const [period, setPeriod] = useState(PERIODS[0]);
+  const [year, setYear] = useState<number>(() => new Date().getFullYear());
+  const [endMonth, setEndMonth] = useState<number>(() => new Date().getMonth() + 1);
+  const [yearInfo, setYearInfo] = useState<TbPeriods['years']>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [showFavorites, setShowFavorites] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   useEffect(() => { setFavorites(loadFavorites()); }, []);
+
+  // Daftar tahun dari data klien. Nilai awal mengikuti filter periode di top bar (kalau
+  // tahunnya ada datanya), selain itu tahun terbaru + bulan terakhir yang punya transaksi.
+  // Setelah itu pilihan user tidak ditimpa lagi.
+  useEffect(() => {
+    if (!hydrated || !activeClientId) return;
+    const ctrl = new AbortController();
+    fetchTrialBalancePeriods(activeClientId, 'all', ctrl.signal)
+      .then(p => {
+        const list = [...p.years].sort((a, b) => b.year - a.year);
+        setYearInfo(list);
+        const wantYear = Number(activePeriod.end.slice(0, 4));
+        const wantMonth = Number(activePeriod.end.slice(5, 7));
+        const hit = list.find(y => y.year === wantYear);
+        if (hit && wantMonth >= 1 && wantMonth <= 12) { setYear(hit.year); setEndMonth(wantMonth); return; }
+        const d = list.find(y => y.year === p.default_year) ?? list[0];
+        if (d) { setYear(d.year); setEndMonth(d.last_month || 12); }
+      })
+      .catch(() => { if (!ctrl.signal.aborted) setYearInfo([]); });
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, activeClientId]);
+
+  // Tahun: dari tahun berjalan mundur sampai 2015 (tahun yang ada datanya / terpilih di luar rentang tetap ikut).
+  const yearTop = Math.max(new Date().getFullYear(), year, ...yearInfo.map(y => y.year));
+  const yearBottom = Math.min(FIRST_YEAR, year, ...yearInfo.map(y => y.year));
+  const yearOptions = Array.from({ length: yearTop - yearBottom + 1 }, (_, i) => yearTop - i);
+  const period = periodLabelOf(year, endMonth);
+  const onYearChange = (y: number) => {
+    setYear(y);
+    setEndMonth(yearInfo.find(x => x.year === y)?.last_month || 12);
+  };
 
   const toggleFavorite = (id: string) => {
     setFavorites(prev => {
@@ -281,7 +351,21 @@ export default function ReportsCatalog() {
     ?? clients.find(c => c.id === activeClientId)?.companyName
     ?? 'No company selected';
 
+  const handleDownloadExcel = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      await downloadReportsWorkbook({ companyName, periodLabel: period, year, endMonth, managementClientId: activeClientId ?? null });
+    } catch (e) {
+      setDownloadError(e instanceof Error ? e.message : 'Failed to download the Excel file.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const selectClass = 'w-full appearance-none rounded-lg border-2 border-neutral-300 bg-white pl-9 pr-8 py-1.5 text-xs text-neutral-900 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300';
+  const selectPlainClass = selectClass.replace('pl-9', 'pl-3');
 
   return (
     <div className={`mx-auto max-w-screen-2xl space-y-4 px-6 py-5 lg:px-8 xl:px-10 fade-in ${salesFont.className}`}>
@@ -335,12 +419,21 @@ export default function ReportsCatalog() {
               <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
             </div>
           </label>
-          <label className="block sm:w-60">
-            <span className="block text-xs font-medium text-neutral-500 mb-1">Period</span>
+          <label className="block sm:w-32">
+            <span className="block text-xs font-medium text-neutral-500 mb-1">Year</span>
             <div className="relative">
               <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
-              <select value={period} onChange={e => setPeriod(e.target.value)} className={selectClass} aria-label="Period">
-                {PERIODS.map(p => <option key={p} value={p}>{p}</option>)}
+              <select value={year} onChange={e => onYearChange(Number(e.target.value))} className={selectClass} aria-label="Year">
+                {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
+            </div>
+          </label>
+          <label className="block sm:w-40">
+            <span className="block text-xs font-medium text-neutral-500 mb-1">Through month</span>
+            <div className="relative">
+              <select value={endMonth} onChange={e => setEndMonth(Number(e.target.value))} className={selectPlainClass} aria-label="Through month">
+                {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
               </select>
               <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
             </div>
@@ -348,6 +441,14 @@ export default function ReportsCatalog() {
         </div>
 
         <div className="flex items-center gap-3 lg:pl-6 lg:border-l lg:border-neutral-300 lg:self-stretch lg:items-end">
+          <button
+            type="button"
+            onClick={handleDownloadExcel}
+            disabled={downloading}
+            className={btnPrimary}
+          >
+            <Download size={14} /> {downloading ? 'Preparing…' : 'Download Excel'}
+          </button>
           <button
             onClick={() => downloadCatalogCsv(visibleReports, companyName, period)}
             className={btnOutline}
@@ -365,6 +466,10 @@ export default function ReportsCatalog() {
         </div>
       </div>
 
+      {downloadError && (
+        <p role="alert" className="rounded-lg border border-neutral-300 bg-neutral-50 px-4 py-2 text-xs font-medium text-neutral-700">{downloadError}</p>
+      )}
+
       {/* Report cards */}
       {visibleReports.length === 0 ? (
         <div className="bg-white border border-dashed border-neutral-300 rounded-xl p-12 text-center">
@@ -375,7 +480,7 @@ export default function ReportsCatalog() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {visibleReports.map(r => (
-            <ReportCard key={r.id} report={r} favorite={favorites.includes(r.id)} onToggleFavorite={() => toggleFavorite(r.id)} />
+            <ReportCard key={r.id} report={r} href={r.href ? withReportPeriod(r.href, year, endMonth) : null} favorite={favorites.includes(r.id)} onToggleFavorite={() => toggleFavorite(r.id)} />
           ))}
         </div>
       )}

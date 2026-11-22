@@ -108,7 +108,7 @@ export default function AccountMappingSettings() {
   }
 
   if (!activeClientId) {
-    return <div className="rounded-lg border border-neutral-300 bg-white px-4 py-6 text-center text-sm text-neutral-500">Select a company to configure account mapping.</div>;
+    return <div className="rounded-lg border border-neutral-400 bg-white px-4 py-6 text-center text-sm text-neutral-500">Select a company to configure account mapping.</div>;
   }
   if (loading && !mapping) {
     return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-40 animate-pulse rounded-lg bg-neutral-100" />)}</div>;
@@ -128,7 +128,7 @@ export default function AccountMappingSettings() {
     <div className="space-y-5 pb-20">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Waypoints size={18} /></span>
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-300"><Waypoints size={18} /></span>
           <div>
             <h2 className="text-base font-bold text-neutral-900">Account mapping</h2>
             <p className="text-xs text-neutral-500">
@@ -139,16 +139,16 @@ export default function AccountMappingSettings() {
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
         <button type="button" onClick={() => kunci(bisaKunci, true, 'all')} disabled={!bisaKunci.length || !!locking}
-          className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
+          className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-400 bg-white px-3 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
           {locking === 'all' ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />} Lock all mapped
         </button>
         <button type="button" onClick={() => kunci(terkunci, false, 'none')} disabled={!terkunci.length || !!locking}
-          className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
+          className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-400 bg-white px-3 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
           {locking === 'none' ? <Loader2 size={14} className="animate-spin" /> : <LockOpen size={14} />} Unlock all
         </button>
         <button
           onClick={() => setTutup(Object.fromEntries(mapping.groups.map(g => [g.key, !semuaTutup])))}
-          className="flex h-9 items-center gap-1.5 self-start rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 sm:self-auto"
+          className="flex h-9 items-center gap-1.5 self-start rounded-lg border border-neutral-400 bg-white px-3 text-xs font-semibold text-neutral-900 hover:bg-neutral-50 sm:self-auto"
         >
           {semuaTutup ? <><ChevronsUpDown size={14} /> Expand all</> : <><ChevronsDownUp size={14} /> Collapse all</>}
         </button>
@@ -156,7 +156,7 @@ export default function AccountMappingSettings() {
       </div>
 
       {mapping.locked > 0 && (
-        <div className="flex items-start gap-2 rounded-lg border border-neutral-300 bg-neutral-100 px-4 py-3 text-sm text-neutral-800">
+        <div className="flex items-start gap-2 rounded-lg border border-neutral-400 bg-neutral-100 px-4 py-3 text-sm text-neutral-800">
           <Lock size={16} className="mt-0.5 shrink-0" />
           <span>Locked mappings cannot be changed from any menu — including deleting, deactivating, renaming or renumbering their accounts in the Chart of Accounts — until they are unlocked here.</span>
         </div>
@@ -173,12 +173,12 @@ export default function AccountMappingSettings() {
         const tertutup = !!tutup[g.key];
         const isi = g.items.filter(it => form[it.key]).length;
         return (
-          <section key={g.key} className="relative rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800">
+          <section key={g.key} className="relative rounded-lg border border-neutral-400 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800">
             <button
               type="button"
               onClick={() => setTutup(t => ({ ...t, [g.key]: !t[g.key] }))}
               aria-expanded={!tertutup}
-              className={`flex w-full items-center justify-between gap-3 rounded-lg bg-neutral-50 px-5 py-3.5 text-left transition-colors hover:bg-neutral-100 ${tertutup ? '' : 'rounded-b-none border-b border-neutral-300'}`}
+              className={`flex w-full items-center justify-between gap-3 rounded-lg bg-neutral-50 px-5 py-3.5 text-left transition-colors hover:bg-neutral-100 ${tertutup ? '' : 'rounded-b-none border-b border-neutral-400'}`}
             >
               <div className="flex items-center gap-3">
                 <ChevronDown size={16} className={`text-neutral-400 transition-transform ${tertutup ? '-rotate-90' : ''}`} />
@@ -240,7 +240,7 @@ export default function AccountMappingSettings() {
         );
       })}
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-300 bg-white shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-400 bg-white shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
         <div className="mx-auto flex max-w-screen-2xl items-center justify-between gap-3 px-6 py-3">
           <p className="text-xs text-neutral-500">
             {jumlahGanda
@@ -251,7 +251,7 @@ export default function AccountMappingSettings() {
             <span className="hidden sm:inline"> · Saving requires Tahap 5 (Partner) access.</span>
           </p>
           <div className="flex items-center gap-2">
-            <button onClick={() => setForm(bawaan)} disabled={saving || Object.keys(form).every(k => form[k] === bawaan[k])} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
+            <button onClick={() => setForm(bawaan)} disabled={saving || Object.keys(form).every(k => form[k] === bawaan[k])} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-400 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
               <RotateCcw size={14} /> Reset
             </button>
             <button onClick={simpan} disabled={saving || !jumlahBerubah || jumlahGanda > 0} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-4 text-sm font-semibold text-white shadow-sm hover:bg-neutral-700 disabled:opacity-50">
@@ -302,7 +302,7 @@ function CoaSelect({ value, opsi, loading, onChange, disabled, ganda, dipakai }:
         type="button"
         onClick={() => { if (disabled) return; setBuka(b => !b); setQ(''); }}
         disabled={disabled}
-        className={`flex w-full items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:opacity-80 text-left text-sm transition-shadow focus:outline-none focus:ring-2 focus:ring-neutral-300 ${buka ? 'border-neutral-700 ring-2 ring-neutral-300' : ganda ? 'border-red-400' : 'border-neutral-300'}`}
+        className={`flex w-full items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:opacity-80 text-left text-sm transition-shadow focus:outline-none focus:ring-2 focus:ring-neutral-300 ${buka ? 'border-neutral-700 ring-2 ring-neutral-300' : ganda ? 'border-red-400' : 'border-neutral-400'}`}
       >
         {pilih ? (
           <span className="min-w-0 truncate text-neutral-900">
@@ -330,8 +330,8 @@ function CoaSelect({ value, opsi, loading, onChange, disabled, ganda, dipakai }:
       </button>
 
       {buka && (
-        <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-lg border border-neutral-300 bg-white shadow-lg">
-          <div className="relative border-b border-neutral-300 p-2">
+        <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-lg border border-neutral-400 bg-white shadow-lg">
+          <div className="relative border-b border-neutral-400 p-2">
             <Search size={13} className="absolute left-4 top-1/2 -tranneutral-y-1/2 text-neutral-400" />
             <input
               autoFocus

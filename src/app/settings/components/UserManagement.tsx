@@ -25,7 +25,7 @@ type Filter = 'all' | 'yes' | 'no';
 
 function Segmented({ value, onChange, options }: { value: Filter; onChange: (v: Filter) => void; options: [Filter, string][] }) {
   return (
-    <div className="inline-flex shrink-0 rounded-lg border border-neutral-300 bg-white p-0.5">
+    <div className="inline-flex shrink-0 rounded-lg border border-neutral-400 bg-white p-0.5">
       {options.map(([v, l]) => (
         <button key={v} onClick={() => onChange(v)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${value === v ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}>{l}</button>
       ))}
@@ -70,37 +70,37 @@ export default function UserManagement() {
           [CircleSlash, 'Inactive', users.length - aktif],
           [ShieldCheck, 'Members', members],
         ] as const).map(([Icon, label, n]) => (
-          <div key={label} className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+          <div key={label} className="relative overflow-hidden rounded-[10px] border border-neutral-400 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
             <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
             <div className="flex items-start justify-between gap-2">
               <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600">{label}</p>
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Icon size={16} /></span>
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-300"><Icon size={16} /></span>
             </div>
             <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{loading && users.length === 0 ? '—' : n}</p>
           </div>
         ))}
       </div>
 
-      <div className="relative rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800 overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-neutral-300 p-4 xl:flex-row xl:items-center">
+      <div className="relative rounded-lg border border-neutral-400 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800 overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-neutral-400 p-4 xl:flex-row xl:items-center">
           <div className="relative flex-1">
             <Search size={15} className="absolute left-3.5 top-1/2 -tranneutral-y-1/2 text-neutral-400" />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search name or username…"
-              className="w-full rounded-lg border border-neutral-300 bg-neutral-50 py-2.5 pl-10 pr-9 text-sm text-neutral-900 placeholder:text-neutral-400 transition-shadow focus:border-neutral-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300"
+              className="w-full rounded-lg border border-neutral-400 bg-neutral-50 py-2.5 pl-10 pr-9 text-sm text-neutral-900 placeholder:text-neutral-400 transition-shadow focus:border-neutral-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300"
             />
             {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -tranneutral-y-1/2 rounded p-0.5 text-neutral-400 hover:text-neutral-900" aria-label="Clear search"><X size={14} /></button>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <select value={role} onChange={e => setRole(e.target.value)} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-300">
+            <select value={role} onChange={e => setRole(e.target.value)} className="rounded-lg border border-neutral-400 bg-white px-3 py-2 text-xs font-semibold text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-300">
               <option value="all">All roles</option>
               {daftarRole.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
             </select>
             <Segmented value={status} onChange={setStatus} options={[['all', 'Any status'], ['yes', 'Active'], ['no', 'Inactive']]} />
             <Segmented value={member} onChange={setMember} options={[['all', 'Any type'], ['yes', 'Member'], ['no', 'Non-member']]} />
-            <button onClick={refresh} disabled={loading} title="Refresh" className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-300 text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 disabled:opacity-40">
+            <button onClick={refresh} disabled={loading} title="Refresh" className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-400 text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 disabled:opacity-40">
               <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
@@ -116,7 +116,7 @@ export default function UserManagement() {
                 <th className="px-4 py-3">Type</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-300">
+            <tbody className="divide-y divide-neutral-400">
               {loading && users.length === 0 ? (
                 Array.from({ length: 4 }).map((_, i) => (
                   <tr key={i}><td colSpan={4} className="px-5 py-4"><div className="h-4 animate-pulse rounded bg-neutral-100" style={{ width: `${55 + i * 9}%` }} /></td></tr>
@@ -173,7 +173,7 @@ export default function UserManagement() {
         </div>
 
         {users.length > 0 && (
-          <div className="flex items-center justify-between border-t border-neutral-300 bg-neutral-50 px-5 py-2.5 text-xs text-neutral-500">
+          <div className="flex items-center justify-between border-t border-neutral-400 bg-neutral-50 px-5 py-2.5 text-xs text-neutral-500">
             <span>Showing <span className="font-semibold text-neutral-900">{filtered.length}</span> of {users.length} users</span>
             {filterAktif && (
               <button onClick={() => { setSearch(''); setRole('all'); setStatus('all'); setMember('all'); }} className="font-medium text-neutral-800 hover:underline">Clear filters</button>

@@ -173,6 +173,8 @@ export interface BackendJeDraft {
   period_label: string;
   description: string | null;
   source_type: string;
+  /** Jurnal penyesuaian (adjusting entry) -- tampil di Reports > Adjustment. */
+  is_adjustment?: boolean;
   source_reference: string | null;
   source_record_id: string | null;
   total_debit: number;
@@ -235,6 +237,8 @@ export interface JeDraftWithLinesInput {
   period_label: string;
   description?: string;
   source_type?: string;
+  /** true = jurnal penyesuaian (adjusting entry), tampil di Reports > Adjustment. */
+  is_adjustment?: boolean;
   source_reference?: string;
   source_record_id?: string | null;
   currency?: string;

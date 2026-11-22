@@ -67,6 +67,7 @@ export default function NewJournalEntryModal({
   const [periodLabel, setPeriodLabel] = useState(periodeDariTanggal(today));
   const [description, setDescription] = useState('');
   const [sourceType, setSourceType] = useState('Manual');
+  const [isAdjustment, setIsAdjustment] = useState(false);
   const [sourceReference, setSourceReference] = useState('');
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<LineDraft[]>(() => Array.from({ length: DEFAULT_LINE_COUNT }, (_, i) => baris_kosong(i + 1)));
@@ -178,6 +179,7 @@ export default function NewJournalEntryModal({
         period_label: periodLabel.trim(),
         description: description.trim() || undefined,
         source_type: sourceType,
+        is_adjustment: isAdjustment,
         source_reference: sourceReference.trim() || undefined,
         currency: 'IDR',
         status: 'draft',
@@ -228,6 +230,15 @@ export default function NewJournalEntryModal({
           <div className="col-span-2">
             <label className="text-[11px] text-muted-foreground">Source Reference (optional)</label>
             <input value={sourceReference} onChange={e => setSourceReference(e.target.value)} placeholder="mis. INV-2026-1847" className="je-input w-full mt-0.5" />
+          </div>
+          <div className="col-span-2 md:col-span-4">
+            <label className="flex items-start gap-2 text-xs text-foreground cursor-pointer">
+              <input type="checkbox" checked={isAdjustment} onChange={e => setIsAdjustment(e.target.checked)} className="mt-0.5" />
+              <span>
+                <span className="font-semibold">Adjusting entry</span>
+                <span className="block text-[11px] text-muted-foreground">Period-end adjustment (accruals, depreciation, reclass, etc.). It is posted like any journal and also listed in Reports › Adjustment.</span>
+              </span>
+            </label>
           </div>
         </div>
 

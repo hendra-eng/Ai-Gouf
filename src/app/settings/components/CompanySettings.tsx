@@ -28,7 +28,7 @@ const HEALTH: Record<string, { label: string; cls: string }> = {
   critical: { label: 'Critical', cls: 'bg-red-50 text-red-700 ring-red-600/20' },
 };
 
-const inputCls = 'w-full rounded-lg border-2 border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:bg-neutral-50';
+const inputCls = 'w-full rounded-lg border-2 border-neutral-400 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:bg-neutral-50';
 const labelCls = 'block text-xs font-semibold text-neutral-900 mb-1.5';
 
 type Form = Record<string, string>;
@@ -231,7 +231,7 @@ export default function CompanySettings() {
   return (
     <div className={`space-y-5 ${edit ? 'pb-20' : ''}`}>
       {/* Kartu identitas */}
-      <section className="relative rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800 overflow-hidden">
+      <section className="relative rounded-lg border border-neutral-400 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800 overflow-hidden">
         <div className="h-20 rounded-t-lg bg-gradient-to-r from-neutral-900 via-neutral-800 to-neutral-600" />
         <div className="flex flex-col gap-4 px-6 pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-end gap-4">
@@ -283,9 +283,9 @@ export default function CompanySettings() {
       {SECTIONS.map(sec => {
         const Icon = sec.icon;
         return (
-          <section key={sec.title} className="relative rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800">
-            <header className="flex items-start gap-3 rounded-t-lg border-b border-neutral-300 bg-neutral-50 px-6 py-3.5">
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Icon size={16} /></span>
+          <section key={sec.title} className="relative rounded-lg border border-neutral-400 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800">
+            <header className="flex items-start gap-3 rounded-t-lg border-b border-neutral-400 bg-neutral-50 px-6 py-3.5">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-300"><Icon size={16} /></span>
               <div>
                 <h3 className="text-sm font-semibold text-neutral-900">{sec.title}</h3>
                 <p className="text-xs text-neutral-500">{sec.subtitle}</p>
@@ -297,7 +297,7 @@ export default function CompanySettings() {
                   {edit && fld.readOnly ? (
                     <>
                       <label className={labelCls}>{fld.label}</label>
-                      <div className={`flex h-[38px] items-center rounded-lg border border-neutral-300 bg-neutral-50 px-3 text-sm text-neutral-600 ${fld.mono ? 'font-mono' : ''}`}>
+                      <div className={`flex h-[38px] items-center rounded-lg border border-neutral-400 bg-neutral-50 px-3 text-sm text-neutral-600 ${fld.mono ? 'font-mono' : ''}`}>
                         {tampil(fld, company, akuntan) ?? '—'}
                       </div>
                       <p className="mt-1 text-[11px] text-neutral-500">{fld.readOnly}</p>
@@ -311,7 +311,7 @@ export default function CompanySettings() {
                     <>
                       <p className="text-[11px] font-medium uppercase tracking-wider text-neutral-500">{fld.label}</p>
                       <div className={`mt-1 text-sm ${fld.mono ? 'font-mono' : ''} text-neutral-900`}>
-                        {tampil(fld, company, akuntan) ?? <span className="text-neutral-300">Not set</span>}
+                        {tampil(fld, company, akuntan) ?? <span className="text-neutral-400">Not set</span>}
                       </div>
                     </>
                   )}
@@ -323,14 +323,14 @@ export default function CompanySettings() {
       })}
 
       {edit && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-300 bg-white shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-400 bg-white shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
           <div className="mx-auto flex max-w-screen-2xl items-center justify-between gap-3 px-6 py-3">
             <p className="text-xs text-neutral-500">
               {jumlahBerubah ? <span className="font-medium text-amber-700">{jumlahBerubah} unsaved change{jumlahBerubah > 1 ? 's' : ''}</span> : 'No changes yet'}
               <span className="hidden sm:inline"> · Saving requires Tahap 5 (Partner) access.</span>
             </p>
             <div className="flex items-center gap-2">
-              <button onClick={batal} disabled={saving} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
+              <button onClick={batal} disabled={saving} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-400 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
                 <X size={14} /> Cancel
               </button>
               <button onClick={simpan} disabled={saving} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-4 text-sm font-semibold text-white shadow-sm hover:bg-neutral-700 disabled:opacity-50">
@@ -353,7 +353,7 @@ function Input({ fld, value, onChange, akuntan, industries }: { fld: Field; valu
       return <input type="date" value={value} onChange={e => onChange(e.target.value)} className={cls} />;
     case 'pkp':
       return (
-        <div className="inline-flex rounded-lg border border-neutral-300 bg-white p-0.5">
+        <div className="inline-flex rounded-lg border border-neutral-400 bg-white p-0.5">
           {([['', 'Not set'], ['true', 'PKP'], ['false', 'Non-PKP']] as const).map(([v, l]) => (
             <button key={l} type="button" onClick={() => onChange(v)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${value === v ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}>{l}</button>
           ))}

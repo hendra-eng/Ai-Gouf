@@ -15,6 +15,10 @@ export interface GlLine {
   date: string;
   source: string;
   number: string;
+  /** Status transaksi sumber: draft / pending / approved / posted / reversed. */
+  status?: string;
+  /** Jurnal penyesuaian (adjusting entry). */
+  is_adjustment?: boolean;
   description: string;
   party: string;
   /** Segment tambahan -- hanya tampil di export Excel/CSV. */

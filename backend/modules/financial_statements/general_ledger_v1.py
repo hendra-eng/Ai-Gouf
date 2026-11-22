@@ -187,6 +187,9 @@ def susun_general_ledger(
             "date": tgl.isoformat(),
             "source": _LABEL_SUMBER.get(b.get("sumber"), b.get("sumber") or ""),
             "number": b.get("nomor") or "",
+            "status": (b.get("status") or "").strip().lower(),
+            # Jurnal penyesuaian (Journal Entry bertanda is_adjustment): dipakai export Reports untuk memisahkan ke sheet ADJ.
+            "is_adjustment": bool(b.get("is_adjustment")),
             "description": b.get("keterangan") or "",
             "party": b.get("pihak") or "",
             # Segment tambahan (dimensi) -- dipakai kolom ekstra di export Excel/CSV.

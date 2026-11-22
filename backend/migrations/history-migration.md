@@ -63,3 +63,4 @@ bank_cash/seed_template_npi_multi_format_bank_cash.sql
 53-add_bank_cash_mutation_auto_rule_skip.py
 54-add_bank_cash_auto_rule_auto_approve.py
 55-add_bank_cash_auto_match_controls.py
+63-add_is_adjustment_to_journal_entry_drafts.py

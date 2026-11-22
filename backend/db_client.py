@@ -774,6 +774,9 @@ class JournalEntryDraft(Base):
     approved_by_name = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
     journal_entry_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    # [BARU] Penanda jurnal penyesuaian (adjusting entry) -- dibaca Reports > Adjustment.
+    # source_type = ASAL jurnal, is_adjustment = JENIS jurnal. Lihat migrations/63-*.py.
+    is_adjustment = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     posted_at = Column(DateTime(timezone=True), nullable=True)
     posted_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
@@ -6196,7 +6199,7 @@ CRUD_FIELDS_JE_DRAFT = [
     "description", "source_type", "source_reference", "source_record_id",
     "total_debit", "total_credit", "currency", "status", "created_by_name",
     "reviewed_by_name", "approved_by_name", "notes", "journal_entry_id",
-    "posted_at", "posted_by",
+    "posted_at", "posted_by", "is_adjustment",
 ]
 
 def create_je_draft(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -6771,7 +6774,7 @@ def update_je_draft_with_lines(
         if (d.status or "").lower() not in JE_STATUS_BISA_EDIT:
             return {"ok": False, "reason": f"Status '{d.status}' cannot be edited.", "data": None}
 
-        bolehkan = {"entry_date", "posting_date", "period_label", "description", "source_reference", "notes", "currency", "je_number"}
+        bolehkan = {"entry_date", "posting_date", "period_label", "description", "source_reference", "notes", "currency", "je_number", "is_adjustment"}
         for k, v in draft_data.items():
             if k in bolehkan:
                 setattr(d, k, v)
@@ -7696,7 +7699,7 @@ def _baris_gl_kas_bank(session, management_client_id: str, sampai_tanggal: Optio
         jurnal = baris_jurnal_kas_bank(tx, baris_per_tx.get(tx.id, []))
         dasar = {
             "sumber": "cash_bank", "jurnal_id": f"cash_bank:{tx.id}", "nomor": tx.tx_number,
-            "tanggal": tx.tx_date, "pihak": tx.counterparty, "segmen": {},
+            "tanggal": tx.tx_date, "pihak": tx.counterparty, "segmen": {}, "status": tx.status,
         }
         for b in jurnal:
             hasil.append({**dasar, "keterangan": b["description"] or tx.category or tx.tx_number,
@@ -7729,7 +7732,7 @@ def _baris_gl_jurnal_modul(session, model, model_baris, sumber: str, management_
     hasil: List[Dict[str, Any]] = []
     for j in jurnal:
         dasar = {"sumber": sumber, "jurnal_id": f"{sumber}:{j.id}", "nomor": j.journal_no,
-                 "tanggal": j.journal_date, "pihak": getattr(j, kolom_pihak, None),
+                 "tanggal": j.journal_date, "pihak": getattr(j, kolom_pihak, None), "status": j.status,
                  # segmen_fn(j) -> dimensi (cost_center/branch/project/department) dari header jurnal; kosong kalau modul tak punya.
                  "segmen": (segmen_fn(j) if segmen_fn else {}) or {}}
         for l in baris_per_j.get(j.id, []):
@@ -7780,7 +7783,7 @@ def ambil_baris_jurnal_posted_transaksi(
     semua), difilter per `management_client_id` (klien/perusahaan -- filter
     utama Financial Statements) dan/atau `client_id` (id_user
     management_users, akun yang login). Minimal salah satu WAJIB diisi.
-    Tiap baris: sumber, jurnal_id, nomor, tanggal (date), keterangan, pihak,
+    Tiap baris: sumber, jurnal_id, nomor, tanggal (date), keterangan, pihak, status (status transaksi sumber),
     account_code, account_name, debit, kredit, segmen (dimensi untuk filter
     segment P&L: JE -> cost_center baris; Sales -> branch (cabang) & project;
     Other -> cost_center/branch/project/department; Fixed Assets -> branch &
@@ -7836,6 +7839,8 @@ def ambil_baris_jurnal_posted_transaksi(
                 "debit": _angka_gl(line.debit),
                 "kredit": _angka_gl(line.credit),
                 "segmen": {"cost_center": line.cost_center},
+                "status": draft.status,
+                "is_adjustment": bool(draft.is_adjustment),  # [BARU] dibaca Reports > Adjustment
             })
 
         # --- 2) Sales ---
@@ -7876,6 +7881,7 @@ def ambil_baris_jurnal_posted_transaksi(
                 "keterangan": inv.description or f"Penjualan {inv.invoice_no}",
                 "pihak": inv.customer_name,
                 "segmen": {"branch": inv.cabang, "project": inv.project_name},
+                "status": inv.posting_status,
             }
             for kunci, debit, kredit in (("piutang", gross, 0.0), ("pendapatan", 0.0, dpp), ("ppn", 0.0, ppn)):
                 if debit or kredit:
@@ -7908,6 +7914,7 @@ def ambil_baris_jurnal_posted_transaksi(
                 "keterangan": tx.description or f"Pembelian {tx.purchase_no}",
                 "pihak": tx.vendor_name,
                 "segmen": {},
+                "status": tx.status,
             }
             per_akun: Dict[str, List[Any]] = {}
             for line in baris_per_tx.get(tx.id, []):

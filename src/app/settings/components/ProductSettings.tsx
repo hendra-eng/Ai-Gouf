@@ -20,7 +20,7 @@ import {
 
 const PAGE_SIZE = 20;
 
-const inputCls = 'w-full rounded-lg border-2 border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:bg-neutral-50';
+const inputCls = 'w-full rounded-lg border-2 border-neutral-400 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:bg-neutral-50';
 const labelCls = 'block text-xs font-semibold text-neutral-900 mb-1.5';
 
 const fmtAmount = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 });
@@ -29,13 +29,13 @@ export default function ProductSettings() {
   const { activeClientId } = useActiveClient();
 
   if (!activeClientId) {
-    return <div className="rounded-lg border border-neutral-300 bg-white px-4 py-6 text-center text-sm text-neutral-500">Select a company to configure product settings.</div>;
+    return <div className="rounded-lg border border-neutral-400 bg-white px-4 py-6 text-center text-sm text-neutral-500">Select a company to configure product settings.</div>;
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Package size={18} /></span>
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-300"><Package size={18} /></span>
         <div>
           <h2 className="text-base font-bold text-neutral-900">Goods &amp; Services</h2>
           <p className="text-xs text-neutral-500">Master data and optional features for products.</p>
@@ -102,10 +102,10 @@ function MasterTable({ clientId, kind, title, column, icon: Icon }: {
   const sampai = Math.min(page * PAGE_SIZE, total);
 
   return (
-    <section className="relative rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800 overflow-hidden">
-      <header className="flex flex-col gap-3 rounded-t-lg border-b border-neutral-300 bg-neutral-50 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+    <section className="relative rounded-lg border border-neutral-400 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800 overflow-hidden">
+      <header className="flex flex-col gap-3 rounded-t-lg border-b border-neutral-400 bg-neutral-50 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Icon size={16} /></span>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-300"><Icon size={16} /></span>
           <div>
             <h4 className="text-sm font-semibold text-neutral-900">{title}</h4>
             <p className="text-xs text-neutral-500">{total} {total === 1 ? 'entry' : 'entries'}</p>
@@ -118,7 +118,7 @@ function MasterTable({ clientId, kind, title, column, icon: Icon }: {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={`Search ${column.toLowerCase()}…`}
-              className="w-full rounded-lg border border-neutral-300 bg-neutral-50 py-2 pl-9 pr-8 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300"
+              className="w-full rounded-lg border border-neutral-400 bg-neutral-50 py-2 pl-9 pr-8 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300"
             />
             {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -tranneutral-y-1/2 rounded p-0.5 text-neutral-400 hover:text-neutral-900" aria-label="Clear search"><X size={13} /></button>}
           </div>
@@ -138,7 +138,7 @@ function MasterTable({ clientId, kind, title, column, icon: Icon }: {
               <th className="w-28 px-5 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-neutral-300">
+          <tbody className="divide-y divide-neutral-400">
             {loading && !data ? (
               Array.from({ length: 3 }).map((_, i) => (
                 <tr key={i}><td colSpan={4} className="px-5 py-4"><div className="h-4 animate-pulse rounded bg-neutral-100" style={{ width: `${50 + i * 12}%` }} /></td></tr>
@@ -173,12 +173,12 @@ function MasterTable({ clientId, kind, title, column, icon: Icon }: {
       </div>
 
       {total > 0 && (
-        <footer className="flex items-center justify-between gap-3 rounded-b-lg border-t border-neutral-300 bg-neutral-50 px-5 py-3 text-xs text-neutral-500">
+        <footer className="flex items-center justify-between gap-3 rounded-b-lg border-t border-neutral-400 bg-neutral-50 px-5 py-3 text-xs text-neutral-500">
           <span>Showing <span className="font-medium text-neutral-900">{dari}–{sampai}</span> of <span className="font-medium text-neutral-900">{total}</span></span>
           <div className="flex items-center gap-1">
-            <button onClick={() => setPage(p => p - 1)} disabled={page <= 1 || loading} className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-300 hover:bg-neutral-50 disabled:opacity-40" aria-label="Previous page"><ChevronLeft size={14} /></button>
+            <button onClick={() => setPage(p => p - 1)} disabled={page <= 1 || loading} className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-400 hover:bg-neutral-50 disabled:opacity-40" aria-label="Previous page"><ChevronLeft size={14} /></button>
             <span className="px-2 tabular-nums">Page {page} / {totalPage}</span>
-            <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPage || loading} className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-300 hover:bg-neutral-50 disabled:opacity-40" aria-label="Next page"><ChevronRight size={14} /></button>
+            <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPage || loading} className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-400 hover:bg-neutral-50 disabled:opacity-40" aria-label="Next page"><ChevronRight size={14} /></button>
           </div>
         </footer>
       )}
@@ -223,7 +223,7 @@ function Overlay({ onClose, children }: { onClose: () => void; children: React.R
   }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-md rounded-lg border border-neutral-300 bg-white shadow-xl">{children}</div>
+      <div className="w-full max-w-md rounded-lg border border-neutral-400 bg-white shadow-xl">{children}</div>
     </div>
   );
 }
@@ -255,7 +255,7 @@ function FormModal({ title, column, awal, onClose, onSubmit }: {
   return (
     <Overlay onClose={onClose}>
       <form onSubmit={kirim}>
-        <div className="flex items-center justify-between rounded-t-lg border-b border-neutral-300 bg-neutral-50 px-5 py-3.5">
+        <div className="flex items-center justify-between rounded-t-lg border-b border-neutral-400 bg-neutral-50 px-5 py-3.5">
           <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
           <button type="button" onClick={onClose} className="rounded-lg p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" aria-label="Close"><X size={16} /></button>
         </div>
@@ -269,8 +269,8 @@ function FormModal({ title, column, awal, onClose, onSubmit }: {
             <input type="number" min={0} step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className={`${inputCls} tabular-nums`} />
           </div>
         </div>
-        <div className="flex justify-end gap-2 rounded-b-lg border-t border-neutral-300 bg-neutral-50 px-5 py-3">
-          <button type="button" onClick={onClose} disabled={saving} className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">Cancel</button>
+        <div className="flex justify-end gap-2 rounded-b-lg border-t border-neutral-400 bg-neutral-50 px-5 py-3">
+          <button type="button" onClick={onClose} disabled={saving} className="h-9 rounded-lg border border-neutral-400 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">Cancel</button>
           <button type="submit" disabled={saving} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-4 text-sm font-semibold text-white shadow-sm hover:bg-neutral-700 disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save
           </button>
@@ -298,8 +298,8 @@ function DeleteModal({ title, name, onClose, onConfirm }: { title: string; name:
         <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
         <p className="mt-1.5 text-sm text-neutral-500"><span className="font-medium text-neutral-900">{name}</span> will be removed from this company.</p>
       </div>
-      <div className="flex justify-end gap-2 rounded-b-lg border-t border-neutral-300 bg-neutral-50 px-5 py-3">
-        <button onClick={onClose} disabled={busy} className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">Cancel</button>
+      <div className="flex justify-end gap-2 rounded-b-lg border-t border-neutral-400 bg-neutral-50 px-5 py-3">
+        <button onClick={onClose} disabled={busy} className="h-9 rounded-lg border border-neutral-400 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">Cancel</button>
         <button onClick={hapus} disabled={busy} className="flex h-9 items-center gap-1.5 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Delete
         </button>
@@ -340,9 +340,9 @@ function SubfeatureSettings({ clientId }: { clientId: string }) {
   }
 
   return (
-    <section className="relative rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800">
-      <header className="flex items-start gap-3 rounded-t-lg border-b border-neutral-300 bg-neutral-50 px-5 py-3.5">
-        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><ToggleLeft size={16} /></span>
+    <section className="relative rounded-lg border border-neutral-400 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800">
+      <header className="flex items-start gap-3 rounded-t-lg border-b border-neutral-400 bg-neutral-50 px-5 py-3.5">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-300"><ToggleLeft size={16} /></span>
         <div>
           <h4 className="text-sm font-semibold text-neutral-900">Product features</h4>
           <p className="text-xs text-neutral-500">Turn optional product features on or off.</p>
@@ -354,7 +354,7 @@ function SubfeatureSettings({ clientId }: { clientId: string }) {
         ) : error && !setting ? (
           <p className="text-sm text-red-600">{error}</p>
         ) : form && (
-          <div className="divide-y divide-neutral-300">
+          <div className="divide-y divide-neutral-400">
             {FLAGS.map(f => (
               <label key={f.key} className="flex cursor-pointer items-start gap-3 py-3 first:pt-0 last:pb-0">
                 <input
@@ -372,7 +372,7 @@ function SubfeatureSettings({ clientId }: { clientId: string }) {
           </div>
         )}
       </div>
-      <div className="flex items-center justify-between gap-3 rounded-b-lg border-t border-neutral-300 bg-neutral-50 px-5 py-3">
+      <div className="flex items-center justify-between gap-3 rounded-b-lg border-t border-neutral-400 bg-neutral-50 px-5 py-3">
         <p className="text-xs text-neutral-500">
           {berubah ? <span className="font-medium text-amber-700">Unsaved changes</span> : 'Saving requires Tahap 5 (Partner) access.'}
         </p>

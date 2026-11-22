@@ -14,7 +14,7 @@ import {
   fetchPurchaseSetting, savePurchaseSetting, useLoader, type PurchaseSetting, type PurchaseSettingInput,
 } from '@/lib/settingsStore';
 
-const inputCls = 'w-full rounded-lg border-2 border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:bg-neutral-50';
+const inputCls = 'w-full rounded-lg border-2 border-neutral-400 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:bg-neutral-50';
 const labelCls = 'block text-xs font-semibold text-neutral-900 mb-1.5';
 
 type Flag = 'activate_supplier_in_purchase_request' | 'shipping' | 'discount' | 'discount_per_lines' | 'deposit';
@@ -78,7 +78,7 @@ export default function PurchaseSettings() {
   }
 
   if (!activeClientId) {
-    return <div className="rounded-lg border border-neutral-300 bg-white px-4 py-6 text-center text-sm text-neutral-500">Select a company to configure purchase settings.</div>;
+    return <div className="rounded-lg border border-neutral-400 bg-white px-4 py-6 text-center text-sm text-neutral-500">Select a company to configure purchase settings.</div>;
   }
   if (loading && !setting) {
     return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-40 animate-pulse rounded-lg bg-neutral-100" />)}</div>;
@@ -94,7 +94,7 @@ export default function PurchaseSettings() {
   return (
     <div className="space-y-5 pb-20">
       {!setting.exists && (
-        <div className="rounded-lg border border-neutral-300 bg-neutral-100 px-4 py-3 text-sm text-neutral-800">
+        <div className="rounded-lg border border-neutral-400 bg-neutral-100 px-4 py-3 text-sm text-neutral-800">
           This company has no purchase settings yet — defaults are shown. Save to create them.
         </div>
       )}
@@ -111,7 +111,7 @@ export default function PurchaseSettings() {
       </Section>
 
       <Section icon={ToggleLeft} title="Purchase features" subtitle="Turn optional parts of the purchase form on or off.">
-        <div className="divide-y divide-neutral-300">
+        <div className="divide-y divide-neutral-400">
           {FLAGS.map(f => (
             <label key={f.key} className="flex cursor-pointer items-start gap-3 py-3 first:pt-0 last:pb-0">
               <input
@@ -139,7 +139,7 @@ export default function PurchaseSettings() {
         />
       </Section>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-300 bg-white shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-400 bg-white shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
         <div className="mx-auto flex max-w-screen-2xl items-center justify-between gap-3 px-6 py-3">
           <p className="flex items-center gap-1 text-xs text-neutral-500">
             {jumlahBerubah
@@ -150,7 +150,7 @@ export default function PurchaseSettings() {
             <span className="hidden sm:inline"> · Saving requires Tahap 5 (Partner) access.</span>
           </p>
           <div className="flex items-center gap-2">
-            <button onClick={() => awal && setForm(awal)} disabled={saving || !jumlahBerubah} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
+            <button onClick={() => awal && setForm(awal)} disabled={saving || !jumlahBerubah} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-400 bg-white px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50 disabled:opacity-50">
               <RotateCcw size={14} /> Reset
             </button>
             <button onClick={simpan} disabled={saving || (setting.exists && !jumlahBerubah)} className="flex h-9 items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-4 text-sm font-semibold text-white shadow-sm hover:bg-neutral-700 disabled:opacity-50">
@@ -165,9 +165,9 @@ export default function PurchaseSettings() {
 
 function Section({ icon: Icon, title, subtitle, children }: { icon: React.ElementType; title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <section className="relative rounded-lg border border-neutral-300 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800">
-      <header className="flex items-start gap-3 rounded-t-lg border-b border-neutral-300 bg-neutral-50 px-6 py-3.5">
-        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Icon size={16} /></span>
+    <section className="relative rounded-lg border border-neutral-400 bg-white shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-lg before:bg-neutral-800">
+      <header className="flex items-start gap-3 rounded-t-lg border-b border-neutral-400 bg-neutral-50 px-6 py-3.5">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-300"><Icon size={16} /></span>
         <div>
           <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
           <p className="text-xs text-neutral-500">{subtitle}</p>

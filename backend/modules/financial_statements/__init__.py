@@ -9,6 +9,9 @@ Perubahan Ekuitas, CALK), pola sama dengan modules/transactions/.
     modules/financial_statements/v1.py   -- router endpoint.
     modules/financial_statements/general_ledger_v1.py -- report General Ledger
         (/api/v1/reports/general-ledger, halaman Reports > General Ledger).
+    modules/financial_statements/trial_balance_v1.py -- report Trial Balance
+        (/api/v1/reports/trial-balance, halaman Reports > Trial Balance);
+        mesin hitung di trial_balance_core.py.
 
     modules/financial_statements/mapped.py        -- mesin FS BERBASIS MAPPING COA
         (Task Plan 16-20: BS, P&L, Changes in Equity, Cash Flow, CALK).
@@ -25,5 +28,6 @@ db_client.ambil_baris_jurnal_posted_transaksi).
 
 from . import v1  # noqa: F401
 from . import general_ledger_v1  # noqa: F401
+from . import trial_balance_v1  # noqa: F401
 from . import statements_v1  # noqa: F401
 from . import fs_mapping_v1  # noqa: F401

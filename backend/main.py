@@ -134,6 +134,8 @@ from modules.transactions import bank_cash_willi as transactions_bank_cash_v1  #
 # [DITAHAN] from modules.finance import payables_v1 as finance_payables_v1  # [BARU] Accounts Payable dari Purchase posted: /api/v1/finance/payables/...  -- AP memakai receivables_payables_v1.router_ap (versi Willi)
 from modules.financial_statements import v1 as financial_statements_v1  # [BARU] Laporan keuangan dari transaksi posted: /api/v1/financial-statements/...
 from modules.financial_statements import general_ledger_v1 as reports_general_ledger_v1  # [BARU] Reports > General Ledger: /api/v1/reports/general-ledger
+from modules.financial_statements import trial_balance_v1 as reports_trial_balance_v1  # [BARU] Reports > Trial Balance: /api/v1/reports/trial-balance
+from modules.financial_statements import adjustment_v1 as reports_adjustment_v1  # [BARU] Reports > Adjustment: /api/v1/reports/adjustment
 from modules.financial_statements import statements_v1 as reports_fs_statements_v1  # [BARU] FS berbasis mapping COA: /api/v1/reports/financial-statements/...
 from modules.financial_statements import fs_mapping_v1 as management_fs_mapping_v1  # [BARU] master mapping FS per klien: /api/v1/management/fs-mapping
 from modules.api_response import gagal as _gagal_v1  # [BARU] amplop response {status,message,data,errors}
@@ -441,6 +443,8 @@ app.include_router(transactions_bank_cash_v1.router)  # [BARU] /api/v1/transacti
 # [DITAHAN] app.include_router(finance_payables_v1.router)  # [BARU] /api/v1/finance/payables/... -- Accounts Payable (bill Purchase posted)  -- bentrok jalur dengan router_ap Willi
 app.include_router(financial_statements_v1.router)  # [BARU] /api/v1/financial-statements/... -- prefix sudah di router-nya sendiri
 app.include_router(reports_general_ledger_v1.router)  # [BARU] /api/v1/reports/general-ledger -- prefix sudah di router-nya sendiri
+app.include_router(reports_trial_balance_v1.router)  # [BARU] /api/v1/reports/trial-balance -- prefix sudah di router-nya sendiri
+app.include_router(reports_adjustment_v1.router)  # [BARU] /api/v1/reports/adjustment -- prefix sudah di router-nya sendiri
 app.include_router(reports_fs_statements_v1.router)  # [BARU] /api/v1/reports/financial-statements/balance-sheet|profit-loss|changes-in-equity|cash-flow|segments|notes
 app.include_router(management_fs_mapping_v1.router)  # [BARU] /api/v1/management/fs-mapping -- mapping FS per klien
 
