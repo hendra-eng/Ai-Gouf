@@ -30,6 +30,8 @@ export interface StatementResult {
   lastRow: number;
   /** status[i] = Status Transaksi baris firstDataRow + i ('' = baris judul/total). */
   statuses: string[];
+  /** Hanya PNL CF: nomor baris SELISIH (profit terhadap TB, saldo kas/bank terhadap TB) dan rentang kolom nilainya; dipakai untuk catatan AI. */
+  selisih?: { profit?: number; kas?: number; firstCol: number; lastCol: number };
 }
 
 interface Layout {
@@ -240,17 +242,18 @@ export function fillPnlSheet(
   w.blank();
 
   // Cek terhadap baris PROFIT (LOSS) di TB: seharusnya 0 di setiap bulan dan YTD (dimulai dari kolom Jan).
+  let profitDiffRow: number | undefined;
   if (tbSheet.profitRow) {
-    w.total('SELISIH TERHADAP TB (PROFIT/LOSS)', L => {
+    profitDiffRow = w.total('SELISIH TERHADAP TB (PROFIT/LOSS)', L => {
       const idx = L.length === 1 ? L.charCodeAt(0) - 64 : 26 * (L.charCodeAt(0) - 64) + (L.charCodeAt(1) - 64);
       const tbCol = TB_SOURCE_COLS[idx - lay.firstValueCol];
       return `TB!${colLetter(tbCol)}${tbSheet.profitRow}-${L}${finalRow}`;
     }, 2);
   }
 
-  fillCashFlow(w, tbSheet, categoryOf, lay.firstValueCol, finalRow);
+  const cashDiffRow = fillCashFlow(w, tbSheet, categoryOf, lay.firstValueCol, finalRow);
 
-  return w.finish();
+  return { ...w.finish(), selisih: { profit: profitDiffRow, kas: cashDiffRow, firstCol: lay.firstValueCol, lastCol: w.lastValueCol } };
 }
 
 // ── Arus kas (metode tidak langsung) ─────────────────────────────────────────
@@ -276,7 +279,7 @@ function fillCashFlow(
   categoryOf: (code: string) => string | null | undefined,
   firstValueCol: number,
   profitRow: number,
-): void {
+): number {
   const accounts = tbSheet.refs.filter(x => x.kind === 'account');
   const isCash = (x: TbRowRef) => x.group === 'ASSET' && (CASH_RE.test(categoryOf(x.code) ?? '') || CASH_RE.test(x.name));
   const isFixed = (x: TbRowRef) => FIXED_ASSET_RE.test(categoryOf(x.code) ?? '');
@@ -331,7 +334,7 @@ function fillCashFlow(
   const net = w.total('KENAIKAN/(PENURUNAN) BERSIH KAS', sumRows([op, inv, fin]), MONTH_FIRST_IDX);
   const open = w.line('Saldo kas awal', L => (colNum(L) - firstValueCol === YTD_IDX ? sumCash(-(YTD_IDX - 1))(L) : sumCash(-1)(L)), MONTH_FIRST_IDX);
   const close = w.total('SALDO KAS AKHIR', L => `${L}${open}+${L}${net}`, MONTH_FIRST_IDX);
-  w.total('SELISIH TERHADAP SALDO KAS/BANK DI TB', L => {
+  return w.total('SELISIH TERHADAP SALDO KAS/BANK DI TB', L => {
     const i = colNum(L) - firstValueCol;
     const tbClose = i === YTD_IDX ? sumCash(-1)(L) : sumCash(0)(L);
     return `${L}${close}-(${tbClose})`;

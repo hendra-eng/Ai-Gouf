@@ -15,6 +15,23 @@ export type CoaRow = [number | string, string, string, string | null, boolean, b
 
 export const COA_HEADERS = ['Account No', 'Account Name', 'Account Type', 'Category', 'Notes'] as const;
 
+/** Latar kuning untuk Category yang kosong di COA (sama dengan penanda peringatan Saldo RK di sheet TB). */
+export const SEL_CATEGORY_KOSONG = 'FFFFEB9C';
+export const COA_COL_CATEGORY = 4;
+
+/**
+ * Tandai sel Category yang kosong: latar kuning + catatan sel. Isinya tidak diisi tebakan apa pun; perbaikan yang benar
+ * adalah mengisi Category di Chart of Accounts lalu mengunduh ulang, supaya sheet COA, Neraca, dan Arus Kas tetap seragam.
+ */
+export function markMissingCategory(ws: Worksheet, row: number, impactsFs: boolean): void {
+  const cell = ws.getCell(row, COA_COL_CATEGORY);
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: SEL_CATEGORY_KOSONG } };
+  cell.note = impactsFs
+    ? 'Category kosong. Akun aset/liabilitas ini tidak dikenali sebagai aset tetap, kas/bank, atau utang jangka panjang, '
+      + 'sehingga pemisahan di Neraca dan Arus Kas bisa keliru. Isi Category di Chart of Accounts, lalu unduh ulang.'
+    : 'Category kosong. Tidak mengubah angka Neraca atau Arus Kas, tapi sebaiknya dilengkapi di Chart of Accounts.';
+}
+
 export const COA_ROWS: CoaRow[] = [
   [1000, "ASSETS", "Asset", null, false, true],
   [1100, "Cash and Cash Equivalents", "Asset", "Current Asset", true, false],
@@ -164,7 +181,8 @@ export const COA_ROWS: CoaRow[] = [
 ];
 
 const HEADER_FILL = 'FFC00000';
-const FIRST_DATA_ROW = 3;
+/** Baris data pertama (sebelum digeser blok judul). */
+export const FIRST_DATA_ROW = 3;
 
 /** `rows` = baris akun dari aplikasi; default kosong (template hanya header). COA_ROWS di atas hanya contoh acuan. */
 export function fillCoaSheet(ws: Worksheet, rows: CoaRow[] = [], top = 0, statuses: string[] = []): void {

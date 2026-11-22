@@ -64,7 +64,7 @@ const q = (s: string) => `"${s.replace(/"/g, '""')}"`; // literal teks di dalam 
 
 const PROFIT_ACCOUNT_RE = /current\s*year|current\s*period|current\s*earning|tahun\s*berjalan|laba\s*(\(?rugi\)?\s*)?berjalan/i;
 
-const DEBIT_GROUPS = new Set(['ASSET', 'COST OF SALES', 'EXPENSE', 'OTHER EXPENSE', 'INCOME TAX']);
+export const DEBIT_GROUPS = new Set(['ASSET', 'COST OF SALES', 'EXPENSE', 'OTHER EXPENSE', 'INCOME TAX']);
 
 /** Satu baris akun di sheet TB; dipakai sheet BS dan PNL CF untuk merujuk sel TB langsung. */
 export interface TbRowRef {

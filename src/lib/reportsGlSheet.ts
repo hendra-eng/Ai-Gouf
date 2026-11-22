@@ -46,7 +46,8 @@ const BORDER: Partial<Borders> = { left: thin, right: thin, top: thin, bottom: t
 const FONT = { name: REPORT_FONT_NAME, size: REPORT_FONT_SIZE };
 
 // Data langsung di bawah judul seksi (baris 4), tanpa baris kosong di antaranya.
-const FIRST_DATA_ROW = 5;
+/** Baris data pertama (sebelum digeser blok judul). */
+export const FIRST_DATA_ROW = 5;
 
 // Contoh: 10 baris pertama seksi "BANK BCA - JOURNAL" (kolom A-O).
 const SAMPLE: Cell[][] = [

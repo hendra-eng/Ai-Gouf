@@ -48,6 +48,7 @@ backend/pola_data/**/*.bak
 backend/tests/__pycache__/
 backend/debug_routes*_output.txt
 backend/logs/
+backend/cache_isi_ai_reports/
 backend/migrations/history-migration.md
 
 .env

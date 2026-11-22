@@ -138,6 +138,8 @@ from modules.financial_statements import trial_balance_v1 as reports_trial_balan
 from modules.financial_statements import adjustment_v1 as reports_adjustment_v1  # [BARU] Reports > Adjustment: /api/v1/reports/adjustment
 from modules.financial_statements import statements_v1 as reports_fs_statements_v1  # [BARU] FS berbasis mapping COA: /api/v1/reports/financial-statements/...
 from modules.financial_statements import fs_mapping_v1 as management_fs_mapping_v1  # [BARU] master mapping FS per klien: /api/v1/management/fs-mapping
+from modules.financial_statements import isi_ai_v1 as reports_isi_ai_v1  # [BARU] Reports > Isi AI untuk Download Excel: /api/v1/reports/ai-fill
+from modules.financial_statements import saldo_rk_v1 as reports_saldo_rk_v1  # [BARU] Reports > Saldo RK (TB): /api/v1/reports/bank-statement-balances
 from modules.api_response import gagal as _gagal_v1  # [BARU] amplop response {status,message,data,errors}
 
 # [FIX v5] Konfirmasi eksplisit di terminal, database mana yang BENAR-BENAR
@@ -445,6 +447,8 @@ app.include_router(financial_statements_v1.router)  # [BARU] /api/v1/financial-s
 app.include_router(reports_general_ledger_v1.router)  # [BARU] /api/v1/reports/general-ledger -- prefix sudah di router-nya sendiri
 app.include_router(reports_trial_balance_v1.router)  # [BARU] /api/v1/reports/trial-balance -- prefix sudah di router-nya sendiri
 app.include_router(reports_adjustment_v1.router)  # [BARU] /api/v1/reports/adjustment -- prefix sudah di router-nya sendiri
+app.include_router(reports_isi_ai_v1.router)  # [BARU] /api/v1/reports/ai-fill -- prefix sudah di router-nya sendiri
+app.include_router(reports_saldo_rk_v1.router)  # [BARU] /api/v1/reports/bank-statement-balances -- prefix sudah di router-nya sendiri
 app.include_router(reports_fs_statements_v1.router)  # [BARU] /api/v1/reports/financial-statements/balance-sheet|profit-loss|changes-in-equity|cash-flow|segments|notes
 app.include_router(management_fs_mapping_v1.router)  # [BARU] /api/v1/management/fs-mapping -- mapping FS per klien
 

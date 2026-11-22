@@ -14,6 +14,7 @@ import type { CoaRow } from './reportsCoaSheet';
 import type { GlCell } from './reportsGlSheet';
 import type { AdjCell } from './reportsAdjSheet';
 import { accountStatus, statusLabel, tbAccountIndex } from './reportsStatus';
+import { partyForLine, type ReportsAiResult } from './reportsAiFill';
 
 export interface ReportsSourceData {
   coa: CoaAccount[];
@@ -51,38 +52,64 @@ export async function fetchReportsSourceData(q: ReportsSourceQuery): Promise<Rep
 
 const asCode = (s: string): number | string => (/^\d+$/.test(s) ? Number(s) : s);
 
-/** Baris sheet COA + status per akun (dari TB: posted / belum posted / tidak ada transaksi). */
-export function coaSheetRows(data: ReportsSourceData): { rows: CoaRow[]; statuses: string[] } {
+/** Nama kepala/judul kelompok akun (ASSETS, LIABILITIES, ...): Category-nya memang boleh kosong, jadi tidak ditandai. */
+const COA_HEADER_NAME_RE = /^(assets?|liabilit(y|ies)|equit(y|ies)|revenues?|expenses?|cost of sales|other income|other expenses?)$/i;
+
+/** Akun yang Category-nya dipakai Neraca dan Arus Kas (aset tetap, kas/bank, utang jangka panjang). */
+const FS_CLASSIFICATIONS = new Set(['ASSET', 'LIABILITY']);
+
+export interface MissingCategory {
+  /** Indeks baris di `rows` (bukan nomor baris Excel). */
+  idx: number;
+  /** true = akun aset/liabilitas: Category kosong bisa menggeser pemisahan di Neraca / Arus Kas. */
+  impactsFs: boolean;
+}
+
+/**
+ * Baris sheet COA + status per akun (dari TB: posted / belum posted / tidak ada transaksi).
+ * Category SELALU apa adanya dari COA klien (account_sub). Category tidak diisi AI maupun tebakan pola: Neraca dan Arus Kas
+ * membacanya dari COA yang sama, jadi sheet COA dan laporan harus konsisten. Akun aktif yang Category-nya kosong dikembalikan
+ * di `missingCategory` supaya diberi penanda dan diisi di Chart of Accounts.
+ */
+export function coaSheetRows(data: ReportsSourceData): { rows: CoaRow[]; statuses: string[]; missingCategory: MissingCategory[] } {
   const tb = tbAccountIndex(data.tb);
   const rows: CoaRow[] = [];
   const statuses: string[] = [];
+  const missingCategory: MissingCategory[] = [];
   for (const a of data.coa) {
     const shown = a.source_acc_no || a.acc_no; // kode yang ditampilkan di aplikasi
     // Asumsi pemetaan: Account Type <- account_classification, Category <- account_sub.
-    rows.push([asCode(shown), a.account_name, a.account_classification, a.account_sub, true, false]);
+    const category = a.account_sub;
+    if (!(category ?? '').trim() && a.is_active && !COA_HEADER_NAME_RE.test((a.account_name ?? '').trim())) {
+      missingCategory.push({ idx: rows.length, impactsFs: FS_CLASSIFICATIONS.has((a.account_classification ?? '').toUpperCase()) });
+    }
+    rows.push([asCode(shown), a.account_name, a.account_classification, category, true, false]);
     statuses.push(accountStatus(tb.get(shown) ?? tb.get(a.acc_no)));
   }
-  return { rows, statuses };
+  return { rows, statuses, missingCategory };
 }
 
 /** Baris sheet GL (kolom A-O) + status tiap baris jurnal (nilai asli dari backend). */
-export function glSheetRows(data: ReportsSourceData): { rows: GlCell[][]; statuses: string[] } {
+export function glSheetRows(data: ReportsSourceData, ai?: ReportsAiResult): { rows: GlCell[][]; statuses: string[]; autoParty: number[] } {
   const rows: GlCell[][] = [];
   const statuses: string[] = [];
+  const autoParty: number[] = []; // indeks baris yang kolom Supplier/Customer-nya diisi otomatis
   let no = 1000;
   for (const acc of data.gl.accounts) {
     for (const l of acc.lines) {
       // Jurnal penyesuaian tidak masuk GL: ditampilkan di sheet ADJ (kolom ADJ di TB), supaya tidak terhitung dua kali.
       if (l.is_adjustment) continue;
       no += 1;
+      const party = partyForLine(ai, l.party, l.description);
+      if (party.auto) autoParty.push(rows.length);
       rows.push([
-        no, asCode(acc.account_code), null, '', Number(l.date.slice(5, 7)), l.date, l.description, l.party,
+        no, asCode(acc.account_code), null, '', Number(l.date.slice(5, 7)), l.date, l.description, party.value,
         l.debit, l.credit, null, l.number, null, null, l.source,
       ]);
       statuses.push(statusLabel(l.status));
     }
   }
-  return { rows, statuses };
+  return { rows, statuses, autoParty };
 }
 
 /** Baris sheet ADJ (kolom A-P) + status tiap jurnal penyesuaian (nilai asli dari backend). Satu baris per baris jurnal. */

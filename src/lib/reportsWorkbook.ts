@@ -8,12 +8,14 @@
 // tambahkan fungsi pengisi di REPORT_SHEETS (properti `fill`).
 
 import type { Worksheet } from 'exceljs';
-import { fillCoaSheet } from './reportsCoaSheet';
-import { fillGlSheet } from './reportsGlSheet';
+import { fillCoaSheet, markMissingCategory, FIRST_DATA_ROW as COA_FIRST_DATA_ROW } from './reportsCoaSheet';
+import { fillGlSheet, FIRST_DATA_ROW as GL_FIRST_DATA_ROW } from './reportsGlSheet';
 import { fillAdjSheet } from './reportsAdjSheet';
 import { fetchReportsSourceData, coaSheetRows, glSheetRows, adjSheetRows, type ReportsSourceData } from './reportsData';
 import { addStatusColumn } from './reportsStatus';
-import { fillTbSheet, relabelTbHeaders, type TbSheetResult } from './reportsTbSheet';
+import { describeAiResult, markAiCell, REPORTS_AI_ENABLED, runReportsAiFill, type AiProgress, type ReportsAiResult } from './reportsAiFill';
+import { colLetter, fillTbSheet, relabelTbHeaders, type TbSheetResult } from './reportsTbSheet';
+import { fetchSaldoRk, fillSaldoRk, TB_COL_SALDO_RK, TB_COL_SELISIH_RK, type SaldoRkData } from './reportsSaldoRk';
 import { fillBsSheet, fillPnlSheet } from './reportsStatementSheets';
 import { applySheetSpec, dropSpecCells, dropSpecRows, normalizeSpecCf, permuteSpecColumns, shiftSpecColumns, shiftSpecRows, type SheetSpec } from './reportsSheetSpec';
 import {
@@ -46,6 +48,14 @@ export interface ReportsWorkbookContext {
   managementClientId: string | null;
   /** Data asli (COA, GL, TB; semua status jurnal). Kosong = template tanpa isi. Diisi oleh downloadReportsWorkbook. */
   data?: ReportsSourceData;
+  /** Saldo akhir rekening koran per akun bank (dari Bank & Cash, tanpa AI). Diisi oleh downloadReportsWorkbook; null/kosong = kolom Saldo RK dibiarkan kosong. */
+  saldoRk?: SaldoRkData | null;
+  /** Hasil Isi AI (Supplier/Customer GL, Notes TB, catatan selisih PNL CF). Kosong = tidak ada yang diisi AI. Diisi oleh downloadReportsWorkbook. */
+  ai?: ReportsAiResult;
+  /** Jumlah sel yang diisi AI per sheet (GL / COA / TB); diisi oleh pengisi sheet, dipakai untuk pesan ringkasan. */
+  aiFilled?: Record<string, number>;
+  /** Laporan progres Isi AI untuk tombol Download (opsional). */
+  onProgress?: (p: AiProgress) => void;
   /** Peta baris sheet TB, diisi oleh sheet TB dan dipakai BS & PNL CF (urutan sheet: TB lebih dulu). */
   tbLayout?: TbSheetResult;
 }
@@ -88,6 +98,8 @@ function categoryLookup(ctx: ReportsWorkbookContext): (code: string) => string |
     cat.set(String(a.acc_no), a.account_sub);
     if (a.source_acc_no) cat.set(String(a.source_acc_no), a.account_sub);
   }
+  // Hanya Category resmi dari COA (tidak ada pengisian AI/tebakan di mana pun): BS dan arus kas memakainya untuk
+  // menentukan akun kas/bank, aset tetap, dan utang jangka panjang. Category kosong ditandai di sheet COA, bukan ditebak.
   return code => cat.get(code);
 }
 
@@ -101,6 +113,12 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
     fill: (ws, ctx) => {
       const d = ctx.data ? coaSheetRows(ctx.data) : null;
       fillCoaSheet(ws, d?.rows ?? [], T, d?.statuses ?? []);
+      // Category kosong tidak diisi AI (Neraca dan Arus Kas memakainya): hanya diberi penanda kuning dan catatan sel.
+      for (const m of d?.missingCategory ?? []) markMissingCategory(ws, COA_FIRST_DATA_ROW + T + m.idx, m.impactsFs);
+      if (ctx.aiFilled && d?.missingCategory.length) {
+        ctx.aiFilled.CatKosong = d.missingCategory.length;
+        ctx.aiFilled.CatKosongFs = d.missingCategory.filter(m => m.impactsFs).length;
+      }
     } },
   { name: 'GL', source: 'General Ledger', headerRows: [3 + T], lastCol: 15,
     title: {
@@ -109,8 +127,11 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
       period: 'range', firstCol: 1, lastCol: 11,
     },
     fill: (ws, ctx) => {
-      const d = ctx.data ? glSheetRows(ctx.data) : null;
+      const d = ctx.data ? glSheetRows(ctx.data, ctx.ai) : null;
       fillGlSheet(ws, d?.rows ?? [], T, d?.statuses ?? []);
+      // Supplier/Customer hasil AI atau pola data (kolom H) diberi latar biru muda.
+      for (const idx of d?.autoParty ?? []) markAiCell(ws, GL_FIRST_DATA_ROW + T + idx, 8);
+      if (ctx.aiFilled && d?.autoParty.length) ctx.aiFilled.GL = d.autoParty.length;
     } },
   { name: 'ADJ', source: 'Adjustment', headerRows: [3 + T], lastCol: 16,
     title: {
@@ -167,6 +188,9 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
           c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
         }
       }
+      // Judul kolom Saldo RK / Selisih ditulis eksplisit (sebelumnya CD kosong karena tidak ada di template).
+      ws.getCell(5 + T, TB_COL_SALDO_RK).value = 'Saldo RK';
+      ws.getCell(5 + T, TB_COL_SELISIH_RK).value = 'Selisih';
       boxBorders(ws, 5 + T, 6 + T, FIRST_CHECK_COL, LAST_CHECK_COL);
       // Header 2 baris yang baris bawahnya kosong (hanya tombol filter) digabung vertikal jadi 1 sel header tebal;
       // yang punya sub-header (ADJ -> DEBIT/KREDIT) tetap 2 tingkat.
@@ -183,6 +207,29 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
       // Baris akun + saldo awal + rumus ke GL/ADJ (hanya kalau data aplikasi tersedia; template kosong = header saja).
       const tbRows = fillTbSheet(ws, ctx.data?.tb, T);
       ctx.tbLayout = tbRows;
+      // Kolom Notes (kolom ke-80): dugaan penyebab akun yang janggal dari Isi AI, selalu berawalan "Dugaan AI:" dan berlatar biru muda.
+      const NOTES_COL = 80;
+      let tbNotes = 0;
+      for (const ref of tbRows.refs) {
+        const note = ref.kind === 'account' ? ctx.ai?.catatan.get(ref.code) : undefined;
+        if (!note) continue;
+        const cell = ws.getCell(ref.row, NOTES_COL);
+        if (cell.value !== null && cell.value !== undefined && cell.value !== '') continue; // jangan timpa isi yang sudah ada
+        cell.value = note;
+        cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: false };
+        markAiCell(ws, ref.row, NOTES_COL);
+        tbNotes += 1;
+      }
+      if (ctx.aiFilled && tbNotes) ctx.aiFilled.TB = tbNotes;
+      // Kolom Saldo RK (CC) + selisih terhadap saldo TB (CD): dari rekening koran yang sudah tersimpan di Bank & Cash.
+      const rk = fillSaldoRk(ws, tbRows.refs, ctx.saldoRk, ctx.endMonth);
+      if (ctx.aiFilled && rk.compared) ctx.aiFilled.RK = rk.compared;
+      if (ctx.aiFilled && rk.flagged) ctx.aiFilled.RKFlag = rk.flagged;
+      if (rk.compared || rk.flagged) {
+        if ((ws.getColumn(TB_COL_SALDO_RK).width ?? 0) < 18) ws.getColumn(TB_COL_SALDO_RK).width = 18;
+        if ((ws.getColumn(TB_COL_SELISIH_RK).width ?? 0) < 34) ws.getColumn(TB_COL_SELISIH_RK).width = 34; // muat penanda teks
+      }
+      if ((ws.getColumn(NOTES_COL).width ?? 0) < 40) ws.getColumn(NOTES_COL).width = 40;
       // Kolom CE "Status Transaksi" di kanan Saldo RK (header 2 baris digabung vertikal): status per akun dari Trial Balance.
       addStatusColumn(ws, {
         col: LAST_CHECK_COL + 1, headerRow: 5 + T, headerRowEnd: 6 + T,
@@ -239,6 +286,34 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
       const pnl = fillPnlSheet(ws, ctx.data?.tb, ctx.tbLayout, T, ctx.year, categoryLookup(ctx));
       // Kolom W "Status Transaksi" di kanan Check: status akun yang dirujuk di TB.
       addStatusColumn(ws, { col: CHECK_COL + 1, headerRow: 5 + T, firstDataRow: pnl.firstDataRow, values: pnl.statuses });
+      // Kolom X "Notes": catatan AI untuk 2 baris SELISIH. Berupa rumus: catatan HANYA tampil kalau selisih di baris itu tidak nol
+      // (nilai selisih baru diketahui saat Excel menghitung), jadi tidak ada catatan menyesatkan saat selisihnya 0.
+      const sel = pnl.selisih;
+      if (sel && ctx.ai) {
+        const NOTE_COL = CHECK_COL + 2;
+        const from = colLetter(sel.firstCol);
+        const to = colLetter(sel.lastCol);
+        let pnlNotes = 0;
+        for (const [jenis, row] of [['profit', sel.profit], ['kas', sel.kas]] as const) {
+          const note = ctx.ai.catatanPnl.get(jenis);
+          if (!note || !row) continue;
+          const literal = note.replace(/\s+/g, ' ').slice(0, 200).replace(/"/g, '""'); // literal rumus Excel maks. 255 karakter
+          const cell = ws.getCell(row, NOTE_COL);
+          cell.value = { formula: `IF(SUMPRODUCT(ABS(${from}${row}:${to}${row}))>0.5,"${literal}","")` };
+          cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: false };
+          markAiCell(ws, row, NOTE_COL);
+          pnlNotes += 1;
+        }
+        if (pnlNotes) {
+          const head = ws.getCell(5 + T, NOTE_COL);
+          head.value = 'Notes';
+          head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL_ARGB } };
+          head.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+          head.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
+          if ((ws.getColumn(NOTE_COL).width ?? 0) < 60) ws.getColumn(NOTE_COL).width = 60;
+          if (ctx.aiFilled) ctx.aiFilled.PNL = pnlNotes;
+        }
+      }
     } },
 ];
 
@@ -268,10 +343,24 @@ export async function buildReportsWorkbook(ctx: ReportsWorkbookContext) {
   return wb;
 }
 
-export async function downloadReportsWorkbook(ctx: ReportsWorkbookContext): Promise<void> {
+/**
+ * Unduh workbook. Mengembalikan pesan ringkasan Isi AI (sel yang terisi / yang tidak sempat terisi) atau null.
+ * Isi AI TIDAK PERNAH menggagalkan download: kalau gagal, file tetap terunduh dengan sel kosong.
+ */
+export async function downloadReportsWorkbook(ctx: ReportsWorkbookContext): Promise<string | null> {
   // Semua sheet membaca Journal Preview (semua status), bukan hanya posted.
   const data = await fetchReportsSourceData(ctx);
-  const wb = await buildReportsWorkbook({ ...ctx, data });
+  let ai: ReportsAiResult | undefined;
+  if (REPORTS_AI_ENABLED && ctx.managementClientId) {
+    try {
+      ai = await runReportsAiFill(data, { managementClientId: ctx.managementClientId, onProgress: ctx.onProgress });
+    } catch {
+      ai = undefined; // runReportsAiFill tidak melempar error, ini hanya pengaman tambahan
+    }
+  }
+  const aiFilled: Record<string, number> = {};
+  const saldoRk = await fetchSaldoRk(ctx); // tanpa AI; gagal = kolom Saldo RK kosong
+  const wb = await buildReportsWorkbook({ ...ctx, data, ai, aiFilled, saldoRk });
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -283,4 +372,14 @@ export async function downloadReportsWorkbook(ctx: ReportsWorkbookContext): Prom
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+  const notice = describeAiResult(ai, aiFilled);
+  const rk = aiFilled.RK ? `Saldo RK compared for ${aiFilled.RK} bank account(s) from uploaded bank statements.` : null;
+  const rkFlag = aiFilled.RKFlag
+    ? `${aiFilled.RKFlag} bank account(s) were NOT compared (foreign currency, statement not reaching period end, or balance unreadable): see the yellow cells in the TB sheet.`
+    : null;
+  const catKosong = aiFilled.CatKosong
+    ? `${aiFilled.CatKosong} active account(s) have no Category in the COA${aiFilled.CatKosongFs ? ` (${aiFilled.CatKosongFs} asset/liability account(s) can shift the Balance Sheet / Cash Flow split)` : ''}: `
+      + 'see the yellow cells in the COA sheet, fill them in Chart of Accounts, then download again.'
+    : null;
+  return [notice, rk, rkFlag, catKosong].filter(Boolean).join(' ') || null;
 }

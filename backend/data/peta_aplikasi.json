@@ -1,17 +1,17 @@
 {
  "ringkas": {
-  "dibuat": "2026-11-19T08:43:06",
-  "jumlah_halaman": 85,
+  "dibuat": "2026-11-22T18:12:11",
+  "jumlah_halaman": 87,
   "jumlah_menu": 37,
   "jumlah_grup_menu": 6,
-  "jumlah_file_tsx": 425,
-  "jumlah_tag_button": 1328,
+  "jumlah_file_tsx": 431,
+  "jumlah_tag_button": 1345,
   "total": {
-   "tombol": 1568,
-   "tanpa_label": 109,
-   "link": 161,
-   "tab": 319,
-   "field": 1378
+   "tombol": 1638,
+   "tanpa_label": 117,
+   "link": 183,
+   "tab": 323,
+   "field": 1415
   }
  },
  "menu": [
@@ -291,7 +291,7 @@
    "Perkecil / Perbesar",
    "Obrolan baru",
    "Coba lagi",
-   "<judul> Percakapan saat ini / Ketuk untuk membuka",
+   "[label dari data: judul]",
    "Hapus?",
    "Tanya sesuatu",
    "[label dari data: teks]",
@@ -518,7 +518,7 @@
    "menu": "Accounts Payable",
    "grup_menu": "Financial",
    "file": "app/accounts-payable/page.tsx",
-   "jumlah_file_komponen": 13,
+   "jumlah_file_komponen": 14,
    "komponen": [
     "ArApWorkspace",
     "arapSalesUi",
@@ -530,6 +530,7 @@
     "StatementsTab",
     "CollectionsTab",
     "FilterSelect",
+    "InteractiveDonutChart",
     "SettlementForm",
     "arapUi",
     "CurrencyRateFields"
@@ -568,11 +569,19 @@
    ],
    "tombol": [
     {
-     "label": "Export",
+     "label": "Today",
      "tipe": "button",
      "tujuan": "",
-     "nonaktif": true,
+     "nonaktif": false,
      "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Refresh",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "Refresh",
      "dinamis": false
     },
     {
@@ -592,19 +601,11 @@
      "dinamis": true
     },
     {
-     "label": "Today",
+     "label": "Export",
      "tipe": "button",
      "tujuan": "",
-     "nonaktif": false,
+     "nonaktif": true,
      "tooltip": "",
-     "dinamis": false
-    },
-    {
-     "label": "Refresh",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "Refresh",
      "dinamis": false
     },
     {
@@ -677,6 +678,14 @@
      "tujuan": "",
      "nonaktif": false,
      "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Reset",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "Reset price range",
      "dinamis": false
     },
     {
@@ -1665,7 +1674,7 @@
    "menu": "Accounts Receivable",
    "grup_menu": "Financial",
    "file": "app/accounts-receivable/page.tsx",
-   "jumlah_file_komponen": 13,
+   "jumlah_file_komponen": 14,
    "komponen": [
     "ArApWorkspace",
     "arapSalesUi",
@@ -1677,6 +1686,7 @@
     "StatementsTab",
     "CollectionsTab",
     "FilterSelect",
+    "InteractiveDonutChart",
     "SettlementForm",
     "arapUi",
     "CurrencyRateFields"
@@ -1715,11 +1725,19 @@
    ],
    "tombol": [
     {
-     "label": "Export",
+     "label": "Today",
      "tipe": "button",
      "tujuan": "",
-     "nonaktif": true,
+     "nonaktif": false,
      "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Refresh",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "Refresh",
      "dinamis": false
     },
     {
@@ -1739,19 +1757,11 @@
      "dinamis": true
     },
     {
-     "label": "Today",
+     "label": "Export",
      "tipe": "button",
      "tujuan": "",
-     "nonaktif": false,
+     "nonaktif": true,
      "tooltip": "",
-     "dinamis": false
-    },
-    {
-     "label": "Refresh",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "Refresh",
      "dinamis": false
     },
     {
@@ -1824,6 +1834,14 @@
      "tujuan": "",
      "nonaktif": false,
      "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Reset",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "Reset price range",
      "dinamis": false
     },
     {
@@ -4156,16 +4174,19 @@
    "menu": "Audit",
    "grup_menu": "Intelligence",
    "file": "app/audit/page.tsx",
-   "jumlah_file_komponen": 0,
-   "komponen": [],
+   "jumlah_file_komponen": 2,
+   "komponen": [
+    "PageHeading",
+    "arapSalesUi"
+   ],
    "judul": [
     "Risk Matrix",
-    "Audit Center",
     "Audit Progress",
     "Audit Findings",
     "Audit Activity Timeline",
     "Audit Trail",
-    "New Audit Finding"
+    "New Audit Finding",
+    "Audit Center"
    ],
    "tab": [],
    "label_lain": [
@@ -4240,10 +4261,71 @@
      "nonaktif": true,
      "tooltip": "",
      "dinamis": false
+    },
+    {
+     "label": "[label dari data: label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Previous page",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Next page",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: children]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Close",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Reverse",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
     }
    ],
-   "tombol_tanpa_label": 4,
-   "link": [],
+   "tombol_tanpa_label": 5,
+   "link": [
+    {
+     "label": "⟨cfg.party⟩ Statement",
+     "href": "…?tab=statements&party=…"
+    },
+    {
+     "label": "Record ⟨cfg.settle⟩",
+     "href": "…?party=…&invoice=…"
+    },
+    {
+     "label": "Open in Cash & Bank",
+     "href": "/transactions/bank-cash/posted"
+    }
+   ],
    "field": [
     "file",
     "text:Search findings...",
@@ -4263,7 +4345,12 @@
     "label:Likelihood (1-5)",
     "label:Impact (1-5)",
     "label:Root Cause",
-    "label:Recommendation"
+    "label:Recommendation",
+    "textarea:e.g. Recorded against the wrong customer",
+    "label:Rows per page:",
+    "label:Reversal date",
+    "label:Reason",
+    "label:⟨label⟩ ⟨children⟩"
    ],
    "navigasi": [],
    "hak_akses": [],
@@ -4784,9 +4871,11 @@
    "menu": "Chart of Accounts",
    "grup_menu": "Management",
    "file": "app/coa/page.tsx",
-   "jumlah_file_komponen": 1,
+   "jumlah_file_komponen": 3,
    "komponen": [
-    "CoaPageClient"
+    "CoaPageClient",
+    "PageHeading",
+    "arapSalesUi"
    ],
    "judul": [
     "Chart of Accounts"
@@ -4795,8 +4884,16 @@
    "label_lain": [],
    "tombol": [
     {
+     "label": "[label dari data: label, n]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
      "label": "Refresh",
-     "tipe": "",
+     "tipe": "button",
      "tujuan": "",
      "nonaktif": true,
      "tooltip": "Refresh",
@@ -4804,19 +4901,11 @@
     },
     {
      "label": "Export",
-     "tipe": "",
+     "tipe": "button",
      "tujuan": "",
      "nonaktif": true,
      "tooltip": "",
      "dinamis": false
-    },
-    {
-     "label": "[label dari data: label, n]",
-     "tipe": "",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": true
     },
     {
      "label": "Clear search",
@@ -4889,9 +4978,65 @@
      "nonaktif": true,
      "tooltip": "",
      "dinamis": false
+    },
+    {
+     "label": "[label dari data: label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Previous page",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Next page",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: children]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Close",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Cancel",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Reverse",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
     }
    ],
-   "tombol_tanpa_label": 0,
+   "tombol_tanpa_label": 1,
    "link": [
     {
      "label": "Opening Balances",
@@ -4904,12 +5049,31 @@
     {
      "label": "[ikon Pencil]",
      "href": "/coa/…/edit…"
+    },
+    {
+     "label": "⟨cfg.party⟩ Statement",
+     "href": "…?tab=statements&party=…"
+    },
+    {
+     "label": "Record ⟨cfg.settle⟩",
+     "href": "…?party=…&invoice=…"
+    },
+    {
+     "label": "Open in Cash & Bank",
+     "href": "/transactions/bank-cash/posted"
     }
    ],
    "field": [
     "input:Search ACC No or account name…",
     "checkbox:Select all",
-    "checkbox:Select …"
+    "checkbox:Select …",
+    "select",
+    "date",
+    "textarea:e.g. Recorded against the wrong customer",
+    "label:Rows per page:",
+    "label:Reversal date",
+    "label:Reason",
+    "label:⟨label⟩ ⟨children⟩"
    ],
    "navigasi": [],
    "hak_akses": [],
@@ -5072,9 +5236,11 @@
    "menu": null,
    "grup_menu": null,
    "file": "app/coa/opening-balances/page.tsx",
-   "jumlah_file_komponen": 2,
+   "jumlah_file_komponen": 4,
    "komponen": [
     "OpeningBalanceListClient",
+    "PageHeading",
+    "arapSalesUi",
     "obUi"
    ],
    "judul": [
@@ -5085,7 +5251,7 @@
    "tombol": [
     {
      "label": "Refresh",
-     "tipe": "",
+     "tipe": "button",
      "tujuan": "",
      "nonaktif": true,
      "tooltip": "Refresh",
@@ -5093,9 +5259,65 @@
     },
     {
      "label": "all / All years / FY …",
-     "tipe": "",
+     "tipe": "button",
      "tujuan": "",
      "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Previous page",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Next page",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: children]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Close",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Cancel",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Reverse",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
      "tooltip": "",
      "dinamis": false
     },
@@ -5124,7 +5346,7 @@
      "dinamis": true
     }
    ],
-   "tombol_tanpa_label": 0,
+   "tombol_tanpa_label": 1,
    "link": [
     {
      "label": "Chart of Accounts",
@@ -5137,11 +5359,29 @@
     {
      "label": "As of · Start of year / Mid-year cut-off Debit Credit ⟨s.line_count⟩ account",
      "href": "/coa/opening-balances/…"
+    },
+    {
+     "label": "⟨cfg.party⟩ Statement",
+     "href": "…?tab=statements&party=…"
+    },
+    {
+     "label": "Record ⟨cfg.settle⟩",
+     "href": "…?party=…&invoice=…"
+    },
+    {
+     "label": "Open in Cash & Bank",
+     "href": "/transactions/bank-cash/posted"
     }
    ],
    "field": [
     "select",
     "label:Select client",
+    "date",
+    "textarea:e.g. Recorded against the wrong customer",
+    "label:Rows per page:",
+    "label:Reversal date",
+    "label:Reason",
+    "label:⟨label⟩ ⟨children⟩",
     "input:Search account code or name..."
    ],
    "navigasi": [],
@@ -5153,15 +5393,18 @@
    "menu": null,
    "grup_menu": null,
    "file": "app/coa/opening-balances/[id]/page.tsx",
-   "jumlah_file_komponen": 4,
+   "jumlah_file_komponen": 6,
    "komponen": [
     "OpeningBalanceEditorClient",
+    "ObClientSwitcher",
     "OpeningBalanceImportTab",
     "importUi",
-    "obUi"
+    "obUi",
+    "arapSalesUi"
    ],
    "judul": [
     "Opening balance not found",
+    "Opening Balance / Opening Balance FY …",
     "Opening Balance",
     "Setup required"
    ],
@@ -5202,7 +5445,7 @@
     },
     {
      "label": "[label dari data: label]",
-     "tipe": "",
+     "tipe": "button",
      "tujuan": "",
      "nonaktif": false,
      "tooltip": "",
@@ -5225,6 +5468,14 @@
      "dinamis": false
     },
     {
+     "label": "Clear filters",
+     "tipe": "",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
      "label": "Save draft",
      "tipe": "",
      "tujuan": "",
@@ -5241,6 +5492,14 @@
      "dinamis": false
     },
     {
+     "label": "Select client",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "Switch client",
+     "dinamis": false
+    },
+    {
      "label": "Import",
      "tipe": "",
      "tujuan": "",
@@ -5249,11 +5508,11 @@
      "dinamis": false
     },
     {
-     "label": "Download Template",
+     "label": "Template",
      "tipe": "",
      "tujuan": "",
      "nonaktif": true,
-     "tooltip": "",
+     "tooltip": "Download Template",
      "dinamis": false
     },
     {
@@ -5287,9 +5546,49 @@
      "nonaktif": false,
      "tooltip": "",
      "dinamis": true
+    },
+    {
+     "label": "Previous page",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Next page",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: children]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Cancel",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Reverse",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
     }
    ],
-   "tombol_tanpa_label": 0,
+   "tombol_tanpa_label": 2,
    "link": [
     {
      "label": "Back to opening balances",
@@ -5308,6 +5607,10 @@
      "href": "/coa/opening-balances"
     },
     {
+     "label": "Create opening balance",
+     "href": "/coa/opening-balances/new"
+    },
+    {
      "label": "⟨latest.file_name⟩ · ⟨latest.total_rows⟩ row · … error…",
      "href": "/coa/opening-balances/…/imports/…/…"
     },
@@ -5318,6 +5621,18 @@
     {
      "label": "⟨s.module_label⟩",
      "href": "/coa/opening-balances/…/imports/…"
+    },
+    {
+     "label": "⟨cfg.party⟩ Statement",
+     "href": "…?tab=statements&party=…"
+    },
+    {
+     "label": "Record ⟨cfg.settle⟩",
+     "href": "…?party=…&invoice=…"
+    },
+    {
+     "label": "Open in Cash & Bank",
+     "href": "/transactions/bank-cash/posted"
     }
    ],
    "field": [
@@ -5331,7 +5646,13 @@
     "label:Reference",
     "label:Notes",
     "file",
-    "input:Search account code or name..."
+    "input:Search account code or name...",
+    "select",
+    "textarea:e.g. Recorded against the wrong customer",
+    "label:Rows per page:",
+    "label:Reversal date",
+    "label:Reason",
+    "label:⟨label⟩ ⟨children⟩"
    ],
    "navigasi": [
     "/coa/opening-balances"
@@ -5344,11 +5665,12 @@
    "menu": null,
    "grup_menu": null,
    "file": "app/coa/opening-balances/[id]/imports/[module]/page.tsx",
-   "jumlah_file_komponen": 3,
+   "jumlah_file_komponen": 4,
    "komponen": [
     "ImportMonitorClient",
     "importUi",
-    "obUi"
+    "obUi",
+    "arapSalesUi"
    ],
    "judul": [
     "Import module not found"
@@ -5373,6 +5695,14 @@
      "dinamis": true
     },
     {
+     "label": "Clear filter",
+     "tipe": "",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
      "label": "— Choose a suspense account —",
      "tipe": "button",
      "tujuan": "",
@@ -5395,9 +5725,57 @@
      "nonaktif": false,
      "tooltip": "",
      "dinamis": true
+    },
+    {
+     "label": "Previous page",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Next page",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: children]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Close",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Cancel",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Reverse",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
     }
    ],
-   "tombol_tanpa_label": 0,
+   "tombol_tanpa_label": 1,
    "link": [
     {
      "label": "Back to opening balance",
@@ -5422,10 +5800,29 @@
     {
      "label": "⟨s.module_label⟩",
      "href": "/coa/opening-balances/…/imports/…"
+    },
+    {
+     "label": "⟨cfg.party⟩ Statement",
+     "href": "…?tab=statements&party=…"
+    },
+    {
+     "label": "Record ⟨cfg.settle⟩",
+     "href": "…?party=…&invoice=…"
+    },
+    {
+     "label": "Open in Cash & Bank",
+     "href": "/transactions/bank-cash/posted"
     }
    ],
    "field": [
-    "input:Search account code or name..."
+    "input:Search account code or name...",
+    "select",
+    "date",
+    "textarea:e.g. Recorded against the wrong customer",
+    "label:Rows per page:",
+    "label:Reversal date",
+    "label:Reason",
+    "label:⟨label⟩ ⟨children⟩"
    ],
    "navigasi": [],
    "hak_akses": [],
@@ -5573,16 +5970,17 @@
    "menu": null,
    "grup_menu": null,
    "file": "app/coa/opening-balances/new/page.tsx",
-   "jumlah_file_komponen": 2,
+   "jumlah_file_komponen": 3,
    "komponen": [
     "OpeningBalanceNewClient",
-    "obUi"
+    "obUi",
+    "PageHeading"
    ],
    "judul": [
-    "New Opening Balance",
     "Period",
     "Branch",
-    "Suspense & reference"
+    "Suspense & reference",
+    "New Opening Balance"
    ],
    "tab": [],
    "label_lain": [],
@@ -5702,9 +6100,11 @@
    "menu": "Documents",
    "grup_menu": "Management",
    "file": "app/documents/page.tsx",
-   "jumlah_file_komponen": 1,
+   "jumlah_file_komponen": 3,
    "komponen": [
-    "DocumentsPageClient"
+    "DocumentsPageClient",
+    "PageHeading",
+    "arapSalesUi"
    ],
    "judul": [
     "Documents"
@@ -5724,7 +6124,7 @@
    ],
    "tombol": [
     {
-     "label": "[ikon X]",
+     "label": "Close",
      "tipe": "",
      "tujuan": "",
      "nonaktif": false,
@@ -5788,6 +6188,14 @@
      "dinamis": false
     },
     {
+     "label": "Upload Document",
+     "tipe": "",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
      "label": "Upload",
      "tipe": "",
      "tujuan": "",
@@ -5820,7 +6228,7 @@
      "dinamis": true
     },
     {
-     "label": "[ikon List]",
+     "label": "… view",
      "tipe": "",
      "tujuan": "",
      "nonaktif": false,
@@ -5828,37 +6236,72 @@
      "dinamis": false
     },
     {
-     "label": "[ikon Layout Grid]",
-     "tipe": "",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": false
-    },
-    {
-     "label": "Upload Document",
-     "tipe": "",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": false
-    },
-    {
-     "label": "[label dari data: p]",
-     "tipe": "",
+     "label": "[label dari data: label]",
+     "tipe": "button",
      "tujuan": "",
      "nonaktif": false,
      "tooltip": "",
      "dinamis": true
+    },
+    {
+     "label": "Previous page",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Next page",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: children]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Reverse",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
     }
    ],
-   "tombol_tanpa_label": 0,
-   "link": [],
+   "tombol_tanpa_label": 1,
+   "link": [
+    {
+     "label": "⟨cfg.party⟩ Statement",
+     "href": "…?tab=statements&party=…"
+    },
+    {
+     "label": "Record ⟨cfg.settle⟩",
+     "href": "…?party=…&invoice=…"
+    },
+    {
+     "label": "Open in Cash & Bank",
+     "href": "/transactions/bank-cash/posted"
+    }
+   ],
    "field": [
     "select:Ubah status dokumen",
     "file",
     "text:Search documents…",
-    "select"
+    "select",
+    "date",
+    "textarea:e.g. Recorded against the wrong customer",
+    "label:Rows per page:",
+    "label:Reversal date",
+    "label:Reason",
+    "label:⟨label⟩ ⟨children⟩"
    ],
    "navigasi": [],
    "hak_akses": [],
@@ -5999,15 +6442,17 @@
    "menu": "Exchange Rates",
    "grup_menu": "Management",
    "file": "app/exchange-rates/page.tsx",
-   "jumlah_file_komponen": 3,
+   "jumlah_file_komponen": 5,
    "komponen": [
     "ExchangeRatesClient",
-    "arapUi",
-    "moduleUi"
+    "arapSalesUi",
+    "moduleUi",
+    "PageHeading",
+    "arapUi"
    ],
    "judul": [
-    "Exchange Rates",
-    "Rate history"
+    "Rate history",
+    "Exchange Rates"
    ],
    "tab": [],
    "label_lain": [],
@@ -6173,7 +6618,7 @@
      "dinamis": true
     }
    ],
-   "tombol_tanpa_label": 1,
+   "tombol_tanpa_label": 2,
    "link": [
     {
      "label": "⟨cfg.party⟩ Statement",
@@ -6445,18 +6890,21 @@
    "menu": "Financial Statements",
    "grup_menu": "Financial",
    "file": "app/financial-statements/page.tsx",
-   "jumlah_file_komponen": 3,
+   "jumlah_file_komponen": 6,
    "komponen": [
     "FsHubClient",
     "FsShell",
-    "PeriodPicker"
+    "PeriodPicker",
+    "BsMono",
+    "DownloadMenu",
+    "BsToolbar"
    ],
    "judul": [],
    "tab": [
-    "Balance Sheet",
     "Profit & Loss",
-    "Changes in Equity",
+    "Balance Sheet",
     "Cash Flow",
+    "Changes in Equity",
     "Notes (CALK)",
     "Mapping",
     "General Ledger"
@@ -6480,6 +6928,54 @@
      "nonaktif": true,
      "tooltip": "",
      "dinamis": false
+    },
+    {
+     "label": "[label dari data: current?.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "[label dari data: o.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "[label dari data: label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Print",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Download",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: it.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
     }
    ],
    "tombol_tanpa_label": 0,
@@ -6490,7 +6986,6 @@
     }
    ],
    "field": [
-    "select",
     "date",
     "label:⟨label⟩ ⟨children⟩"
    ],
@@ -6518,10 +7013,10 @@
    ],
    "judul": [],
    "tab": [
-    "Balance Sheet",
     "Profit & Loss",
-    "Changes in Equity",
+    "Balance Sheet",
     "Cash Flow",
+    "Changes in Equity",
     "Notes (CALK)",
     "Mapping",
     "General Ledger"
@@ -6646,22 +7141,20 @@
    "jumlah_file_komponen": 8,
    "komponen": [
     "CashFlowClient",
+    "BsMono",
     "FsShell",
     "CashFlowView",
-    "CheckBanner",
-    "PeriodPicker",
-    "BsUi",
+    "DownloadMenu",
     "BsToolbar",
-    "DownloadMenu"
+    "CheckBanner",
+    "InteractiveDonutChart"
    ],
-   "judul": [
-    "Cash Flow Statement ( direct / Direct / Indirect Method)"
-   ],
+   "judul": [],
    "tab": [
-    "Balance Sheet",
     "Profit & Loss",
-    "Changes in Equity",
+    "Balance Sheet",
     "Cash Flow",
+    "Changes in Equity",
     "Notes (CALK)",
     "Mapping",
     "General Ledger"
@@ -6672,17 +7165,20 @@
     "Monthly",
     "Quarterly",
     "Annual",
-    "Direct Method",
-    "Indirect Method",
-    "Year to date",
-    "Full year",
-    "Custom range",
-    "No comparison",
-    "Previous period",
-    "Same period last year",
-    "Custom period"
+    "Column & Line",
+    "Line",
+    "Previous Period",
+    "Same Period Last Year"
    ],
    "tombol": [
+    {
+     "label": "[label dari data: current?.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
     {
      "label": "[label dari data: o.label]",
      "tipe": "button",
@@ -6690,6 +7186,22 @@
      "nonaktif": false,
      "tooltip": "",
      "dinamis": true
+    },
+    {
+     "label": "[label dari data: label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Print",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
     },
     {
      "label": "Collapse accounts / Expand accounts",
@@ -6700,7 +7212,15 @@
      "dinamis": false
     },
     {
-     "label": "[label dari data: o.l]",
+     "label": "Download",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: it.label]",
      "tipe": "button",
      "tujuan": "",
      "nonaktif": false,
@@ -6722,15 +7242,75 @@
      "nonaktif": false,
      "tooltip": "",
      "dinamis": false
+    }
+   ],
+   "tombol_tanpa_label": 1,
+   "link": [
+    {
+     "label": "FY ⟨last.fiscal_year⟩ closed · locked through",
+     "href": "/year-end-closing"
     },
     {
-     "label": "Apply",
-     "tipe": "submit",
-     "tujuan": "",
-     "nonaktif": true,
-     "tooltip": "",
-     "dinamis": false
+     "label": "Statement Mapping",
+     "href": "/financial-statements/mapping"
     },
+    {
+     "label": "Map them",
+     "href": "/financial-statements/mapping"
+    },
+    {
+     "label": "[ikon ExternalLink]",
+     "href": "/financial-statements/profit-loss"
+    }
+   ],
+   "field": [
+    "date:From",
+    "date:To",
+    "label:Chart Type",
+    "label:Show Comparison"
+   ],
+   "navigasi": [],
+   "hak_akses": [],
+   "catatan": ""
+  },
+  {
+   "rute": "/financial-statements/changes-in-equity",
+   "menu": "Statement of Changes in Equity",
+   "grup_menu": "Financial",
+   "file": "app/financial-statements/changes-in-equity/page.tsx",
+   "jumlah_file_komponen": 8,
+   "komponen": [
+    "EquityClient",
+    "FsShell",
+    "DownloadMenu",
+    "CheckBanner",
+    "PeriodPicker",
+    "BsMono",
+    "PlUi",
+    "BsToolbar"
+   ],
+   "judul": [],
+   "tab": [
+    "Profit & Loss",
+    "Balance Sheet",
+    "Cash Flow",
+    "Changes in Equity",
+    "Notes (CALK)",
+    "Mapping",
+    "General Ledger"
+   ],
+   "label_lain": [
+    "Monthly",
+    "Quarterly",
+    "Year to date",
+    "Full year",
+    "Custom range",
+    "No comparison",
+    "Previous period",
+    "Same period last year",
+    "Custom period"
+   ],
+   "tombol": [
     {
      "label": "Print",
      "tipe": "button",
@@ -6754,92 +7334,6 @@
      "nonaktif": false,
      "tooltip": "",
      "dinamis": true
-    }
-   ],
-   "tombol_tanpa_label": 1,
-   "link": [
-    {
-     "label": "FY ⟨last.fiscal_year⟩ closed · locked through",
-     "href": "/year-end-closing"
-    },
-    {
-     "label": "Statement Mapping",
-     "href": "/financial-statements/mapping"
-    },
-    {
-     "label": "Map them",
-     "href": "/financial-statements/mapping"
-    },
-    {
-     "label": "[ikon ExternalLink]",
-     "href": "/financial-statements/profit-loss"
-    }
-   ],
-   "field": [
-    "select:View",
-    "date:From",
-    "date:To",
-    "select",
-    "select:Unit",
-    "label:Chart Type Column & Line Line",
-    "label:Show Comparison",
-    "date",
-    "label:⟨label⟩ ⟨children⟩"
-   ],
-   "navigasi": [],
-   "hak_akses": [],
-   "catatan": ""
-  },
-  {
-   "rute": "/financial-statements/changes-in-equity",
-   "menu": "Statement of Changes in Equity",
-   "grup_menu": "Financial",
-   "file": "app/financial-statements/changes-in-equity/page.tsx",
-   "jumlah_file_komponen": 5,
-   "komponen": [
-    "EquityClient",
-    "FsShell",
-    "DownloadMenu",
-    "CheckBanner",
-    "PeriodPicker"
-   ],
-   "judul": [],
-   "tab": [
-    "Balance Sheet",
-    "Profit & Loss",
-    "Changes in Equity",
-    "Cash Flow",
-    "Notes (CALK)",
-    "Mapping",
-    "General Ledger"
-   ],
-   "label_lain": [
-    "Monthly",
-    "Quarterly",
-    "Year to date",
-    "Full year",
-    "Custom range",
-    "No comparison",
-    "Previous period",
-    "Same period last year",
-    "Custom period"
-   ],
-   "tombol": [
-    {
-     "label": "Download",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": true,
-     "tooltip": "",
-     "dinamis": false
-    },
-    {
-     "label": "[label dari data: it.label]",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": true
     },
     {
      "label": "<journals.length> unbalanced journal",
@@ -6864,6 +7358,38 @@
      "nonaktif": true,
      "tooltip": "",
      "dinamis": false
+    },
+    {
+     "label": "[label dari data: current?.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "[label dari data: o.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "[label dari data: label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Collapse accounts / Expand accounts",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
     }
    ],
    "tombol_tanpa_label": 0,
@@ -6874,7 +7400,6 @@
     }
    ],
    "field": [
-    "select",
     "date",
     "label:⟨label⟩ ⟨children⟩"
    ],
@@ -6887,18 +7412,21 @@
    "menu": "Statement Mapping",
    "grup_menu": "Financial",
    "file": "app/financial-statements/mapping/page.tsx",
-   "jumlah_file_komponen": 3,
+   "jumlah_file_komponen": 6,
    "komponen": [
     "MappingClient",
     "FsShell",
-    "PeriodPicker"
+    "PeriodPicker",
+    "BsMono",
+    "DownloadMenu",
+    "BsToolbar"
    ],
    "judul": [],
    "tab": [
-    "Balance Sheet",
     "Profit & Loss",
-    "Changes in Equity",
+    "Balance Sheet",
     "Cash Flow",
+    "Changes in Equity",
     "Notes (CALK)",
     "Mapping",
     "General Ledger"
@@ -6932,19 +7460,19 @@
      "dinamis": false
     },
     {
-     "label": "Apply defaults",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": true,
-     "tooltip": "",
-     "dinamis": false
-    },
-    {
      "label": "Re-apply & overwrite",
      "tipe": "button",
      "tujuan": "",
      "nonaktif": true,
      "tooltip": "Re-apply default rules to every account, replacing saved cash flow / equity / note values",
+     "dinamis": false
+    },
+    {
+     "label": "Apply defaults",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
      "dinamis": false
     },
     {
@@ -6962,6 +7490,54 @@
      "nonaktif": true,
      "tooltip": "",
      "dinamis": false
+    },
+    {
+     "label": "[label dari data: current?.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "[label dari data: o.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "[label dari data: label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Print",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Download",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: it.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
     }
    ],
    "tombol_tanpa_label": 1,
@@ -6977,7 +7553,6 @@
     "input:Search code, name or line",
     "checkbox",
     "label:Only accounts with warnings",
-    "select",
     "date",
     "label:⟨label⟩ ⟨children⟩"
    ],
@@ -6990,18 +7565,21 @@
    "menu": "Notes to Financial Statements",
    "grup_menu": "Financial",
    "file": "app/financial-statements/notes/page.tsx",
-   "jumlah_file_komponen": 3,
+   "jumlah_file_komponen": 6,
    "komponen": [
     "NotesClient",
     "FsShell",
-    "PeriodPicker"
+    "PeriodPicker",
+    "BsMono",
+    "DownloadMenu",
+    "BsToolbar"
    ],
    "judul": [],
    "tab": [
-    "Balance Sheet",
     "Profit & Loss",
-    "Changes in Equity",
+    "Balance Sheet",
     "Cash Flow",
+    "Changes in Equity",
     "Notes (CALK)",
     "Mapping",
     "General Ledger"
@@ -7145,6 +7723,54 @@
      "nonaktif": true,
      "tooltip": "",
      "dinamis": false
+    },
+    {
+     "label": "[label dari data: current?.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "[label dari data: o.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "[label dari data: label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Print",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Download",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: it.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
     }
    ],
    "tombol_tanpa_label": 2,
@@ -7172,7 +7798,6 @@
     "textarea",
     "input:e.g. Commitments and Contingencies",
     "input:e.g. commitments",
-    "select",
     "date",
     "label:⟨label⟩ ⟨children⟩"
    ],
@@ -7185,7 +7810,7 @@
    "menu": "Profit & Loss",
    "grup_menu": "Financial",
    "file": "app/financial-statements/profit-loss/page.tsx",
-   "jumlah_file_komponen": 12,
+   "jumlah_file_komponen": 11,
    "komponen": [
     "ProfitLossClient",
     "FsShell",
@@ -7194,20 +7819,19 @@
     "PlComparisonView",
     "PlGrossNetView",
     "PlUi",
+    "BsMono",
     "CheckBanner",
-    "PeriodPicker",
-    "BsUi",
-    "BsToolbar",
-    "DownloadMenu"
+    "DownloadMenu",
+    "BsToolbar"
    ],
    "judul": [
     "Profit & Loss"
    ],
    "tab": [
-    "Balance Sheet",
     "Profit & Loss",
-    "Changes in Equity",
+    "Balance Sheet",
     "Cash Flow",
+    "Changes in Equity",
     "Notes (CALK)",
     "Mapping",
     "General Ledger"
@@ -7222,20 +7846,43 @@
     "Gross Profit",
     "Revenue",
     "vs Previous Quarter",
-    "vs Same Quarter Last Year",
-    "Monthly",
-    "Quarterly",
-    "Year to date",
-    "Full year",
-    "Custom range",
-    "No comparison",
-    "Previous period",
-    "Same period last year",
-    "Custom period"
+    "vs Same Quarter Last Year"
    ],
    "tombol": [
     {
      "label": "Collapse accounts / Expand accounts",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: current?.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "[label dari data: o.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "[label dari data: label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Print",
      "tipe": "button",
      "tujuan": "",
      "nonaktif": false,
@@ -7252,22 +7899,6 @@
     },
     {
      "label": "<warnings.length> account mapping warning — review in the Mapping tab",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": false
-    },
-    {
-     "label": "Apply",
-     "tipe": "submit",
-     "tujuan": "",
-     "nonaktif": true,
-     "tooltip": "",
-     "dinamis": false
-    },
-    {
-     "label": "Print",
      "tipe": "button",
      "tujuan": "",
      "nonaktif": false,
@@ -7299,17 +7930,13 @@
     }
    ],
    "field": [
-    "select:View",
     "month",
-    "select",
     "label:Month",
     "label:Year",
     "label:Show amount in millions",
     "label:Fiscal Year",
     "label:Comparison Basis",
-    "label:Period Full year Year to date",
-    "date",
-    "label:⟨label⟩ ⟨children⟩"
+    "label:Period Full year Year to date"
    ],
    "navigasi": [],
    "hak_akses": [],
@@ -8734,12 +9361,11 @@
    "menu": "Reports",
    "grup_menu": "Management",
    "file": "app/reports/page.tsx",
-   "jumlah_file_komponen": 4,
+   "jumlah_file_komponen": 3,
    "komponen": [
     "ReportsCatalog",
-    "TabNav",
-    "moduleUi",
-    "arapUi"
+    "arapSalesUi",
+    "PageHeading"
    ],
    "judul": [
     "Reports"
@@ -8765,6 +9391,22 @@
      "dinamis": false
     },
     {
+     "label": "[label dari data: tab.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "AI filling … / …… / Preparing… / Download Excel",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
      "label": "Export Catalog",
      "tipe": "",
      "tujuan": "",
@@ -8779,30 +9421,6 @@
      "nonaktif": false,
      "tooltip": "",
      "dinamis": false
-    },
-    {
-     "label": "[label dari data: inner]",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": true
-    },
-    {
-     "label": "Cancel",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": false
-    },
-    {
-     "label": "[label dari data: confirmLabel]",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": true,
-     "tooltip": "",
-     "dinamis": true
     },
     {
      "label": "[label dari data: label]",
@@ -8845,6 +9463,14 @@
      "dinamis": false
     },
     {
+     "label": "Cancel",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
      "label": "Reverse",
      "tipe": "button",
      "tujuan": "",
@@ -8870,17 +9496,92 @@
    ],
    "field": [
     "select:Company",
-    "select:Period",
+    "select:Year",
+    "select:Through month",
     "label:Company",
-    "label:Period",
+    "label:Year",
+    "label:Through month",
     "select",
     "date",
-    "textarea",
-    "label:⟨label⟩ ⟨children⟩",
     "textarea:e.g. Recorded against the wrong customer",
     "label:Rows per page:",
     "label:Reversal date",
-    "label:Reason"
+    "label:Reason",
+    "label:⟨label⟩ ⟨children⟩"
+   ],
+   "navigasi": [],
+   "hak_akses": [],
+   "catatan": ""
+  },
+  {
+   "rute": "/reports/adjustment",
+   "menu": null,
+   "grup_menu": null,
+   "file": "app/reports/adjustment/page.tsx",
+   "jumlah_file_komponen": 2,
+   "komponen": [
+    "AdjustmentClient",
+    "PurchaseKpiTile"
+   ],
+   "judul": [
+    "Adjustment"
+   ],
+   "tab": [],
+   "label_lain": [
+    "All journals (incl. not yet posted)",
+    "Posted only"
+   ],
+   "tombol": [
+    {
+     "label": "Download",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Reset",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Apply Filter",
+     "tipe": "submit",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    }
+   ],
+   "tombol_tanpa_label": 0,
+   "link": [
+    {
+     "label": "Reports",
+     "href": "/reports"
+    },
+    {
+     "label": "Open Journal Entry",
+     "href": "/transactions/journal-entry"
+    }
+   ],
+   "field": [
+    "select",
+    "input:Find account or journal",
+    "label:Year",
+    "label:Until",
+    "label:Journal Status"
    ],
    "navigasi": [],
    "hak_akses": [],
@@ -9010,6 +9711,96 @@
     "label:Start Date",
     "label:End Date",
     "label:Include Account"
+   ],
+   "navigasi": [],
+   "hak_akses": [],
+   "catatan": ""
+  },
+  {
+   "rute": "/reports/trial-balance",
+   "menu": null,
+   "grup_menu": null,
+   "file": "app/reports/trial-balance/page.tsx",
+   "jumlah_file_komponen": 2,
+   "komponen": [
+    "TrialBalanceClient",
+    "PurchaseKpiTile"
+   ],
+   "judul": [
+    "Trial Balance"
+   ],
+   "tab": [],
+   "label_lain": [
+    "Accounts with balance or transactions",
+    "Accounts with transactions",
+    "All accounts",
+    "All journals (incl. not yet posted)",
+    "Posted only",
+    "Latest month with data"
+   ],
+   "tombol": [
+    {
+     "label": "[ikon Chevron Down]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: o.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Download",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "[label dari data: label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "Reset",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
+    },
+    {
+     "label": "Apply Filter",
+     "tipe": "submit",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
+    }
+   ],
+   "tombol_tanpa_label": 0,
+   "link": [
+    {
+     "label": "Reports",
+     "href": "/reports"
+    }
+   ],
+   "field": [
+    "input:Find account",
+    "label:Year",
+    "label:Until",
+    "label:Include Account",
+    "label:Journal Status"
    ],
    "navigasi": [],
    "hak_akses": [],
@@ -13066,37 +13857,37 @@
     "JeNotice"
    ],
    "judul": [
-    "Select Journal Entry",
-    "Journal Entry Preview",
     "Journal Entry"
    ],
    "tab": [
+    "Semua",
+    "Draft",
+    "Pending",
+    "Approved",
+    "Posted",
     "Overview",
     "Source Data",
     "JE Transaction",
     "Journal Preview",
-    "Exceptions",
-    "Posted"
+    "Exceptions"
    ],
-   "label_lain": [
-    "JE Number",
-    "Source Type",
-    "Source Reference",
-    "Entry Date",
-    "Posting Date",
-    "Period",
-    "Created by",
-    "Reviewed by",
-    "Approved by"
-   ],
+   "label_lain": [],
    "tombol": [
     {
-     "label": "[label dari data: t.jeNumber, t.description, statusLabels[t.status]]",
-     "tipe": "",
+     "label": "[label dari data: tab.count]",
+     "tipe": "button",
      "tujuan": "",
      "nonaktif": false,
      "tooltip": "",
      "dinamis": true
+    },
+    {
+     "label": "JE <e.jeNumber> <e.description>",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": false
     },
     {
      "label": "[label dari data: header]",
@@ -13141,7 +13932,9 @@
    ],
    "tombol_tanpa_label": 2,
    "link": [],
-   "field": [],
+   "field": [
+    "text:Cari nomor JE atau deskripsi..."
+   ],
    "navigasi": [],
    "hak_akses": [],
    "catatan": ""
@@ -13567,6 +14360,7 @@
     "select",
     "input:Journal entry description",
     "input:mis. INV-2026-1847",
+    "checkbox",
     "input:1100",
     "number:0.00",
     "textarea",
@@ -13601,7 +14395,8 @@
     "OtherImportModal"
    ],
    "judul": [
-    "Other Transactions"
+    "Other Transactions",
+    "Quick Create by Transaction Type"
    ],
    "tab": [
     "Overview",
@@ -13612,13 +14407,6 @@
     "Posted"
    ],
    "label_lain": [
-    "Total Transactions",
-    "Under Review",
-    "Ready to Post",
-    "Posted Transactions",
-    "Posted Value",
-    "Posted This Month",
-    "Reversed",
     "Deposit Type",
     "Interest Rate (per year)",
     "Loan Term (Months)",
@@ -13633,20 +14421,12 @@
    ],
    "tombol": [
     {
-     "label": "Create Transaction",
+     "label": "[label dari data: t.label]",
      "tipe": "button",
      "tujuan": "",
-     "nonaktif": true,
+     "nonaktif": false,
      "tooltip": "",
-     "dinamis": false
-    },
-    {
-     "label": "Transaction Templates",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": true,
-     "tooltip": "",
-     "dinamis": false
+     "dinamis": true
     },
     {
      "label": "Import",
@@ -13665,12 +14445,20 @@
      "dinamis": false
     },
     {
-     "label": "[label dari data: t.label]",
+     "label": "Templates",
      "tipe": "button",
      "tujuan": "",
-     "nonaktif": false,
+     "nonaktif": true,
      "tooltip": "",
-     "dinamis": true
+     "dinamis": false
+    },
+    {
+     "label": "Create Transaction",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": true,
+     "tooltip": "",
+     "dinamis": false
     },
     {
      "label": "[label dari data: t.journal_no]",
@@ -13689,6 +14477,30 @@
      "dinamis": false
     },
     {
+     "label": "[label dari data: aktif?.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "[label dari data: o.label]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
+     "label": "[label dari data: body]",
+     "tipe": "button",
+     "tujuan": "",
+     "nonaktif": false,
+     "tooltip": "",
+     "dinamis": true
+    },
+    {
      "label": "View all templates",
      "tipe": "button",
      "tujuan": "",
@@ -13697,7 +14509,7 @@
      "dinamis": false
     },
     {
-     "label": "[ikon Chevron Right]",
+     "label": "Open templates",
      "tipe": "button",
      "tujuan": "",
      "nonaktif": false,
@@ -13751,22 +14563,6 @@
      "nonaktif": false,
      "tooltip": "",
      "dinamis": true
-    },
-    {
-     "label": "Blocking errors <nErr> Cannot be submitted, approved or posted until fixed",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": false
-    },
-    {
-     "label": "Warnings only <nWarn> Can be posted, but should be reviewed",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": false
     },
     {
      "label": "[label dari data: label]",
@@ -14189,7 +14985,7 @@
    "menu": null,
    "grup_menu": null,
    "file": "app/transactions/other/exceptions/page.tsx",
-   "jumlah_file_komponen": 10,
+   "jumlah_file_komponen": 9,
    "komponen": [
     "TransactionDrawer",
     "OtherTabs",
@@ -14197,7 +14993,6 @@
     "StatusBadge",
     "TransactionsContext",
     "TransactionEditModal",
-    "TabNav",
     "otherStore",
     "OtherJournalModal",
     "AccountNameAutocomplete"
@@ -14379,14 +15174,6 @@
      "dinamis": false
     },
     {
-     "label": "[label dari data: inner]",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": true
-    },
-    {
      "label": "Tambah Baris",
      "tipe": "button",
      "tujuan": "",
@@ -14466,7 +15253,7 @@
    "menu": null,
    "grup_menu": null,
    "file": "app/transactions/other/legacy-overview/page.tsx",
-   "jumlah_file_komponen": 15,
+   "jumlah_file_komponen": 14,
    "komponen": [
     "KpiCard",
     "TransactionDrawer",
@@ -14477,7 +15264,6 @@
     "StatusBadge",
     "TransactionsContext",
     "TransactionEditModal",
-    "TabNav",
     "DataTable",
     "JePagination",
     "otherStore",
@@ -14642,14 +15428,6 @@
      "dinamis": false
     },
     {
-     "label": "[label dari data: inner]",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": true
-    },
-    {
      "label": "[label dari data: p]",
      "tipe": "",
      "tujuan": "",
@@ -14738,7 +15516,7 @@
    "menu": null,
    "grup_menu": null,
    "file": "app/transactions/other/posted/page.tsx",
-   "jumlah_file_komponen": 10,
+   "jumlah_file_komponen": 9,
    "komponen": [
     "StatusBadge",
     "TransactionDrawer",
@@ -14746,7 +15524,6 @@
     "OtherJournalWorkspace",
     "TransactionsContext",
     "TransactionEditModal",
-    "TabNav",
     "otherStore",
     "OtherJournalModal",
     "AccountNameAutocomplete"
@@ -14894,14 +15671,6 @@
      "dinamis": false
     },
     {
-     "label": "[label dari data: inner]",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": true
-    },
-    {
      "label": "Tambah Baris",
      "tipe": "button",
      "tujuan": "",
@@ -14982,12 +15751,11 @@
    "menu": null,
    "grup_menu": null,
    "file": "app/transactions/other/preview/page.tsx",
-   "jumlah_file_komponen": 7,
+   "jumlah_file_komponen": 6,
    "komponen": [
     "StatusBadge",
     "OtherTabs",
     "OtherJournalWorkspace",
-    "TabNav",
     "otherStore",
     "OtherJournalModal",
     "AccountNameAutocomplete"
@@ -15083,14 +15851,6 @@
      "dinamis": false
     },
     {
-     "label": "[label dari data: inner]",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": true
-    },
-    {
      "label": "Tutup",
      "tipe": "",
      "tujuan": "",
@@ -15152,7 +15912,7 @@
    "menu": null,
    "grup_menu": null,
    "file": "app/transactions/other/source-data/page.tsx",
-   "jumlah_file_komponen": 13,
+   "jumlah_file_komponen": 12,
    "komponen": [
     "DataTable",
     "TransactionDrawer",
@@ -15163,7 +15923,6 @@
     "StatusBadge",
     "TransactionsContext",
     "TransactionEditModal",
-    "TabNav",
     "otherStore",
     "OtherJournalModal",
     "AccountNameAutocomplete"
@@ -15343,14 +16102,6 @@
      "dinamis": false
     },
     {
-     "label": "[label dari data: inner]",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": true
-    },
-    {
      "label": "Tambah Baris",
      "tipe": "button",
      "tujuan": "",
@@ -15431,7 +16182,7 @@
    "menu": null,
    "grup_menu": null,
    "file": "app/transactions/other/transaction/page.tsx",
-   "jumlah_file_komponen": 10,
+   "jumlah_file_komponen": 9,
    "komponen": [
     "StatusBadge",
     "TransactionDrawer",
@@ -15439,7 +16190,6 @@
     "OtherJournalWorkspace",
     "TransactionsContext",
     "TransactionEditModal",
-    "TabNav",
     "otherStore",
     "OtherJournalModal",
     "AccountNameAutocomplete"
@@ -15607,14 +16357,6 @@
      "nonaktif": true,
      "tooltip": "",
      "dinamis": false
-    },
-    {
-     "label": "[label dari data: inner]",
-     "tipe": "button",
-     "tujuan": "",
-     "nonaktif": false,
-     "tooltip": "",
-     "dinamis": true
     },
     {
      "label": "Tambah Baris",

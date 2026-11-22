@@ -299,6 +299,8 @@ export default function ReportsCatalog() {
   const [showFavorites, setShowFavorites] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
+  const [aiProgress, setAiProgress] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => { setFavorites(loadFavorites()); }, []);
 
@@ -355,12 +357,19 @@ export default function ReportsCatalog() {
     if (downloading) return;
     setDownloading(true);
     setDownloadError(null);
+    setDownloadNotice(null);
+    setAiProgress(null);
     try {
-      await downloadReportsWorkbook({ companyName, periodLabel: period, year, endMonth, managementClientId: activeClientId ?? null });
+      const notice = await downloadReportsWorkbook({
+        companyName, periodLabel: period, year, endMonth, managementClientId: activeClientId ?? null,
+        onProgress: p => setAiProgress({ done: p.done, total: p.total }),
+      });
+      setDownloadNotice(notice);
     } catch (e) {
       setDownloadError(e instanceof Error ? e.message : 'Failed to download the Excel file.');
     } finally {
       setDownloading(false);
+      setAiProgress(null);
     }
   };
 
@@ -447,7 +456,7 @@ export default function ReportsCatalog() {
             disabled={downloading}
             className={btnPrimary}
           >
-            <Download size={14} /> {downloading ? 'Preparing…' : 'Download Excel'}
+            <Download size={14} /> {downloading ? (aiProgress && aiProgress.total > 0 ? `AI filling ${aiProgress.done} / ${aiProgress.total}…` : 'Preparing…') : 'Download Excel'}
           </button>
           <button
             onClick={() => downloadCatalogCsv(visibleReports, companyName, period)}
@@ -468,6 +477,9 @@ export default function ReportsCatalog() {
 
       {downloadError && (
         <p role="alert" className="rounded-lg border border-neutral-300 bg-neutral-50 px-4 py-2 text-xs font-medium text-neutral-700">{downloadError}</p>
+      )}
+      {downloadNotice && (
+        <p role="status" className="rounded-lg border border-neutral-300 bg-neutral-50 px-4 py-2 text-xs font-medium text-neutral-700">{downloadNotice}</p>
       )}
 
       {/* Report cards */}

@@ -1,11 +1,11 @@
 # PETA APLIKASI DASHBOARDORI (dibuat otomatis dari kode)
-Dibuat: 2026-11-19T08:43:06. Jangan diedit manual; jalankan `python scripts/buat_peta_aplikasi.py`.
+Dibuat: 2026-11-22T18:12:11. Jangan diedit manual; jalankan `python scripts/buat_peta_aplikasi.py`.
 
 ## Ringkasan angka (dihitung dari kode)
-- Total halaman (URL): 85, terdiri dari 37 halaman yang ada di menu sidebar dan 48 halaman tambahan (form baru, pratinjau, exceptions, posted, dst.) yang dibuka dari tombol/tab di halaman lain.
+- Total halaman (URL): 87, terdiri dari 37 halaman yang ada di menu sidebar dan 50 halaman tambahan (form baru, pratinjau, exceptions, posted, dst.) yang dibuka dari tombol/tab di halaman lain.
 - Entri menu sidebar: 37 dalam 6 grup.
-- File komponen UI (.tsx): 425.
-- Tag <button> di source code: 1328. Entri tombol berlabel yang tercatat per halaman: 1568 (komponen bersama seperti tabel/modal dihitung di tiap halaman yang memakainya); link antarhalaman: 161.
+- File komponen UI (.tsx): 431.
+- Tag <button> di source code: 1345. Entri tombol berlabel yang tercatat per halaman: 1638 (komponen bersama seperti tabel/modal dihitung di tiap halaman yang memakainya); link antarhalaman: 183.
 
 ## Menu sidebar (urutan tampil)
 **Overview**
@@ -66,7 +66,7 @@ Dibuat: 2026-11-19T08:43:06. Jangan diedit manual; jalankan `python scripts/buat
 - Aksi level 4+ (LEVEL_BALIK_JURNAL): membalik jurnal yang sudah diposting (Cash & Bank)
 
 ## Komponen global (ada di semua halaman)
-Tombol/aksi global: Tutup; Riwayat pesan; Perkecil / Perbesar; Obrolan baru; Coba lagi; <judul> Percakapan saat ini / Ketuk untuk membuka; Hapus?; Tanya sesuatu; [label dari data: teks]; Tersalin / Salin; Ke pesan terbaru; Hapus gambar; Lampirkan gambar; Stop; Kirim; Tutup chat / Buka chat; No clients yet; No clients yet Add your first client on the Clients page → /clients; [label dari data: badan, nama]; [label dari data: company]; [label dari data: c]; [label dari data: period]; [label dari data: p]; Ask AI; [ikon Question Mark Circle]; Collapse submenu / Expand submenu; Collapse sidebar; Expand sidebar; Settings; Logout; [ikon X]; Open menu; [label dari data: period.label, period.range]; [label dari data: p.label]; Apply; Profile → /settings; Account Settings → /settings; Log out
+Tombol/aksi global: Tutup; Riwayat pesan; Perkecil / Perbesar; Obrolan baru; Coba lagi; [label dari data: judul]; Hapus?; Tanya sesuatu; [label dari data: teks]; Tersalin / Salin; Ke pesan terbaru; Hapus gambar; Lampirkan gambar; Stop; Kirim; Tutup chat / Buka chat; No clients yet; No clients yet Add your first client on the Clients page → /clients; [label dari data: badan, nama]; [label dari data: company]; [label dari data: c]; [label dari data: period]; [label dari data: p]; Ask AI; [ikon Question Mark Circle]; Collapse submenu / Expand submenu; Collapse sidebar; Expand sidebar; Settings; Logout; [ikon X]; Open menu; [label dari data: period.label, period.range]; [label dari data: p.label]; Apply; Profile → /settings; Account Settings → /settings; Log out
 
 ## Daftar halaman (satu per satu)
 
@@ -99,14 +99,14 @@ Grup menu: Financial
 Judul/seksi di halaman: Email Statement; Edit … / Record …
 Tab di halaman (termasuk tab di panel detail): Overview; Aging; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Total Receivables; Collected This Month; Promise to Pay; High Priority Accounts; All open; Overdue; Partially paid; Not yet due; Last 6 months; Last 12 months; All statuses; All; Paid; IDR - Indonesian Rupiah; All deliveries; All priorities; Unassigned; Avg. Days to Collect; Estimated realized FX gain / (loss); Total Allocated; Unapplied Amount
-Komponen (13): ArApWorkspace, arapSalesUi, PageHeading, OverviewTab, InvoicesTab, AgingTab, SettlementsTab, StatementsTab, CollectionsTab, FilterSelect, SettlementForm, arapUi, CurrencyRateFields
+Komponen (14): ArApWorkspace, arapSalesUi, PageHeading, OverviewTab, InvoicesTab, AgingTab, SettlementsTab, StatementsTab, CollectionsTab, FilterSelect, InteractiveDonutChart, SettlementForm, arapUi, CurrencyRateFields
 Pembatasan hak akses di halaman ini: level 3+ (LEVEL_INPUT): membuat/mengedit/menghapus draft dan mengirim (submit) dokumen; level 4+ (LEVEL_POST): posting ke buku besar, membatalkan/membalik (reverse) dokumen yang sudah posted
-Tombol/aksi (54):
-- Export (bisa nonaktif sesuai kondisi)
-- Retry
-- [label dari data: t.label]
+Tombol/aksi (55):
 - Today
 - Refresh
+- Retry
+- [label dari data: t.label]
+- Export (bisa nonaktif sesuai kondisi)
 - [label dari data: label]
 - Previous page (bisa nonaktif sesuai kondisi)
 - Next page (bisa nonaktif sesuai kondisi)
@@ -116,6 +116,7 @@ Tombol/aksi (54):
 - Reverse (bisa nonaktif sesuai kondisi)
 - View
 - More actions
+- Reset
 - See all
 - [label dari data: t.party]
 - Hide / Show
@@ -234,14 +235,14 @@ Grup menu: Financial
 Judul/seksi di halaman: Email Statement; Edit … / Record …
 Tab di halaman (termasuk tab di panel detail): Overview; Aging; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Total Receivables; Collected This Month; Promise to Pay; High Priority Accounts; All open; Overdue; Partially paid; Not yet due; Last 6 months; Last 12 months; All statuses; All; Paid; IDR - Indonesian Rupiah; All deliveries; All priorities; Unassigned; Avg. Days to Collect; Estimated realized FX gain / (loss); Total Allocated; Unapplied Amount
-Komponen (13): ArApWorkspace, arapSalesUi, PageHeading, OverviewTab, InvoicesTab, AgingTab, SettlementsTab, StatementsTab, CollectionsTab, FilterSelect, SettlementForm, arapUi, CurrencyRateFields
+Komponen (14): ArApWorkspace, arapSalesUi, PageHeading, OverviewTab, InvoicesTab, AgingTab, SettlementsTab, StatementsTab, CollectionsTab, FilterSelect, InteractiveDonutChart, SettlementForm, arapUi, CurrencyRateFields
 Pembatasan hak akses di halaman ini: level 3+ (LEVEL_INPUT): membuat/mengedit/menghapus draft dan mengirim (submit) dokumen; level 4+ (LEVEL_POST): posting ke buku besar, membatalkan/membalik (reverse) dokumen yang sudah posted
-Tombol/aksi (54):
-- Export (bisa nonaktif sesuai kondisi)
-- Retry
-- [label dari data: t.label]
+Tombol/aksi (55):
 - Today
 - Refresh
+- Retry
+- [label dari data: t.label]
+- Export (bisa nonaktif sesuai kondisi)
 - [label dari data: label]
 - Previous page (bisa nonaktif sesuai kondisi)
 - Next page (bisa nonaktif sesuai kondisi)
@@ -251,6 +252,7 @@ Tombol/aksi (54):
 - Reverse (bisa nonaktif sesuai kondisi)
 - View
 - More actions
+- Reset
 - See all
 - [label dari data: t.party]
 - Hide / Show
@@ -522,9 +524,10 @@ Isian/filter: date; label:As of; select; textarea:e.g. Recorded against the wron
 
 ### `/audit` — Audit
 Grup menu: Intelligence
-Judul/seksi di halaman: Risk Matrix; Audit Center; Audit Progress; Audit Findings; Audit Activity Timeline; Audit Trail; New Audit Finding
+Judul/seksi di halaman: Risk Matrix; Audit Progress; Audit Findings; Audit Activity Timeline; Audit Trail; New Audit Finding; Audit Center
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Audit Completion; Open Findings; High Risk; Pending Evidence; Adjustments; Controls Tested
-Tombol/aksi (8):
+Komponen (2): PageHeading, arapSalesUi
+Tombol/aksi (14):
 - ✓ Done
 - AUD-
 - New Finding
@@ -533,7 +536,14 @@ Tombol/aksi (8):
 - Filter
 - Cancel
 - Saving... / Create Finding (submit form; bisa nonaktif sesuai kondisi)
-Isian/filter: file; text:Search findings...; text:Filter by user, module, or action...; textarea; input; number; select; date; label:Description *; label:Area; label:Account; label:Financial Impact; label:Risk; label:Assigned To; label:Due Date; label:Likelihood (1-5); label:Impact (1-5); label:Root Cause; label:Recommendation
+- [label dari data: label]
+- Previous page (bisa nonaktif sesuai kondisi)
+- Next page (bisa nonaktif sesuai kondisi)
+- [label dari data: children] (bisa nonaktif sesuai kondisi)
+- Close
+- Reverse (bisa nonaktif sesuai kondisi)
+Link ke halaman lain: ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
+Isian/filter: file; text:Search findings...; text:Filter by user, module, or action...; textarea; input; number; select; date; label:Description *; label:Area; label:Account; label:Financial Impact; label:Risk; label:Assigned To; label:Due Date; label:Likelihood (1-5); label:Impact (1-5); label:Root Cause; label:Recommendation; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason; label:⟨label⟩ ⟨children⟩
 
 ### `/budget-forecast` — Budget & Forecast
 Grup menu: Planning
@@ -600,11 +610,11 @@ Isian/filter: file; input:PT Contoh Sejahtera; select; input; input:+62 21 5555 
 ### `/coa` — Chart of Accounts
 Grup menu: Management
 Judul/seksi di halaman: Chart of Accounts
-Komponen (1): CoaPageClient
-Tombol/aksi (12):
+Komponen (3): CoaPageClient, PageHeading, arapSalesUi
+Tombol/aksi (19):
+- [label dari data: label, n]
 - Refresh (bisa nonaktif sesuai kondisi)
 - Export (bisa nonaktif sesuai kondisi)
-- [label dari data: label, n]
 - Clear search
 - [label dari data: s]
 - All <accounts.length>
@@ -614,8 +624,15 @@ Tombol/aksi (12):
 - Clear filters
 - Clear
 - Adding… / Add to … (bisa nonaktif sesuai kondisi)
-Link ke halaman lain: Opening Balances → /coa/opening-balances; New Account → /coa/new…; [ikon Pencil] → /coa/…/edit…
-Isian/filter: input:Search ACC No or account name…; checkbox:Select all; checkbox:Select …
+- [label dari data: label]
+- Previous page (bisa nonaktif sesuai kondisi)
+- Next page (bisa nonaktif sesuai kondisi)
+- [label dari data: children] (bisa nonaktif sesuai kondisi)
+- Close
+- Cancel
+- Reverse (bisa nonaktif sesuai kondisi)
+Link ke halaman lain: Opening Balances → /coa/opening-balances; New Account → /coa/new…; [ikon Pencil] → /coa/…/edit…; ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
+Isian/filter: input:Search ACC No or account name…; checkbox:Select all; checkbox:Select …; select; date; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason; label:⟨label⟩ ⟨children⟩
 
 ### `/coa/:id/edit` — Account not found
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
@@ -642,21 +659,28 @@ Isian/filter: input:Legacy code; input:11100001; input:KAS KASIR; input:CURRENT 
 ### `/coa/opening-balances` — Opening Balances
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Opening Balances
-Komponen (2): OpeningBalanceListClient, obUi
-Tombol/aksi (5):
+Komponen (4): OpeningBalanceListClient, PageHeading, arapSalesUi, obUi
+Tombol/aksi (12):
 - Refresh (bisa nonaktif sesuai kondisi)
 - all / All years / FY …
+- [label dari data: label]
+- Previous page (bisa nonaktif sesuai kondisi)
+- Next page (bisa nonaktif sesuai kondisi)
+- [label dari data: children] (bisa nonaktif sesuai kondisi)
+- Close
+- Cancel
+- Reverse (bisa nonaktif sesuai kondisi)
 - — Choose a suspense account — (bisa nonaktif sesuai kondisi)
 - Clear selection
 - [label dari data: a.account_name]
-Link ke halaman lain: Chart of Accounts → /coa; New opening balance → /coa/opening-balances/new; As of · Start of year / Mid-year cut-off Debit Credit ⟨s.line_count⟩ account → /coa/opening-balances/…
-Isian/filter: select; label:Select client; input:Search account code or name...
+Link ke halaman lain: Chart of Accounts → /coa; New opening balance → /coa/opening-balances/new; As of · Start of year / Mid-year cut-off Debit Credit ⟨s.line_count⟩ account → /coa/opening-balances/…; ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
+Isian/filter: select; label:Select client; date; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason; label:⟨label⟩ ⟨children⟩; input:Search account code or name...
 
 ### `/coa/opening-balances/:id` — Opening balance not found
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
-Judul/seksi di halaman: Opening balance not found; Opening Balance; Setup required
-Komponen (4): OpeningBalanceEditorClient, OpeningBalanceImportTab, importUi, obUi
-Tombol/aksi (15):
+Judul/seksi di halaman: Opening balance not found; Opening Balance / Opening Balance FY …; Opening Balance; Setup required
+Komponen (6): OpeningBalanceEditorClient, ObClientSwitcher, OpeningBalanceImportTab, importUi, obUi, arapSalesUi
+Tombol/aksi (22):
 - Delete (bisa nonaktif sesuai kondisi)
 - Revise (bisa nonaktif sesuai kondisi)
 - Lock (bisa nonaktif sesuai kondisi)
@@ -664,29 +688,43 @@ Tombol/aksi (15):
 - [label dari data: label]
 - Clear search
 - Export (bisa nonaktif sesuai kondisi)
+- Clear filters
 - Save draft (bisa nonaktif sesuai kondisi)
 - Approve (bisa nonaktif sesuai kondisi)
+- Select client (bisa nonaktif sesuai kondisi)
 - Import (bisa nonaktif sesuai kondisi)
-- Download Template (bisa nonaktif sesuai kondisi)
+- Template (bisa nonaktif sesuai kondisi)
 - Close
 - — Choose a suspense account — (bisa nonaktif sesuai kondisi)
 - Clear selection
 - [label dari data: a.account_name]
-Link ke halaman lain: Back to opening balances → /coa/opening-balances; Chart of Accounts → /coa; Opening balances → /coa/opening-balances; [ikon ArrowLeft] → /coa/opening-balances; ⟨latest.file_name⟩ · ⟨latest.total_rows⟩ row · … error… → /coa/opening-balances/…/imports/…/…; Monitor → /coa/opening-balances/…/imports/…; ⟨s.module_label⟩ → /coa/opening-balances/…/imports/…
-Isian/filter: date; input:Audited balance sheet; input:Optional; input:Search ACC No, account name, head, or sub…; input:0; label:Cut-off date; label:Suspense account; label:Reference; label:Notes; file; input:Search account code or name...
+- Previous page (bisa nonaktif sesuai kondisi)
+- Next page (bisa nonaktif sesuai kondisi)
+- [label dari data: children] (bisa nonaktif sesuai kondisi)
+- Cancel
+- Reverse (bisa nonaktif sesuai kondisi)
+Link ke halaman lain: Back to opening balances → /coa/opening-balances; Chart of Accounts → /coa; Opening balances → /coa/opening-balances; [ikon ArrowLeft] → /coa/opening-balances; Create opening balance → /coa/opening-balances/new; ⟨latest.file_name⟩ · ⟨latest.total_rows⟩ row · … error… → /coa/opening-balances/…/imports/…/…; Monitor → /coa/opening-balances/…/imports/…; ⟨s.module_label⟩ → /coa/opening-balances/…/imports/…; ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
+Isian/filter: date; input:Audited balance sheet; input:Optional; input:Search ACC No, account name, head, or sub…; input:0; label:Cut-off date; label:Suspense account; label:Reference; label:Notes; file; input:Search account code or name...; select; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason; label:⟨label⟩ ⟨children⟩
 
 ### `/coa/opening-balances/:id/imports/:module` — Import module not found
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Import module not found
-Komponen (3): ImportMonitorClient, importUi, obUi
-Tombol/aksi (5):
+Komponen (4): ImportMonitorClient, importUi, obUi, arapSalesUi
+Tombol/aksi (12):
 - Refresh (bisa nonaktif sesuai kondisi)
 - [label dari data: label]
+- Clear filter
 - — Choose a suspense account — (bisa nonaktif sesuai kondisi)
 - Clear selection
 - [label dari data: a.account_name]
-Link ke halaman lain: Back to opening balance → /coa/opening-balances/…; Chart of Accounts → /coa; Opening balances → /coa/opening-balances; FY … · … → /coa/opening-balances/…; [ikon ArrowLeft] → /coa/opening-balances/…; ⟨s.module_label⟩ → /coa/opening-balances/…/imports/…
-Isian/filter: input:Search account code or name...
+- Previous page (bisa nonaktif sesuai kondisi)
+- Next page (bisa nonaktif sesuai kondisi)
+- [label dari data: children] (bisa nonaktif sesuai kondisi)
+- Close
+- Cancel
+- Reverse (bisa nonaktif sesuai kondisi)
+Link ke halaman lain: Back to opening balance → /coa/opening-balances/…; Chart of Accounts → /coa; Opening balances → /coa/opening-balances; FY … · … → /coa/opening-balances/…; [ikon ArrowLeft] → /coa/opening-balances/…; ⟨s.module_label⟩ → /coa/opening-balances/…/imports/…; ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
+Isian/filter: input:Search account code or name...; select; date; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason; label:⟨label⟩ ⟨children⟩
 
 ### `/coa/opening-balances/:id/imports/:module/:batchId` — Import batch not found
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
@@ -707,10 +745,10 @@ Tombol/aksi (11):
 Link ke halaman lain: Back to opening balance → /coa/opening-balances/…; Opening balances → /coa/opening-balances; FY … · … / Opening balance → /coa/opening-balances/…; ⟨s.module_label⟩ → /coa/opening-balances/…/imports/…
 Isian/filter: input:Search rows or messages…; textarea:Reason for rejection; checkbox:Select all rows; checkbox:Select row …; input:Search account code or name...
 
-### `/coa/opening-balances/new` — New Opening Balance
+### `/coa/opening-balances/new` — Period
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
-Judul/seksi di halaman: New Opening Balance; Period; Branch; Suspense & reference
-Komponen (2): OpeningBalanceNewClient, obUi
+Judul/seksi di halaman: Period; Branch; Suspense & reference; New Opening Balance
+Komponen (3): OpeningBalanceNewClient, obUi, PageHeading
 Tombol/aksi (9):
 - [ikon Minus]
 - [ikon Plus]
@@ -728,9 +766,9 @@ Isian/filter: date; input:e.g. OL; input:Audited balance sheet 2024; input:Optio
 Grup menu: Management
 Judul/seksi di halaman: Documents
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Type; Company; Related Record; Uploaded By; Date; File Size; Total Documents; Processed; Pending Review; Needs Attention
-Komponen (1): DocumentsPageClient
-Tombol/aksi (16):
-- [ikon X]
+Komponen (3): DocumentsPageClient, PageHeading, arapSalesUi
+Tombol/aksi (19):
+- Close
 - Open Document
 - review / Reviewing… / Review
 - Investigate
@@ -738,15 +776,19 @@ Tombol/aksi (16):
 - Preview
 - Download
 - Delete
+- Upload Document
 - Upload
 - Menyimpan… / Browse Files (bisa nonaktif sesuai kondisi)
 - Cancel (bisa nonaktif sesuai kondisi)
 - [label dari data: folder.name, folder.count]
-- [ikon List]
-- [ikon Layout Grid]
-- Upload Document
-- [label dari data: p]
-Isian/filter: select:Ubah status dokumen; file; text:Search documents…; select
+- … view
+- [label dari data: label]
+- Previous page (bisa nonaktif sesuai kondisi)
+- Next page (bisa nonaktif sesuai kondisi)
+- [label dari data: children] (bisa nonaktif sesuai kondisi)
+- Reverse (bisa nonaktif sesuai kondisi)
+Link ke halaman lain: ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
+Isian/filter: select:Ubah status dokumen; file; text:Search documents…; select; date; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason; label:⟨label⟩ ⟨children⟩
 
 ### `/equity` — Equity
 Grup menu: Assets & Equity
@@ -768,8 +810,8 @@ Isian/filter: input:Search transactions...; select
 
 ### `/exchange-rates` — Exchange Rates
 Grup menu: Management
-Judul/seksi di halaman: Exchange Rates; Rate history
-Komponen (3): ExchangeRatesClient, arapUi, moduleUi
+Judul/seksi di halaman: Rate history; Exchange Rates
+Komponen (5): ExchangeRatesClient, arapSalesUi, moduleUi, PageHeading, arapUi
 Tombol/aksi (20):
 - Refresh
 - Fetch rates
@@ -821,17 +863,23 @@ Isian/filter: input:Search customers...
 
 ### `/financial-statements` — Financial Statements
 Grup menu: Financial
-Tab di halaman (termasuk tab di panel detail): Balance Sheet; Profit & Loss; Changes in Equity; Cash Flow; Notes (CALK); Mapping; General Ledger
+Tab di halaman (termasuk tab di panel detail): Profit & Loss; Balance Sheet; Cash Flow; Changes in Equity; Notes (CALK); Mapping; General Ledger
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Monthly; Quarterly; Year to date; Full year; Custom range; No comparison; Previous period; Same period last year; Custom period
-Komponen (3): FsHubClient, FsShell, PeriodPicker
-Tombol/aksi (1):
+Komponen (6): FsHubClient, FsShell, PeriodPicker, BsMono, DownloadMenu, BsToolbar
+Tombol/aksi (7):
 - Apply (submit form; bisa nonaktif sesuai kondisi)
+- [label dari data: current?.label]
+- [label dari data: o.label]
+- [label dari data: label]
+- Print
+- Download (bisa nonaktif sesuai kondisi)
+- [label dari data: it.label]
 Link ke halaman lain: FY ⟨last.fiscal_year⟩ closed · locked through → /year-end-closing
-Isian/filter: select; date; label:⟨label⟩ ⟨children⟩
+Isian/filter: date; label:⟨label⟩ ⟨children⟩
 
 ### `/financial-statements/balance-sheet` — Balance Sheet
 Grup menu: Financial
-Tab di halaman (termasuk tab di panel detail): Balance Sheet; Profit & Loss; Changes in Equity; Cash Flow; Notes (CALK); Mapping; General Ledger
+Tab di halaman (termasuk tab di panel detail): Profit & Loss; Balance Sheet; Cash Flow; Changes in Equity; Notes (CALK); Mapping; General Ledger
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Balance Sheet (Default); Balance Sheet Trend; Balance Sheet Comparison; Assets vs Liabilities; Total Assets; Total Liabilities; Total Equity; Assets; Liabilities & Equity; vs Previous Quarter; vs Same Quarter Last Year; vs Previous Year End; Same date last year; Previous year end; Previous month end
 Komponen (10): BalanceSheetClient, FsShell, BsDefaultView, BsTrendView, BsComparisonView, BsAssetsLiabView, BsMono, CheckBanner, DownloadMenu, BsToolbar
 Tombol/aksi (9):
@@ -849,58 +897,68 @@ Isian/filter: date; label:From to; label:As of; label:Year; label:Show amount in
 
 ### `/financial-statements/cash-flow` — Cash Flow
 Grup menu: Financial
-Judul/seksi di halaman: Cash Flow Statement ( direct / Direct / Indirect Method)
-Tab di halaman (termasuk tab di panel detail): Balance Sheet; Profit & Loss; Changes in Equity; Cash Flow; Notes (CALK); Mapping; General Ledger
-Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Cash Flow Statement (Direct Method); Cash Flow Statement (Indirect Method); Monthly; Quarterly; Annual; Direct Method; Indirect Method; Year to date; Full year; Custom range; No comparison; Previous period; Same period last year; Custom period
-Komponen (8): CashFlowClient, FsShell, CashFlowView, CheckBanner, PeriodPicker, BsUi, BsToolbar, DownloadMenu
+Tab di halaman (termasuk tab di panel detail): Profit & Loss; Balance Sheet; Cash Flow; Changes in Equity; Notes (CALK); Mapping; General Ledger
+Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Cash Flow Statement (Direct Method); Cash Flow Statement (Indirect Method); Monthly; Quarterly; Annual; Column & Line; Line; Previous Period; Same Period Last Year
+Komponen (8): CashFlowClient, BsMono, FsShell, CashFlowView, DownloadMenu, BsToolbar, CheckBanner, InteractiveDonutChart
 Tombol/aksi (9):
+- [label dari data: current?.label]
 - [label dari data: o.label]
-- Collapse accounts / Expand accounts
-- [label dari data: o.l]
-- <journals.length> unbalanced journal
-- <warnings.length> account mapping warning — review in the Mapping tab
-- Apply (submit form; bisa nonaktif sesuai kondisi)
+- [label dari data: label]
 - Print
+- Collapse accounts / Expand accounts
 - Download (bisa nonaktif sesuai kondisi)
 - [label dari data: it.label]
+- <journals.length> unbalanced journal
+- <warnings.length> account mapping warning — review in the Mapping tab
 Link ke halaman lain: FY ⟨last.fiscal_year⟩ closed · locked through → /year-end-closing; Statement Mapping → /financial-statements/mapping; Map them → /financial-statements/mapping; [ikon ExternalLink] → /financial-statements/profit-loss
-Isian/filter: select:View; date:From; date:To; select; select:Unit; label:Chart Type Column & Line Line; label:Show Comparison; date; label:⟨label⟩ ⟨children⟩
+Isian/filter: date:From; date:To; label:Chart Type; label:Show Comparison
 
 ### `/financial-statements/changes-in-equity` — Statement of Changes in Equity
 Grup menu: Financial
-Tab di halaman (termasuk tab di panel detail): Balance Sheet; Profit & Loss; Changes in Equity; Cash Flow; Notes (CALK); Mapping; General Ledger
+Tab di halaman (termasuk tab di panel detail): Profit & Loss; Balance Sheet; Cash Flow; Changes in Equity; Notes (CALK); Mapping; General Ledger
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Monthly; Quarterly; Year to date; Full year; Custom range; No comparison; Previous period; Same period last year; Custom period
-Komponen (5): EquityClient, FsShell, DownloadMenu, CheckBanner, PeriodPicker
-Tombol/aksi (5):
+Komponen (8): EquityClient, FsShell, DownloadMenu, CheckBanner, PeriodPicker, BsMono, PlUi, BsToolbar
+Tombol/aksi (10):
+- Print
 - Download (bisa nonaktif sesuai kondisi)
 - [label dari data: it.label]
 - <journals.length> unbalanced journal
 - <warnings.length> account mapping warning — review in the Mapping tab
 - Apply (submit form; bisa nonaktif sesuai kondisi)
+- [label dari data: current?.label]
+- [label dari data: o.label]
+- [label dari data: label]
+- Collapse accounts / Expand accounts
 Link ke halaman lain: FY ⟨last.fiscal_year⟩ closed · locked through → /year-end-closing
-Isian/filter: select; date; label:⟨label⟩ ⟨children⟩
+Isian/filter: date; label:⟨label⟩ ⟨children⟩
 
 ### `/financial-statements/mapping` — Statement Mapping
 Grup menu: Financial
-Tab di halaman (termasuk tab di panel detail): Balance Sheet; Profit & Loss; Changes in Equity; Cash Flow; Notes (CALK); Mapping; General Ledger
+Tab di halaman (termasuk tab di panel detail): Profit & Loss; Balance Sheet; Cash Flow; Changes in Equity; Notes (CALK); Mapping; General Ledger
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Monthly; Quarterly; Year to date; Full year; Custom range; No comparison; Previous period; Same period last year; Custom period
-Komponen (3): MappingClient, FsShell, PeriodPicker
-Tombol/aksi (6):
+Komponen (6): MappingClient, FsShell, PeriodPicker, BsMono, DownloadMenu, BsToolbar
+Tombol/aksi (12):
 - Reset to default (bisa nonaktif sesuai kondisi)
 - Cancel
-- Apply defaults (bisa nonaktif sesuai kondisi)
 - Re-apply & overwrite (bisa nonaktif sesuai kondisi)
+- Apply defaults (bisa nonaktif sesuai kondisi)
 - Edit
 - Apply (submit form; bisa nonaktif sesuai kondisi)
+- [label dari data: current?.label]
+- [label dari data: o.label]
+- [label dari data: label]
+- Print
+- Download (bisa nonaktif sesuai kondisi)
+- [label dari data: it.label]
 Link ke halaman lain: FY ⟨last.fiscal_year⟩ closed · locked through → /year-end-closing
-Isian/filter: input:Default: …; input:Default: … / e.g. (Increase)/decrease in trade receivables; input:Search code, name or line; checkbox; label:Only accounts with warnings; select; date; label:⟨label⟩ ⟨children⟩
+Isian/filter: input:Default: …; input:Default: … / e.g. (Increase)/decrease in trade receivables; input:Search code, name or line; checkbox; label:Only accounts with warnings; date; label:⟨label⟩ ⟨children⟩
 
 ### `/financial-statements/notes` — Notes to Financial Statements
 Grup menu: Financial
-Tab di halaman (termasuk tab di panel detail): Balance Sheet; Profit & Loss; Changes in Equity; Cash Flow; Notes (CALK); Mapping; General Ledger
+Tab di halaman (termasuk tab di panel detail): Profit & Loss; Balance Sheet; Cash Flow; Changes in Equity; Notes (CALK); Mapping; General Ledger
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Monthly; Quarterly; Year to date; Full year; Custom range; No comparison; Previous period; Same period last year; Custom period
-Komponen (3): NotesClient, FsShell, PeriodPicker
-Tombol/aksi (16):
+Komponen (6): NotesClient, FsShell, PeriodPicker, BsMono, DownloadMenu, BsToolbar
+Tombol/aksi (22):
 - Cancel
 - Save (bisa nonaktif sesuai kondisi)
 - [ikon X]
@@ -917,25 +975,33 @@ Tombol/aksi (16):
 - Add note (bisa nonaktif sesuai kondisi)
 - PDF
 - Apply (submit form; bisa nonaktif sesuai kondisi)
+- [label dari data: current?.label]
+- [label dari data: o.label]
+- [label dari data: label]
+- Print
+- Download (bisa nonaktif sesuai kondisi)
+- [label dari data: it.label]
 Link ke halaman lain: Mapping tab → /financial-statements/mapping; ⟨n.no⟩ . ⟨n.title⟩ → #note-…; Map them → /financial-statements/mapping; FY ⟨last.fiscal_year⟩ closed · locked through → /year-end-closing
-Isian/filter: input; input:e.g. Audit adjustment not yet journaled; textarea; input:e.g. Commitments and Contingencies; input:e.g. commitments; select; date; label:⟨label⟩ ⟨children⟩
+Isian/filter: input; input:e.g. Audit adjustment not yet journaled; textarea; input:e.g. Commitments and Contingencies; input:e.g. commitments; date; label:⟨label⟩ ⟨children⟩
 
 ### `/financial-statements/profit-loss` — Profit & Loss
 Grup menu: Financial
 Judul/seksi di halaman: Profit & Loss
-Tab di halaman (termasuk tab di panel detail): Balance Sheet; Profit & Loss; Changes in Equity; Cash Flow; Notes (CALK); Mapping; General Ledger
-Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Profit & Loss (Default); Profit & Loss Trend; Profit & Loss Comparison; Gross Profit vs Net Profit; Net Profit; Operating Profit; Gross Profit; Revenue; vs Previous Quarter; vs Same Quarter Last Year; Monthly; Quarterly; Year to date; Full year; Custom range; No comparison; Previous period; Same period last year; Custom period
-Komponen (12): ProfitLossClient, FsShell, PlDefaultView, PlTrendView, PlComparisonView, PlGrossNetView, PlUi, CheckBanner, PeriodPicker, BsUi, BsToolbar, DownloadMenu
-Tombol/aksi (7):
+Tab di halaman (termasuk tab di panel detail): Profit & Loss; Balance Sheet; Cash Flow; Changes in Equity; Notes (CALK); Mapping; General Ledger
+Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Profit & Loss (Default); Profit & Loss Trend; Profit & Loss Comparison; Gross Profit vs Net Profit; Net Profit; Operating Profit; Gross Profit; Revenue; vs Previous Quarter; vs Same Quarter Last Year
+Komponen (11): ProfitLossClient, FsShell, PlDefaultView, PlTrendView, PlComparisonView, PlGrossNetView, PlUi, BsMono, CheckBanner, DownloadMenu, BsToolbar
+Tombol/aksi (9):
 - Collapse accounts / Expand accounts
+- [label dari data: current?.label]
+- [label dari data: o.label]
+- [label dari data: label]
+- Print
 - <journals.length> unbalanced journal
 - <warnings.length> account mapping warning — review in the Mapping tab
-- Apply (submit form; bisa nonaktif sesuai kondisi)
-- Print
 - Download (bisa nonaktif sesuai kondisi)
 - [label dari data: it.label]
 Link ke halaman lain: FY ⟨last.fiscal_year⟩ closed · locked through → /year-end-closing
-Isian/filter: select:View; month; select; label:Month; label:Year; label:Show amount in millions; label:Fiscal Year; label:Comparison Basis; label:Period Full year Year to date; date; label:⟨label⟩ ⟨children⟩
+Isian/filter: month; label:Month; label:Year; label:Show amount in millions; label:Fiscal Year; label:Comparison Basis; label:Period Full year Year to date
 
 ### `/fx-revaluation` — FX Revaluation
 Grup menu: Financial
@@ -1128,22 +1194,35 @@ Isian/filter: input:Cari nama / NIP...; select; input; date; checkbox; label:⟨
 Grup menu: Management
 Judul/seksi di halaman: Reports
 Tab di halaman (termasuk tab di panel detail): Business Overview; Sales; Purchases; Inventory; Fixed Assets; Banking; Tax; Production
-Komponen (4): ReportsCatalog, TabNav, moduleUi, arapUi
+Komponen (3): ReportsCatalog, arapSalesUi, PageHeading
 Tombol/aksi (12):
 - Remove … from favorites / Add … to favorites
+- [label dari data: tab.label]
+- AI filling … / …… / Preparing… / Download Excel (bisa nonaktif sesuai kondisi)
 - Export Catalog
 - My Favorites ( <favorites.length> )
-- [label dari data: inner]
-- Cancel
-- [label dari data: confirmLabel] (bisa nonaktif sesuai kondisi)
 - [label dari data: label]
 - Previous page (bisa nonaktif sesuai kondisi)
 - Next page (bisa nonaktif sesuai kondisi)
 - [label dari data: children] (bisa nonaktif sesuai kondisi)
 - Close
+- Cancel
 - Reverse (bisa nonaktif sesuai kondisi)
 Link ke halaman lain: ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
-Isian/filter: select:Company; select:Period; label:Company; label:Period; select; date; textarea; label:⟨label⟩ ⟨children⟩; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
+Isian/filter: select:Company; select:Year; select:Through month; label:Company; label:Year; label:Through month; select; date; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason; label:⟨label⟩ ⟨children⟩
+
+### `/reports/adjustment` — Adjustment
+Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
+Judul/seksi di halaman: Adjustment
+Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): All journals (incl. not yet posted); Posted only
+Komponen (2): AdjustmentClient, PurchaseKpiTile
+Tombol/aksi (4):
+- Download (bisa nonaktif sesuai kondisi)
+- [label dari data: label]
+- Reset
+- Apply Filter (submit form; bisa nonaktif sesuai kondisi)
+Link ke halaman lain: Reports → /reports; Open Journal Entry → /transactions/journal-entry
+Isian/filter: select; input:Find account or journal; label:Year; label:Until; label:Journal Status
 
 ### `/reports/general-ledger` — General Ledger
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
@@ -1163,6 +1242,21 @@ Tombol/aksi (10):
 - Collapse all / Expand all (bisa nonaktif sesuai kondisi)
 Link ke halaman lain: Reports → /reports
 Isian/filter: input:Search code or name; date; input:Find account; label:Period; label:Start Date; label:End Date; label:Include Account
+
+### `/reports/trial-balance` — Trial Balance
+Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
+Judul/seksi di halaman: Trial Balance
+Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Accounts with balance or transactions; Accounts with transactions; All accounts; All journals (incl. not yet posted); Posted only; Latest month with data
+Komponen (2): TrialBalanceClient, PurchaseKpiTile
+Tombol/aksi (6):
+- [ikon Chevron Down]
+- [label dari data: o.label]
+- Download (bisa nonaktif sesuai kondisi)
+- [label dari data: label]
+- Reset
+- Apply Filter (submit form; bisa nonaktif sesuai kondisi)
+Link ke halaman lain: Reports → /reports
+Isian/filter: input:Find account; label:Year; label:Until; label:Include Account; label:Journal Status
 
 ### `/settings` — Settings
 Grup menu: Management
@@ -1671,19 +1765,20 @@ Tombol/aksi (23):
 - [label dari data: a.label, a.sub]
 Isian/filter: input:Search…; date; text:Search JE number, description, or source…; checkbox; select; label:From; label:To; label:Rows per page 5 10 25 50
 
-### `/transactions/journal-entry/preview` — Select Journal Entry
+### `/transactions/journal-entry/preview` — Journal Entry
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
-Judul/seksi di halaman: Select Journal Entry; Journal Entry Preview; Journal Entry
-Tab di halaman (termasuk tab di panel detail): Overview; Source Data; JE Transaction; Journal Preview; Exceptions; Posted
-Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): JE Number; Source Type; Source Reference; Entry Date; Posting Date; Period; Created by; Reviewed by; Approved by
+Judul/seksi di halaman: Journal Entry
+Tab di halaman (termasuk tab di panel detail): Semua; Draft; Pending; Approved; Posted; Overview; Source Data; JE Transaction; Journal Preview; Exceptions
 Komponen (5): JournalEntryTabs, PreviewLayout, JePagination, SalesLoading, JeNotice
-Tombol/aksi (6):
-- [label dari data: t.jeNumber, t.description, statusLabels[t.status]]
+Tombol/aksi (7):
+- [label dari data: tab.count]
+- JE <e.jeNumber> <e.description>
 - [label dari data: header]
 - Previous page (bisa nonaktif sesuai kondisi)
 - Next page (bisa nonaktif sesuai kondisi)
 - [label dari data: p]
 - Retry
+Isian/filter: text:Cari nomor JE atau deskripsi...
 
 ### `/transactions/journal-entry/source-data` — Journal Source File List
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
@@ -1741,32 +1836,33 @@ Tombol/aksi (22):
 - Next page (bisa nonaktif sesuai kondisi)
 - Preparing… (bisa nonaktif sesuai kondisi)
 - [label dari data: o.icon, o.label, o.hint]
-Isian/filter: text:Search JE number, description, or source…; input; date; select; input:Journal entry description; input:mis. INV-2026-1847; input:1100; number:0.00; textarea; label:JE Number; label:Entry Date; label:Period; label:Source Type; label:Description; label:Source Reference (optional); label:Journal Lines; label:Notes (optional); file; input:Search…; label:Rows per page
+Isian/filter: text:Search JE number, description, or source…; input; date; select; input:Journal entry description; input:mis. INV-2026-1847; checkbox; input:1100; number:0.00; textarea; label:JE Number; label:Entry Date; label:Period; label:Source Type; label:Description; label:Source Reference (optional); label:Journal Lines; label:Notes (optional); file; input:Search…; label:Rows per page
 
 ### `/transactions/other` — Other
 Grup menu: Financial
-Judul/seksi di halaman: Other Transactions
+Judul/seksi di halaman: Other Transactions; Quick Create by Transaction Type
 Tab di halaman (termasuk tab di panel detail): Overview; Categories; Review Queue; Journal Preview; Exceptions; Posted
-Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Total Transactions; Under Review; Ready to Post; Posted Transactions; Posted Value; Posted This Month; Reversed; Deposit Type; Interest Rate (per year); Loan Term (Months); Effective Date; From Entity; To Entity; Settlement Type; Tax Treatment; Reimbursement Category; Event Category; Approval Owner
+Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Deposit Type; Interest Rate (per year); Loan Term (Months); Effective Date; From Entity; To Entity; Settlement Type; Tax Treatment; Reimbursement Category; Event Category; Approval Owner
 Komponen (6): OtherWorkspace, arapUi, moduleUi, otherUi, TemplatesModal, OtherImportModal
-Tombol/aksi (32):
-- Create Transaction (bisa nonaktif sesuai kondisi)
-- Transaction Templates (bisa nonaktif sesuai kondisi)
+Tombol/aksi (33):
+- [label dari data: t.label]
 - Import (bisa nonaktif sesuai kondisi)
 - Export (bisa nonaktif sesuai kondisi)
-- [label dari data: t.label]
+- Templates (bisa nonaktif sesuai kondisi)
+- Create Transaction (bisa nonaktif sesuai kondisi)
 - [label dari data: t.journal_no]
 - [ikon Eye]
+- [label dari data: aktif?.label]
+- [label dari data: o.label]
+- [label dari data: body]
 - View all templates
-- [ikon Chevron Right]
+- Open templates
 - Show all / View transactions
 - Reject (bisa nonaktif sesuai kondisi)
 - Approve (bisa nonaktif sesuai kondisi)
 - Post to GL (bisa nonaktif sesuai kondisi)
 - Cancel
 - [label dari data: t.journal_no, t.subtype_label]
-- Blocking errors <nErr> Cannot be submitted, approved or posted until fixed
-- Warnings only <nWarn> Can be posted, but should be reviewed
 - [label dari data: label]
 - Previous page (bisa nonaktif sesuai kondisi)
 - Next page (bisa nonaktif sesuai kondisi)
@@ -1820,8 +1916,8 @@ Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Sebaran Jenis Temuan; Other; Tambah Jurnal Baru / Edit Transaksi; Edit Jurnal Other / Jurnal Other Baru
 Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Other Transaction; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): High; Medium; Low; TX ID; No Voucher; Jurnal Entri; Tanggal; Kode Akun; Deskripsi; Referensi; Pihak; Kategori; Tipe; Saldo Akhir; Cek Rekonsiliasi
-Komponen (10): TransactionDrawer, OtherTabs, OtherJournalWorkspace, StatusBadge, TransactionsContext, TransactionEditModal, TabNav, otherStore, OtherJournalModal, AccountNameAutocomplete
-Tombol/aksi (22):
+Komponen (9): TransactionDrawer, OtherTabs, OtherJournalWorkspace, StatusBadge, TransactionsContext, TransactionEditModal, otherStore, OtherJournalModal, AccountNameAutocomplete
+Tombol/aksi (21):
 - [grup aksi OtherActionButtons]
 - Tandai Selesai (bisa nonaktif sesuai kondisi)
 - Lihat jurnal →
@@ -1840,7 +1936,6 @@ Tombol/aksi (22):
 - [ikon X]
 - Pilih dari daftar
 - Simpan Jurnal Baru / Simpan Perubahan (submit form; bisa nonaktif sesuai kondisi)
-- [label dari data: inner]
 - Tambah Baris
 - Hapus baris (bisa nonaktif sesuai kondisi)
 - Menyimpan… / Simpan Perubahan / Simpan sebagai Draft (bisa nonaktif sesuai kondisi)
@@ -1853,8 +1948,8 @@ Catatan: halaman lama (legacy) untuk Other Transaction
 Judul/seksi di halaman: Tren Other Bulanan; Other per Kategori; Top Pihak Terkait; Daftar Jurnal Other; Other; Tambah Jurnal Baru / Edit Transaksi; Edit Jurnal Other / Jurnal Other Baru
 Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Other Transaction; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): TX ID; No Voucher; Jurnal Entri; Tanggal; Kode Akun; Deskripsi; Referensi; Pihak; Kategori; Tipe; Saldo Akhir; Cek Rekonsiliasi; No. Jurnal; Baris; Nilai; Status; Aksi
-Komponen (15): KpiCard, TransactionDrawer, OtherTabs, OtherJournalTable, OtherJournalWorkspace, AppIcon, StatusBadge, TransactionsContext, TransactionEditModal, TabNav, DataTable, JePagination, otherStore, OtherJournalModal, AccountNameAutocomplete
-Tombol/aksi (20):
+Komponen (14): KpiCard, TransactionDrawer, OtherTabs, OtherJournalTable, OtherJournalWorkspace, AppIcon, StatusBadge, TransactionsContext, TransactionEditModal, DataTable, JePagination, otherStore, OtherJournalModal, AccountNameAutocomplete
+Tombol/aksi (19):
 - Jurnal Baru
 - Approve Draft ( <approvable.length> ) (bisa nonaktif sesuai kondisi)
 - Posting Disetujui ( <postable.length> ) (bisa nonaktif sesuai kondisi)
@@ -1870,7 +1965,6 @@ Tombol/aksi (20):
 - [ikon X]
 - Pilih dari daftar
 - Simpan Jurnal Baru / Simpan Perubahan (submit form; bisa nonaktif sesuai kondisi)
-- [label dari data: inner]
 - [label dari data: p]
 - Tambah Baris
 - Hapus baris (bisa nonaktif sesuai kondisi)
@@ -1883,8 +1977,8 @@ Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Nilai Posting per Bulan; Linimasa Posting; Other; Tambah Jurnal Baru / Edit Transaksi; Edit Jurnal Other / Jurnal Other Baru
 Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Other Transaction; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): TX ID; No Voucher; Jurnal Entri; Tanggal; Kode Akun; Deskripsi; Referensi; Pihak; Kategori; Tipe; Saldo Akhir; Cek Rekonsiliasi
-Komponen (10): StatusBadge, TransactionDrawer, OtherTabs, OtherJournalWorkspace, TransactionsContext, TransactionEditModal, TabNav, otherStore, OtherJournalModal, AccountNameAutocomplete
-Tombol/aksi (18):
+Komponen (9): StatusBadge, TransactionDrawer, OtherTabs, OtherJournalWorkspace, TransactionsContext, TransactionEditModal, otherStore, OtherJournalModal, AccountNameAutocomplete
+Tombol/aksi (17):
 - Jurnal Baru
 - Ekspor CSV
 - <m.items.length> jurnal
@@ -1899,7 +1993,6 @@ Tombol/aksi (18):
 - [ikon X]
 - Pilih dari daftar
 - Simpan Jurnal Baru / Simpan Perubahan (submit form; bisa nonaktif sesuai kondisi)
-- [label dari data: inner]
 - Tambah Baris
 - Hapus baris (bisa nonaktif sesuai kondisi)
 - Menyimpan… / Simpan Perubahan / Simpan sebagai Draft (bisa nonaktif sesuai kondisi)
@@ -1911,8 +2004,8 @@ Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Other; Edit Jurnal Other / Jurnal Other Baru
 Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Other Transaction; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Draft; Perlu Perbaikan; Siap Diposting
-Komponen (7): StatusBadge, OtherTabs, OtherJournalWorkspace, TabNav, otherStore, OtherJournalModal, AccountNameAutocomplete
-Tombol/aksi (14):
+Komponen (6): StatusBadge, OtherTabs, OtherJournalWorkspace, otherStore, OtherJournalModal, AccountNameAutocomplete
+Tombol/aksi (13):
 - [grup aksi OtherActionButtons]
 - [label dari data: s.hint, s.label, items.length]
 - Jurnal Baru
@@ -1922,7 +2015,6 @@ Tombol/aksi (14):
 - Tampilkan voucher lagi
 - Batal
 - Memproses… (bisa nonaktif sesuai kondisi)
-- [label dari data: inner]
 - Tutup
 - Tambah Baris
 - Hapus baris (bisa nonaktif sesuai kondisi)
@@ -1934,8 +2026,8 @@ Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Kualitas Data Sumber; Komposisi Sumber; Other; Tambah Jurnal Baru / Edit Transaksi; Edit Jurnal Other / Jurnal Other Baru
 Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Other Transaction; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Tanggal; TX ID; Sumber; No. Jurnal; Akun; Akun Standar; Debit; Kredit; Aksi; Kondisi; No Voucher; Jurnal Entri; Kode Akun; Deskripsi; Referensi; Pihak; Kategori; Tipe; Saldo Akhir; Cek Rekonsiliasi
-Komponen (13): DataTable, TransactionDrawer, JePagination, OtherTabs, OtherJournalWorkspace, AppIcon, StatusBadge, TransactionsContext, TransactionEditModal, TabNav, otherStore, OtherJournalModal, AccountNameAutocomplete
-Tombol/aksi (21):
+Komponen (12): DataTable, TransactionDrawer, JePagination, OtherTabs, OtherJournalWorkspace, AppIcon, StatusBadge, TransactionsContext, TransactionEditModal, otherStore, OtherJournalModal, AccountNameAutocomplete
+Tombol/aksi (20):
 - Edit
 - <s.name> <s.rows> baris
 - [label dari data: label]
@@ -1953,7 +2045,6 @@ Tombol/aksi (21):
 - [ikon X]
 - Pilih dari daftar
 - Simpan Jurnal Baru / Simpan Perubahan (submit form; bisa nonaktif sesuai kondisi)
-- [label dari data: inner]
 - Tambah Baris
 - Hapus baris (bisa nonaktif sesuai kondisi)
 - Menyimpan… / Simpan Perubahan / Simpan sebagai Draft (bisa nonaktif sesuai kondisi)
@@ -1965,8 +2056,8 @@ Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Other; Tambah Jurnal Baru / Edit Transaksi; Edit Jurnal Other / Jurnal Other Baru
 Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Other Transaction; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): TX ID; No Voucher; Jurnal Entri; Tanggal; Kode Akun; Deskripsi; Referensi; Pihak; Kategori; Tipe; Saldo Akhir; Cek Rekonsiliasi
-Komponen (10): StatusBadge, TransactionDrawer, OtherTabs, OtherJournalWorkspace, TransactionsContext, TransactionEditModal, TabNav, otherStore, OtherJournalModal, AccountNameAutocomplete
-Tombol/aksi (21):
+Komponen (9): StatusBadge, TransactionDrawer, OtherTabs, OtherJournalWorkspace, TransactionsContext, TransactionEditModal, otherStore, OtherJournalModal, AccountNameAutocomplete
+Tombol/aksi (20):
 - Jurnal Baru
 - Ekspor CSV ( <list.length> )
 - [label dari data: FILTER_LABEL[f]]
@@ -1984,7 +2075,6 @@ Tombol/aksi (21):
 - [ikon X]
 - Pilih dari daftar
 - Simpan Jurnal Baru / Simpan Perubahan (submit form; bisa nonaktif sesuai kondisi)
-- [label dari data: inner]
 - Tambah Baris
 - Hapus baris (bisa nonaktif sesuai kondisi)
 - Menyimpan… / Simpan Perubahan / Simpan sebagai Draft (bisa nonaktif sesuai kondisi)
