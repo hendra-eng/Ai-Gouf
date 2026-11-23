@@ -14,7 +14,7 @@ import { fillAdjSheet } from './reportsAdjSheet';
 import { fetchReportsSourceData, coaSheetRows, glSheetRows, adjSheetRows, displayCodeFn, type ReportsSourceData } from './reportsData';
 import { addStatusColumn } from './reportsStatus';
 import { describeAiResult, markAiCell, REPORTS_AI_ENABLED, runReportsAiFill, type AiProgress, type ReportsAiResult } from './reportsAiFill';
-import { colLetter, fillTbSheet, relabelTbHeaders, type TbSheetResult } from './reportsTbSheet';
+import { colLetter, fillTbSheet, relabelTbHeaders, type TbSheetResult, type TbStandaloneValues } from './reportsTbSheet';
 import { fetchSaldoRk, fillSaldoRk, TB_COL_SALDO_RK, TB_COL_SELISIH_RK, type SaldoRkData } from './reportsSaldoRk';
 import { fillBsSheet, fillPnlSheet } from './reportsStatementSheets';
 import { applySheetSpec, dropSpecCells, dropSpecRows, normalizeSpecCf, permuteSpecColumns, shiftSpecColumns, shiftSpecRows, type SheetSpec } from './reportsSheetSpec';
@@ -58,6 +58,28 @@ export interface ReportsWorkbookContext {
   onProgress?: (p: AiProgress) => void;
   /** Peta baris sheet TB, diisi oleh sheet TB dan dipakai BS & PNL CF (urutan sheet: TB lebih dulu). */
   tbLayout?: TbSheetResult;
+  /** true = workbook hanya berisi 1 sheet (mis. TB): angka yang di workbook penuh dirujuk ke sheet lain ditulis sebagai nilai. */
+  standalone?: boolean;
+}
+
+const rowCode = (v: unknown) => String(v ?? '');
+
+/** Jumlah debit / kredit GL dan ADJ per (kode tampil | bulan): hasil yang sama dengan SUMIFS di sheet TB workbook penuh. */
+function buildTbStandalone(data: ReportsSourceData | undefined): TbStandaloneValues | undefined {
+  if (!data) return undefined;
+  const out: TbStandaloneValues = { glDebit: new Map(), glKredit: new Map(), adjDebit: new Map(), adjKredit: new Map() };
+  const add = (m: Map<string, number>, k: string, v: unknown) => m.set(k, (m.get(k) ?? 0) + (Number(v) || 0));
+  for (const row of glSheetRows(data).rows) {
+    const k = `${rowCode(row[1])}|${row[4]}`;
+    add(out.glDebit, k, row[8]);
+    add(out.glKredit, k, row[9]);
+  }
+  for (const row of adjSheetRows(data).rows) {
+    const k = `${rowCode(row[1])}|${row[4]}`;
+    add(out.adjDebit, k, row[8]);
+    add(out.adjKredit, k, row[9]);
+  }
+  return out;
 }
 
 // Sheet berbasis spesifikasi JSON (dimuat saat dibutuhkan agar bundle tetap ringan).
@@ -90,6 +112,19 @@ const CF_LAST_ROW = 5000;
 
 // Semua baris template (header, tabel) digeser ke bawah sebanyak baris blok judul. Nomor baris di bawah = nomor baris acuan + T.
 const T = TITLE_BLOCK_ROWS;
+
+/**
+ * Susunan baris TB untuk BS / PNL CF. Workbook penuh: dari sheet TB yang sudah dibuat (ctx.tbLayout).
+ * Download 1 sheet (BS / PNL CF saja): sheet TB tidak ikut di file, jadi susunan & nilainya dihitung di sheet bayangan
+ * (tidak disimpan) dan angkanya ditulis sebagai nilai.
+ */
+async function tbLayoutFor(ctx: ReportsWorkbookContext): Promise<TbSheetResult | undefined> {
+  if (ctx.tbLayout || !ctx.standalone || !ctx.data) return ctx.tbLayout;
+  const ExcelJS = (await import('exceljs')).default;
+  const scratch = new ExcelJS.Workbook().addWorksheet('TB');
+  ctx.tbLayout = fillTbSheet(scratch, ctx.data.tb, T, displayCodeFn(ctx.data.coa), buildTbStandalone(ctx.data));
+  return ctx.tbLayout;
+}
 
 /** kode akun (kode sistem maupun kode tampilan) -> Category COA (account_sub). */
 function categoryLookup(ctx: ReportsWorkbookContext): (code: string) => string | null | undefined {
@@ -128,7 +163,8 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
     },
     fill: (ws, ctx) => {
       const d = ctx.data ? glSheetRows(ctx.data, ctx.ai) : null;
-      fillGlSheet(ws, d?.rows ?? [], T, d?.statuses ?? []);
+      // File 1 sheet (sheet COA tidak ikut): nama akun ditulis sebagai teks, bukan XLOOKUP ke COA.
+      fillGlSheet(ws, d?.rows ?? [], T, d?.statuses ?? [], ctx.standalone ? (d?.names ?? []) : undefined);
       // Supplier/Customer hasil AI atau pola data (kolom H) diberi latar biru muda.
       for (const idx of d?.autoParty ?? []) markAiCell(ws, GL_FIRST_DATA_ROW + T + idx, 8);
       // Bank, Payment ID, Order ID, Refund, No Kamar: hanya yang tertulis eksplisit di data transaksi (reportsGlExtract.ts).
@@ -147,7 +183,8 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
     },
     fill: async (ws, ctx) => {
       // Judul lama (A2 "ADJUSTMENT 2026") diganti blok judul baru; sisanya (ringkasan baris 2) ikut bergeser.
-      await fromSpec(() => import('./reportsSheets/adj.json'), s => shiftSpecRows(dropSpecCells(dropRowsBelow(s, 3), [[2, 1]]), T))!(ws, ctx);
+      // File 1 sheet: sel bantu C2 (XLOOKUP ke COA) juga dibuang karena sheet COA tidak ikut.
+      await fromSpec(() => import('./reportsSheets/adj.json'), s => shiftSpecRows(dropSpecCells(dropRowsBelow(s, 3), ctx.standalone ? [[2, 1], [2, 3]] : [[2, 1]]), T))!(ws, ctx);
       // Baris ringkasan di atas header: kotak hitam penuh hanya sampai kolom Balance (K), seperti GL.
       boxBorders(ws, 2 + T, 2 + T, 1, 11);
       // Header (A3:P3): bergaris hitam penuh, termasuk kolom Check Weda. Baris data dikosongkan.
@@ -155,7 +192,7 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
       // Baris jurnal penyesuaian (semua status) + kolom Q "Status Transaksi" (status asli per jurnal).
       // Baris ini TIDAK ada di sheet GL (dibuang di glSheetRows), jadi kolom ADJ di TB tidak menghitung dua kali.
       const d = ctx.data ? adjSheetRows(ctx.data) : null;
-      fillAdjSheet(ws, d?.rows ?? [], T, d?.statuses ?? []);
+      fillAdjSheet(ws, d?.rows ?? [], T, d?.statuses ?? [], ctx.standalone ? (d?.names ?? []) : undefined);
     } },
   { name: 'TB', source: 'Trial Balance', headerRows: [5 + T, 6 + T], lastCol: 77,
     title: {
@@ -211,7 +248,7 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
       // Judul kolom ber-tahun/bulan (acuan hardcode 2026) mengikuti tahun terpilih.
       relabelTbHeaders(ws, 5 + T, ctx.year);
       // Baris akun + saldo awal + rumus ke GL/ADJ (hanya kalau data aplikasi tersedia; template kosong = header saja).
-      const tbRows = fillTbSheet(ws, ctx.data?.tb, T, displayCodeFn(ctx.data?.coa));
+      const tbRows = fillTbSheet(ws, ctx.data?.tb, T, displayCodeFn(ctx.data?.coa), ctx.standalone ? buildTbStandalone(ctx.data) : undefined);
       ctx.tbLayout = tbRows;
       // Kolom Notes (kolom ke-80): dugaan penyebab akun yang janggal dari Isi AI, selalu berawalan "Dugaan AI:" dan berlatar biru muda.
       const NOTES_COL = 80;
@@ -263,7 +300,7 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
       boxBorders(ws, 4 + T, 4 + T, CHECK_COL, CHECK_COL);
       if ((ws.getColumn(CHECK_COL).width ?? 0) < 12) ws.getColumn(CHECK_COL).width = 12;
       // Baris akun + total, dirujuk ke sheet TB (rantai GL -> TB -> BS). Aset tetap dipisah lewat Category COA.
-      const bs = fillBsSheet(ws, ctx.tbLayout, categoryLookup(ctx), T, ctx.year);
+      const bs = fillBsSheet(ws, await tbLayoutFor(ctx), categoryLookup(ctx), T, ctx.year);
       // Kolom T "Status Transaksi" di kanan Check: status akun yang dirujuk di TB.
       addStatusColumn(ws, { col: CHECK_COL + 1, headerRow: 4 + T, firstDataRow: bs.firstDataRow, values: bs.statuses });
     } },
@@ -289,7 +326,7 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
       boxBorders(ws, 5 + T, 5 + T, CHECK_COL, CHECK_COL);
       if ((ws.getColumn(CHECK_COL).width ?? 0) < 12) ws.getColumn(CHECK_COL).width = 12;
       // Baris akun + subtotal + PROFIT/(LOSS), dirujuk ke sheet TB; baris selisih terhadap TB di bawahnya.
-      const pnl = fillPnlSheet(ws, ctx.data?.tb, ctx.tbLayout, T, ctx.year, categoryLookup(ctx));
+      const pnl = fillPnlSheet(ws, ctx.data?.tb, await tbLayoutFor(ctx), T, ctx.year, categoryLookup(ctx));
       // Kolom W "Status Transaksi" di kanan Check: status akun yang dirujuk di TB.
       addStatusColumn(ws, { col: CHECK_COL + 1, headerRow: 5 + T, firstDataRow: pnl.firstDataRow, values: pnl.statuses });
       // Kolom X "Notes": catatan AI untuk 2 baris SELISIH. Berupa rumus: catatan HANYA tampil kalau selisih di baris itu tidak nol
@@ -330,7 +367,7 @@ function namaFileAman(s: string): string {
   return s.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, '_').replace(/^_+|_+$/g, '') || 'Company';
 }
 
-export async function buildReportsWorkbook(ctx: ReportsWorkbookContext) {
+export async function buildReportsWorkbook(ctx: ReportsWorkbookContext, onlySheet?: string) {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
   wb.creator = 'zafeb';
@@ -339,6 +376,7 @@ export async function buildReportsWorkbook(ctx: ReportsWorkbookContext) {
   wb.calcProperties = { fullCalcOnLoad: true };
 
   for (const def of REPORT_SHEETS) {
+    if (onlySheet && def.name !== onlySheet) continue; // download 1 sheet: sheet lain tidak dibuat
     const ws = wb.addWorksheet(def.name);
     if (def.fill) await def.fill(ws, ctx);
     polishHeaderRows(ws, def.headerRows, def.lastCol);
@@ -354,6 +392,19 @@ export async function buildReportsWorkbook(ctx: ReportsWorkbookContext) {
  * Isi AI TIDAK PERNAH menggagalkan download: kalau gagal, file tetap terunduh dengan sel kosong.
  */
 export async function downloadReportsWorkbook(ctx: ReportsWorkbookContext): Promise<string | null> {
+  return downloadWorkbookFile(ctx);
+}
+
+/**
+ * Unduh workbook yang hanya berisi 1 sheet (nama sheet = nama di REPORT_SHEETS, mis. 'TB'), dengan template yang sama
+ * persis dengan sheet itu di workbook Financial Statement. Dipakai tombol Download di halaman report masing-masing.
+ */
+export async function downloadReportsSheet(ctx: ReportsWorkbookContext, sheetName: string): Promise<string | null> {
+  if (!REPORT_SHEETS.some(d => d.name === sheetName)) throw new Error(`Sheet ${sheetName} tidak dikenal.`);
+  return downloadWorkbookFile({ ...ctx, standalone: true }, sheetName);
+}
+
+async function downloadWorkbookFile(ctx: ReportsWorkbookContext, onlySheet?: string): Promise<string | null> {
   // Semua sheet membaca Journal Preview (semua status), bukan hanya posted.
   const data = await fetchReportsSourceData(ctx);
   let ai: ReportsAiResult | undefined;
@@ -366,14 +417,14 @@ export async function downloadReportsWorkbook(ctx: ReportsWorkbookContext): Prom
   }
   const aiFilled: Record<string, number> = {};
   const saldoRk = await fetchSaldoRk(ctx); // tanpa AI; gagal = kolom Saldo RK kosong
-  const wb = await buildReportsWorkbook({ ...ctx, data, ai, aiFilled, saldoRk });
+  const wb = await buildReportsWorkbook({ ...ctx, data, ai, aiFilled, saldoRk }, onlySheet);
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `Financial_Statement_${namaFileAman(ctx.companyName)}_${ctx.year}${String(ctx.endMonth).padStart(2, '0')}.xlsx`;
+  a.download = `${onlySheet ? onlySheet.replace(/\s+/g, '_') : 'Financial_Statement'}_${namaFileAman(ctx.companyName)}_${ctx.year}${String(ctx.endMonth).padStart(2, '0')}.xlsx`;
   document.body.appendChild(a);
   a.click();
   a.remove();

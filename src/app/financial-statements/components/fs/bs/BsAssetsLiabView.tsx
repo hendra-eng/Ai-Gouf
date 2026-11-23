@@ -52,6 +52,7 @@ export default function BsAssetsLiabView({ clientId, companyName, printedBy }: V
         }
         loading={loading}
         exportReady={!!m}
+        templateSheet={{ sheet: 'BS', asOf }}
         buildExport={() => bsTemplateReport(m!, [CUR, CMP], [fmtDate(asOf), cmpLbl], {
           title: 'Statement of Financial Position (Balance Sheet)', fileBase: `Balance-Sheet-${asOf}`, companyName: company,
           subtitle: `As of ${fmtLongDate(asOf)}`, printedBy,

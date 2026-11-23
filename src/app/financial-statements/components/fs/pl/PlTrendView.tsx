@@ -6,7 +6,7 @@ import { ArrowDownRight, ArrowUpRight, BarChart3, CalendarDays, Database, FileTe
 import { ErrorBlock, LoadingBlock } from '../FsShell';
 import { fmtAmount, todayIso } from '../fsFormat';
 import { fmtCompact, fmtMillions, pctChange } from '../bs/bsData';
-import { BsToolbar, ChartTooltip, EmptyData, InsightCard, Legend, Panel, Select, thCls, thRowCls, trCls } from '../bs/BsMono';
+import { BsToolbar, ChartTooltip, EmptyData, InsightCard, Legend, Panel, Select, thCls, thRowCls, trCls, yearAsOf } from '../bs/BsMono';
 import { salesFont } from '@/app/transactions/sales/components/salesFont';
 import { PL_COLORS, margin, monthName, monthPeriod, usePlSeries, type Period, type PlMerged, type ViewProps } from './plData';
 import { KpiDelta, PlKpiRow, PlKpiTile, ratioPct } from './PlUi';
@@ -57,6 +57,7 @@ export default function PlTrendView({ clientId, segment, printedBy, filters }: V
         }
         loading={loading}
         exportReady={!!m && n > 0}
+        templateSheet={{ sheet: 'PNL CF', asOf: yearAsOf(year) }}
         buildExport={() => plTemplateReport(m!, cur.map((_, i) => i), cur.map(label), {
           title: 'Profit and Loss Trend', fileBase: `Profit-Loss-Trend-${year}`, companyName: company,
           subtitle: `Monthly performance, ${year}`, printedBy,

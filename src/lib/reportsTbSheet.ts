@@ -90,6 +90,12 @@ export interface TbSheetResult {
   refs: TbRowRef[];
   /** Nomor baris PROFIT (LOSS) di sheet TB (0 kalau tidak ada data). */
   profitRow: number;
+  /**
+   * Hanya mode sheet tunggal: nilai yang DIHITUNG di sini untuk tiap baris akun (nomor baris TB -> 15 angka:
+   * [kolom C, saldo awal, Balance after ADJ Jan..Des, YTD]). Dipakai sheet BS / PNL CF supaya angkanya berupa nilai,
+   * bukan rujukan =TB!... ke sheet TB yang tidak ada di file itu.
+   */
+  values?: Map<number, number[]>;
 }
 
 /** Judul kolom yang memuat tahun/bulan (acuan hardcode 2026) diganti sesuai tahun terpilih. */
@@ -106,16 +112,31 @@ export function relabelTbHeaders(ws: Worksheet, headerRow: number, year: number)
 type Side = 'DEBIT' | 'CREDIT';
 
 /**
+ * Mode SHEET TUNGGAL (download dari halaman Trial Balance): workbook hanya berisi sheet TB, jadi rumus SUMIFS ke GL / ADJ
+ * dan XLOOKUP ke COA tidak punya sheet tujuan. Di mode ini angka Debet / Kredit / ADJ per akun per bulan ditulis sebagai
+ * NILAI (hasil jumlah yang sama persis dengan rumus SUMIFS), sedangkan rumus di dalam sheet TB (Balance, After ADJ, YTD,
+ * total, Check) tetap rumus. Kunci peta = `${kode akun yang tampil}|${bulan 1-12}`.
+ */
+export interface TbStandaloneValues {
+  glDebit: Map<string, number>;
+  glKredit: Map<string, number>;
+  adjDebit: Map<string, number>;
+  adjKredit: Map<string, number>;
+}
+
+/**
  * Isi baris tabel TB. `top` = jumlah baris blok judul; baris bantu nomor bulan ada di (4 + top) dan data mulai di (7 + top),
  * sama dengan template yang digeser. Tanpa `tb` (template kosong) tidak ada baris yang ditulis.
  */
-export function fillTbSheet(ws: Worksheet, tb: TrialBalance | null | undefined, top: number, shownCodeOf: (code: string) => string = c => c): TbSheetResult {
+export function fillTbSheet(ws: Worksheet, tb: TrialBalance | null | undefined, top: number, shownCodeOf: (code: string) => string = c => c, standalone?: TbStandaloneValues): TbSheetResult {
   const monthRow = 4 + top;
   const first = 7 + top;
   if (!tb) return { firstDataRow: first, lastRow: first - 1, statuses: [], refs: [], profitRow: 0 };
 
   const writers: Array<() => void> = [];
   const refs: TbRowRef[] = [];
+  const values = new Map<number, number[]>();
+  const pnlAfterSide = { DEBIT: Array<number>(12).fill(0), CREDIT: Array<number>(12).fill(0) }; // jumlah Balance after ADJ akun laba rugi per sisi
   const statusAt = new Map<number, string>();
   let r = first + 1; // baris `first` = spacer kosong seperti acuan
 
@@ -171,9 +192,29 @@ export function fillTbSheet(ws: Worksheet, tb: TrialBalance | null | undefined, 
     const net = (d: string, k: string) => (debitSide ? `${d}${row}-${k}${row}` : `${k}${row}-${d}${row}`);
 
     ws.getCell(row, COL_CODE).value = asCode(shownCodeOf(a.account_code));
-    ws.getCell(row, COL_NAME).value = a.in_coa
+    ws.getCell(row, COL_NAME).value = a.in_coa && !standalone
       ? { formula: `IFERROR(_xlfn.XLOOKUP(A${row},COA!A:A,COA!B:B),${q(a.account_name)})` }
       : a.account_name;
+    const valueKey = String(asCode(shownCodeOf(a.account_code)));
+    if (standalone) {
+      const netv = (d: number, k: number) => (debitSide ? d - k : k - d);
+      const open = neraca ? (a.normal_balance === g.normal_balance ? a.opening_balance : -a.opening_balance) : 0;
+      const openV = Math.abs(open) >= 0.005 ? open : 0;
+      const afters: number[] = [];
+      let prev = openV;
+      let ytd = 0;
+      for (const m of MONTHS) {
+        const k = `${valueKey}|${m}`;
+        const mutasi = netv(standalone.glDebit.get(k) ?? 0, standalone.glKredit.get(k) ?? 0);
+        const bal = neraca ? prev + mutasi : mutasi;
+        const after = bal + netv(standalone.adjDebit.get(k) ?? 0, standalone.adjKredit.get(k) ?? 0);
+        afters.push(after);
+        prev = after;
+        ytd += after;
+        if (!neraca) pnlAfterSide[side][m - 1] += after;
+      }
+      values.set(row, [0, openV, ...afters, neraca ? afters[11] : ytd]);
+    }
 
     if (neraca) {
       // opening_balance dari backend ada di sisi normal AKUN -> ubah ke sisi normal KELOMPOK (kontra jadi negatif).
@@ -186,10 +227,18 @@ export function fillTbSheet(ws: Worksheet, tb: TrialBalance | null | undefined, 
       const kL = colLetter(cKredit(m));
       const adL = colLetter(cAdjD(m));
       const akL = colLetter(cAdjK(m));
-      ws.getCell(row, cDebit(m)).value = { formula: `SUMIFS(GL!$I:$I,GL!$B:$B,$A${row},GL!$E:$E,${dL}$${monthRow})` };
-      ws.getCell(row, cKredit(m)).value = { formula: `SUMIFS(GL!$J:$J,GL!$B:$B,$A${row},GL!$E:$E,${kL}$${monthRow})` };
-      ws.getCell(row, cAdjD(m)).value = { formula: `SUMIFS(ADJ!$I:$I,ADJ!$E:$E,${adL}$${monthRow},ADJ!$B:$B,$A${row})` };
-      ws.getCell(row, cAdjK(m)).value = { formula: `SUMIFS(ADJ!$J:$J,ADJ!$E:$E,${akL}$${monthRow},ADJ!$B:$B,$A${row})` };
+      if (standalone) {
+        const k = `${valueKey}|${m}`;
+        ws.getCell(row, cDebit(m)).value = standalone.glDebit.get(k) ?? 0;
+        ws.getCell(row, cKredit(m)).value = standalone.glKredit.get(k) ?? 0;
+        ws.getCell(row, cAdjD(m)).value = standalone.adjDebit.get(k) ?? 0;
+        ws.getCell(row, cAdjK(m)).value = standalone.adjKredit.get(k) ?? 0;
+      } else {
+        ws.getCell(row, cDebit(m)).value = { formula: `SUMIFS(GL!$I:$I,GL!$B:$B,$A${row},GL!$E:$E,${dL}$${monthRow})` };
+        ws.getCell(row, cKredit(m)).value = { formula: `SUMIFS(GL!$J:$J,GL!$B:$B,$A${row},GL!$E:$E,${kL}$${monthRow})` };
+        ws.getCell(row, cAdjD(m)).value = { formula: `SUMIFS(ADJ!$I:$I,ADJ!$E:$E,${adL}$${monthRow},ADJ!$B:$B,$A${row})` };
+        ws.getCell(row, cAdjK(m)).value = { formula: `SUMIFS(ADJ!$J:$J,ADJ!$E:$E,${akL}$${monthRow},ADJ!$B:$B,$A${row})` };
+      }
       const prev = m === 1 ? `D${row}` : `${colLetter(cAfter(m - 1))}${row}`;
       const mutasi = net(dL, kL);
       ws.getCell(row, cBal(m)).value = { formula: neraca ? `${prev}+${mutasi}` : mutasi };
@@ -211,7 +260,7 @@ export function fillTbSheet(ws: Worksheet, tb: TrialBalance | null | undefined, 
   const writeProfitEquity = (row: number, a: TbAccount | null) => {
     if (a) {
       ws.getCell(row, COL_CODE).value = asCode(shownCodeOf(a.account_code));
-      ws.getCell(row, COL_NAME).value = a.in_coa
+      ws.getCell(row, COL_NAME).value = a.in_coa && !standalone
         ? { formula: `IFERROR(_xlfn.XLOOKUP(A${row},COA!A:A,COA!B:B),${q(a.account_name)})` }
         : a.account_name;
     } else {
@@ -356,6 +405,19 @@ export function fillTbSheet(ws: Worksheet, tb: TrialBalance | null | undefined, 
 
   const lastRow = r - 1;
   writers.forEach(w => w());
+  if (standalone) {
+    // Baris ekuitas khusus: Current Year Profit / Loss = akumulasi laba bulanan (pendapatan - beban); Prior Year = konstan.
+    for (const ref of refs) {
+      if (ref.kind === 'profit') {
+        let prev = 0;
+        const afters = MONTHS.map(m => (prev += pnlAfterSide.CREDIT[m - 1] - pnlAfterSide.DEBIT[m - 1]));
+        values.set(ref.row, [0, 0, ...afters, afters[11]]);
+      } else if (ref.kind === 'prior') {
+        const v = tb.carry_forward.prior_year_profit;
+        values.set(ref.row, [0, v, ...MONTHS.map(() => v), v]);
+      }
+    }
+  }
   for (let row = first; row <= lastRow; row++) setNumFmtRowIfEmpty(ws, row);
   boxBorders(ws, first, lastRow, 1, TB_COL_LAST);
   for (let row = first; row <= lastRow; row++) {
@@ -363,9 +425,14 @@ export function fillTbSheet(ws: Worksheet, tb: TrialBalance | null | undefined, 
     ws.getCell(row, COL_CODE).alignment = { horizontal: 'left' };
   }
 
+  if (standalone && profitRowNo) {
+    // Baris PROFIT (LOSS): laba per bulan (Balance after ADJ) + YTD; dirujuk sheet PNL CF (baris SELISIH TERHADAP TB).
+    const monthly = MONTHS.map(m => pnlAfterSide.CREDIT[m - 1] - pnlAfterSide.DEBIT[m - 1]);
+    values.set(profitRowNo, [0, 0, ...monthly, monthly.reduce((a, b) => a + b, 0)]);
+  }
   const statuses: string[] = [];
   for (let row = first; row <= lastRow; row++) statuses.push(statusAt.get(row) ?? '');
-  return { firstDataRow: first, lastRow, statuses, refs, profitRow: profitRowNo };
+  return { firstDataRow: first, lastRow, statuses, refs, profitRow: profitRowNo, values: standalone ? values : undefined };
 }
 
 function setNumFmtRowIfEmpty(ws: Worksheet, row: number): void {

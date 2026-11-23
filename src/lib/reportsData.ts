@@ -102,9 +102,10 @@ export function coaSheetRows(data: ReportsSourceData): { rows: CoaRow[]; statuse
 }
 
 /** Baris sheet GL (kolom A-O) + status tiap baris jurnal (nilai asli dari backend). */
-export function glSheetRows(data: ReportsSourceData, ai?: ReportsAiResult): { rows: GlCell[][]; statuses: string[]; autoParty: number[]; extras: GlExtra[] } {
+export function glSheetRows(data: ReportsSourceData, ai?: ReportsAiResult): { rows: GlCell[][]; statuses: string[]; autoParty: number[]; extras: GlExtra[]; names: string[] } {
   const rows: GlCell[][] = [];
   const statuses: string[] = [];
+  const names: string[] = []; // nama akun per baris (dipakai file 1 sheet GL, yang tidak punya sheet COA untuk XLOOKUP)
   const autoParty: number[] = []; // indeks baris yang kolom Supplier/Customer-nya diisi otomatis
   const extras: GlExtra[] = []; // sel tambahan hasil ekstraksi (Bank, Payment ID, Order ID, Refund, No Kamar)
   let no = 1000;
@@ -122,15 +123,17 @@ export function glSheetRows(data: ReportsSourceData, ai?: ReportsAiResult): { ro
         l.debit, l.credit, null, l.number, null, null, l.source,
       ]);
       statuses.push(statusLabel(l.status));
+      names.push(acc.account_name);
     }
   }
-  return { rows, statuses, autoParty, extras };
+  return { rows, statuses, autoParty, extras, names };
 }
 
 /** Baris sheet ADJ (kolom A-P) + status tiap jurnal penyesuaian (nilai asli dari backend). Satu baris per baris jurnal. */
-export function adjSheetRows(data: ReportsSourceData): { rows: AdjCell[][]; statuses: string[] } {
+export function adjSheetRows(data: ReportsSourceData): { rows: AdjCell[][]; statuses: string[]; names: string[] } {
   const rows: AdjCell[][] = [];
   const statuses: string[] = [];
+  const names: string[] = []; // nama akun per baris (dipakai file 1 sheet ADJ, tanpa sheet COA)
   let no = 0;
   const shownCode = displayCodeFn(data.coa);
   for (const e of data.adj.entries) {
@@ -141,7 +144,8 @@ export function adjSheetRows(data: ReportsSourceData): { rows: AdjCell[][]; stat
         l.debit, l.kredit, null, e.number, '', '', 'Adjustment', '',
       ]);
       statuses.push(statusLabel(e.status));
+      names.push(l.account_name);
     }
   }
-  return { rows, statuses };
+  return { rows, statuses, names };
 }

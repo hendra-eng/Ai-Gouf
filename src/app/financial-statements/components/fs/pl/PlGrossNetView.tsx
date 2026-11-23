@@ -7,7 +7,7 @@ import { WarningsPanel } from '../CheckBanner';
 import { ErrorBlock, LoadingBlock } from '../FsShell';
 import { fmtAmount, fmtDate, todayIso } from '../fsFormat';
 import { fmtCompact, pctChange } from '../bs/bsData';
-import { BsToolbar, ChartTooltip, Delta, Panel, Select } from '../bs/BsMono';
+import { BsToolbar, ChartTooltip, Delta, Panel, Select, yearAsOf } from '../bs/BsMono';
 import { PL_COLORS, margin, usePlSeries, yearPeriod, type Period, type PlMerged, type ViewProps } from './plData';
 import { KpiDelta, PlKpiRow, PlKpiTile, ratioPct } from './PlUi';
 import { fmtLongDate, plTemplateReport, todayLong } from '../statementTemplate';
@@ -63,6 +63,7 @@ export default function PlGrossNetView({ clientId, segment, printedBy, filters }
         }
         loading={loading}
         exportReady={!!m}
+        templateSheet={{ sheet: 'PNL CF', asOf: yearAsOf(year) }}
         buildExport={() => plTemplateReport(m!, [CUR, LY], [endLbl, lyLbl], {
           title: 'Profit and Loss Statement', fileBase: `Profit-Loss-${year}${span === 'ytd' ? '-YTD' : ''}`, companyName: company,
           subtitle: caption, printedBy,

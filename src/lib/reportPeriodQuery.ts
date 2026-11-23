@@ -3,7 +3,7 @@
 //
 //   /reports/trial-balance?year=2026&month=10
 //   /reports/adjustment?year=2026&month=10
-//   /reports/general-ledger?start=2026-01-01&end=2026-10-31   (GL memakai rentang tanggal)
+//   /reports/general-ledger?start=2026-01-01&end=2026-10-31   (GL & Journal Report memakai rentang tanggal)
 
 export interface ReportPeriodParams {
   year: number;
@@ -34,7 +34,7 @@ export function withReportPeriod(href: string, year: number, month: number): str
   if (href === '/reports/trial-balance' || href === '/reports/adjustment') {
     return `${href}?year=${year}&month=${month}`;
   }
-  if (href === '/reports/general-ledger') {
+  if (href === '/reports/general-ledger' || href === '/reports/journal-report') {
     const { start, end } = reportPeriodRange(year, month);
     return `${href}?start=${start}&end=${end}`;
   }

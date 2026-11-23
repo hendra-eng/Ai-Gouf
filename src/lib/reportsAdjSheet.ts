@@ -31,7 +31,11 @@ const DATA_FMT: Record<number, [string | undefined, Partial<Alignment>['horizont
  * di sini ditambah judul seksi (baris 4+top), baris data, dan kolom Status Transaksi (Q).
  * Tanpa baris (template kosong) = hanya header + kolom status kosong.
  */
-export function fillAdjSheet(ws: Worksheet, rows: AdjCell[][] = [], top = 0, statuses: string[] = []): number {
+export function fillAdjSheet(
+  ws: Worksheet, rows: AdjCell[][] = [], top = 0, statuses: string[] = [],
+  /** Mode file 1 sheet (sheet COA tidak ikut): nama akun per baris ditulis sebagai teks, bukan XLOOKUP ke COA. */
+  names?: string[],
+): number {
   const HEADER = 3 + top;
   const SECTION = 4 + top;
   const FIRST = 5 + top;
@@ -62,7 +66,7 @@ export function fillAdjSheet(ws: Worksheet, rows: AdjCell[][] = [], top = 0, sta
       c.font = { ...FONT, bold: col === 1 };
     }
     // Nama akun dari sheet COA; Balance = Debit - Kredit (pola sama dengan GL).
-    ws.getCell(r, 3).value = { formula: `_xlfn.XLOOKUP(B${r},COA!A:A,COA!B:B,"")` };
+    ws.getCell(r, 3).value = names ? (names[idx] ?? '') : { formula: `_xlfn.XLOOKUP(B${r},COA!A:A,COA!B:B,"")` };
     ws.getCell(r, 11).value = { formula: `I${r}-J${r}` };
   });
 

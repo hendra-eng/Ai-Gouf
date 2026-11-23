@@ -54,6 +54,7 @@ export default function PlDefaultView({ clientId, segment, printedBy, filters }:
         }
         loading={loading}
         exportReady={!!m}
+        templateSheet={{ sheet: 'PNL CF', asOf: `${month}-01` }}
         buildExport={() => plTemplateReport(m!, [CUR], ['Amount (IDR)'], {
           title: 'Profit and Loss Statement', fileBase: `Profit-Loss-${month}`, companyName: company,
           subtitle: `For the Month Ended ${fmtLongDate(curEnd)}`, printedBy,

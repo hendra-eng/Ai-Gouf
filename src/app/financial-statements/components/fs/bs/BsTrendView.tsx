@@ -56,6 +56,7 @@ export default function BsTrendView({ clientId, companyName, printedBy }: ViewPr
         }
         loading={loading}
         exportReady={!!m && n > 0}
+        templateSheet={{ sheet: 'BS', asOf: cur[n - 1] ?? `${year}-01-31` }}
         buildExport={() => bsTemplateReport(m!, cur.map((_, i) => i), cur.map(d => monthLabel(d)), {
           title: 'Balance Sheet Trend', fileBase: `Balance-Sheet-Trend-${year}`, companyName: company,
           subtitle: `Month-end positions, ${year}`, printedBy,

@@ -17,6 +17,7 @@ import {
   fetchGeneralLedger, type GeneralLedger, type GlAccount, type GlInclude, type GlLine, type GlMonth,
 } from '@/lib/generalLedgerStore';
 import { printReport, type PrintFormat, type PrintReport, type PrintRow, type PrintRowStyle } from '@/lib/printExport';
+import { downloadReportsSheet } from '@/lib/reportsWorkbook';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Reports > General Ledger. Data baru diambil setelah user menekan "Apply"
@@ -24,9 +25,9 @@ import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 // bisa di-expand untuk melihat rinciannya. Download PDF/CSV/XLSX memakai
 // helper bersama src/lib/printExport.ts (jsPDF + autotable, exceljs).
 
-type PeriodId = 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year' | 'custom';
+export type PeriodId = 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year' | 'custom';
 
-const PERIODS: { id: PeriodId; label: string }[] = [
+export const PERIODS: { id: PeriodId; label: string }[] = [
   { id: 'this_month', label: 'This Month' },
   { id: 'last_month', label: 'Last Month' },
   { id: 'this_quarter', label: 'This Quarter' },
@@ -49,7 +50,7 @@ function isoDate(d: Date): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-function rangeFor(period: PeriodId, today = new Date()): { start: string; end: string } | null {
+export function rangeFor(period: PeriodId, today = new Date()): { start: string; end: string } | null {
   const y = today.getFullYear();
   const m = today.getMonth();
   const q = Math.floor(m / 3);
@@ -64,7 +65,7 @@ function rangeFor(period: PeriodId, today = new Date()): { start: string; end: s
   }
 }
 
-const fmtNumber = (n: number) => Math.abs(n).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+export const fmtNumber = (n: number) => Math.abs(n).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 function fmtAmount(n: number): string {
   return n ? fmtNumber(n) : '–';
@@ -76,7 +77,7 @@ function fmtBalance(n: number): string {
   return `${fmtNumber(n)} ${n > 0 ? 'Dr' : 'Cr'}`;
 }
 
-function fmtDate(iso: string): string {
+export function fmtDate(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
@@ -123,11 +124,11 @@ function openingLabel(a: GlAccount): string {
 }
 
 const POSTED_STATUS = new Set(['posted', 'reversed']);
-const isUnposted = (status?: string) => !!status && !POSTED_STATUS.has(status);
-const statusText = (status?: string) => (status ? status.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase()) : '');
+export const isUnposted = (status?: string) => !!status && !POSTED_STATUS.has(status);
+export const statusText = (status?: string) => (status ? status.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase()) : '');
 
 /** Status transaksi sumber: posted = netral, belum posted (draft/pending/approved) = amber. */
-function StatusBadge({ status }: { status?: string }) {
+export function StatusBadge({ status }: { status?: string }) {
   if (!status) return <span className="text-neutral-400">–</span>;
   return (
     <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${isUnposted(status) ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-neutral-300 bg-neutral-100 text-neutral-700'}`}>
@@ -197,11 +198,11 @@ function buildPrintReport(gl: GeneralLedger, companyName: string, printedBy?: st
   };
 }
 
-const inputClass = 'w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm transition-colors focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300';
+export const inputClass = 'w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm transition-colors focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300';
 
 // ── Dropdown monokrom (pengganti <select> bawaan browser yang sorotnya biru) ──
 
-function NeutralSelect<T extends string>({ value, onChange, options }: {
+export function NeutralSelect<T extends string>({ value, onChange, options }: {
   value: T; onChange: (v: T) => void; options: { id: T; label: string }[];
 }) {
   const [open, setOpen] = useState(false);
@@ -609,7 +610,19 @@ export default function GeneralLedgerClient() {
     setDownloadOpen(false);
     setDownloading(format);
     try {
-      await printReport(buildPrintReport(data, companyName, user?.nama || user?.username), format);
+      if (format === 'excel') {
+        // Excel = sheet "GL" saja, dengan template yang sama seperti sheet GL di workbook Financial Statement (halaman Reports).
+        // Periode template = 1 Januari s.d. akhir bulan dari End date yang sedang tampil di halaman ini.
+        const y = Number(data.filter.end_date.slice(0, 4));
+        const m = Number(data.filter.end_date.slice(5, 7));
+        const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const label = `${m === 1 ? 'Jan' : `Jan – ${MON[m - 1]}`} ${y}`;
+        await downloadReportsSheet({ companyName, periodLabel: label, year: y, endMonth: m, managementClientId: activeClientId ?? null }, 'GL');
+      } else {
+        await printReport(buildPrintReport(data, companyName, user?.nama || user?.username), format);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to download the Excel file.');
     } finally {
       setDownloading(null);
     }

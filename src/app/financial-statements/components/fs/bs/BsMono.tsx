@@ -7,6 +7,7 @@ import type { PrintReport } from '@/lib/printExport';
 import { useActiveClient } from '@/lib/activeClient';
 import { clientLetterhead } from '../statementTemplate';
 import { fmtCompact } from './bsData';
+import { downloadReportsSheet } from '@/lib/reportsWorkbook';
 
 // Komponen UI halaman Balance Sheet bertema "elegant hitam putih" -- disamakan
 // dengan halaman Sales (Inter, neutral-*, kartu bergaris atas hitam, tabel
@@ -102,18 +103,38 @@ export function Segmented<T extends string>({ value, onChange, options }: { valu
   );
 }
 
+/** Tanggal acuan untuk view yang hanya punya pilihan tahun: bulan ini (tahun berjalan) atau Desember (tahun lalu). */
+export function yearAsOf(year: number): string {
+  const now = new Date();
+  const month = year === now.getFullYear() ? now.getMonth() + 1 : 12;
+  return `${year}-${String(month).padStart(2, '0')}-01`;
+}
+
+const MON_LABEL = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 /** Label kecil di toolbar. */
 export const filterLabelCls = 'flex items-center gap-2 text-xs font-medium text-neutral-600';
 
 // ── Toolbar (Print + Download) ───────────────────────────────────────
 
-export function BsToolbar({ filters, loading, exportReady, buildExport }: {
+export function BsToolbar({ filters, loading, exportReady, buildExport, templateSheet }: {
   filters: React.ReactNode;
   loading?: boolean;
   exportReady: boolean;
   buildExport: () => PrintReport;
+  /** Excel = 1 sheet dari workbook Financial Statement (mis. { sheet: 'BS', asOf }); periode = tahun s.d. bulan dari asOf (yyyy-mm-dd). */
+  templateSheet?: { sheet: string; asOf: string };
 }) {
   const { clients, activeClientId } = useActiveClient();
+  const excelOverride = templateSheet
+    ? async () => {
+        const y = Number(templateSheet.asOf.slice(0, 4));
+        const m = Number(templateSheet.asOf.slice(5, 7));
+        const name = clients.find(c => c.id === activeClientId)?.companyName ?? '';
+        const label = `${m === 1 ? 'Jan' : `Jan – ${MON_LABEL[m - 1]}`} ${y}`;
+        await downloadReportsSheet({ companyName: name, periodLabel: label, year: y, endMonth: m, managementClientId: activeClientId ?? null }, templateSheet.sheet);
+      }
+    : undefined;
   const build = () => {
     const r = buildExport();
     if (r.template !== 'statement' || r.letterhead) return r;
@@ -128,7 +149,7 @@ export function BsToolbar({ filters, loading, exportReady, buildExport }: {
           className="inline-flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-medium text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
           <Printer size={14} className="text-neutral-500" /> Print
         </button>
-        <DownloadMenu disabled={!exportReady} build={build} variant="mono" />
+        <DownloadMenu disabled={!exportReady} build={build} variant="mono" excelOverride={excelOverride} />
       </div>
     </div>
   );

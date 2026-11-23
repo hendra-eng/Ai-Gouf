@@ -83,6 +83,7 @@ export default function BsDefaultView({ clientId, companyName, printedBy }: View
         }
         loading={loading}
         exportReady={!!m && rangeValid}
+        templateSheet={{ sheet: 'BS', asOf }}
         buildExport={() => isRange
           ? bsTemplateReport(m!, [CUR, PREV], [fmtDate(to), `Opening ${fmtDate(opening)}`], {
               title: 'Statement of Financial Position (Balance Sheet)', fileBase: `Balance-Sheet-${from}_to_${to}`, companyName: company ?? '',

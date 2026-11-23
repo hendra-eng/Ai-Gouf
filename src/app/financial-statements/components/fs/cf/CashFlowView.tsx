@@ -97,6 +97,7 @@ export default function CashFlowView({ clientId, method, onMethod, printedBy }: 
         }
         loading={loading}
         exportReady={!!m && valid}
+        templateSheet={{ sheet: 'PNL CF', asOf: to }}
         buildExport={() => {
           const cmp = showCmp ? { label: cmpBasis === 'previous_period' ? 'Previous Period' : 'Same Period Last Year', index: cmpBasis === 'previous_period' ? m!.PREV : m!.LY } : null;
           return cfReport(m!, method, columns.map(c => c.label), totalLabel, {

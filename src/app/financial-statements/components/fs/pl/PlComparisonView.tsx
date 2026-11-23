@@ -6,7 +6,7 @@ import { BarChart3, Database, FileText, Percent } from 'lucide-react';
 import { ErrorBlock, LoadingBlock } from '../FsShell';
 import { fmtAmount, todayIso } from '../fsFormat';
 import { fmtCompact, pctChange } from '../bs/bsData';
-import { BsToolbar, ChartTooltip, EmptyData, Legend, Panel, Select, thCls, thRowCls } from '../bs/BsMono';
+import { BsToolbar, ChartTooltip, EmptyData, Legend, Panel, Select, thCls, thRowCls, yearAsOf } from '../bs/BsMono';
 import { PL_COLORS, margin, quarterPeriod, usePlSeries, type Period, type PlMerged, type ViewProps } from './plData';
 import { KpiDelta, Num, PlKpiRow, PlKpiTile, PlTable, ratioPct, type CellCtx } from './PlUi';
 import { plTemplateReport, todayLong } from '../statementTemplate';
@@ -66,6 +66,7 @@ export default function PlComparisonView({ clientId, segment, printedBy, filters
         }
         loading={loading}
         exportReady={!!m && qn > 0}
+        templateSheet={{ sheet: 'PNL CF', asOf: yearAsOf(year) }}
         buildExport={() => plTemplateReport(m!, Array.from({ length: qn }, (_, i) => i), labels, {
           title: 'Profit and Loss Comparison', fileBase: `Profit-Loss-Comparison-FY${year}`, companyName: company,
           subtitle: `Quarterly view – FY${year}, variance Q${qn} vs ${basisLabel}`, printedBy,

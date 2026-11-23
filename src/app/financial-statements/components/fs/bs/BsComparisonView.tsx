@@ -72,6 +72,7 @@ export default function BsComparisonView({ clientId, companyName, printedBy }: V
         }
         loading={loading}
         exportReady={!!m && qn > 0}
+        templateSheet={{ sheet: 'BS', asOf: quarters[qn - 1] ?? `${year}-12-31` }}
         buildExport={() => bsTemplateReport(m!, quarters.map((_, i) => i), labels, {
           title: 'Balance Sheet Comparison', fileBase: `Balance-Sheet-Comparison-FY${year}`, companyName: company,
           subtitle: `Quarterly view – FY${year}, variance vs ${basisLabel}`, printedBy,

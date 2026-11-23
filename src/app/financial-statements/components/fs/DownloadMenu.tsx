@@ -14,7 +14,7 @@ async function printReport(report: PrintReport, format: PrintFormat) {
 // `build` dipanggil saat diklik supaya file selalu sesuai data terakhir.
 // `extra` = opsi tambahan (mis. Word dari backend untuk CALK).
 
-export default function DownloadMenu({ build, disabled, extra, variant = 'default', fontCls }: {
+export default function DownloadMenu({ build, disabled, extra, variant = 'default', fontCls, excelOverride }: {
   build: () => PrintReport;
   disabled?: boolean;
   /** 'mono' = tema hitam putih (Balance Sheet); default = tema bawaan. */
@@ -22,6 +22,8 @@ export default function DownloadMenu({ build, disabled, extra, variant = 'defaul
   /** Mengganti ukuran/berat font tombol (mis. gaya Sales). */
   fontCls?: string;
   extra?: { label: string; onClick: () => void | Promise<void> }[];
+  /** Mengganti aksi "Excel (XLSX)" (mis. download template 1 sheet dari halaman Reports). */
+  excelOverride?: () => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -44,7 +46,7 @@ export default function DownloadMenu({ build, disabled, extra, variant = 'defaul
   const items: { label: string; icon: React.ElementType; color: string; onClick: () => void | Promise<void> }[] = [
     { label: 'PDF', icon: FileText, color: 'text-rose-500', onClick: () => printReport(build(), 'pdf') },
     { label: 'CSV', icon: FileText, color: 'text-slate-500', onClick: () => printReport(build(), 'csv') },
-    { label: 'Excel (XLSX)', icon: FileSpreadsheet, color: 'text-blue-600', onClick: () => printReport(build(), 'excel' as PrintFormat) },
+    { label: 'Excel (XLSX)', icon: FileSpreadsheet, color: 'text-blue-600', onClick: excelOverride ?? (() => printReport(build(), 'excel' as PrintFormat)) },
     ...(extra ?? []).map(e => ({ ...e, icon: FileText, color: 'text-sky-600' })),
   ];
 

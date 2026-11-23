@@ -72,7 +72,11 @@ const DATA_FMT: Record<number, [string | undefined, Partial<Alignment>['horizont
 };
 
 /** `rows` = baris transaksi dari aplikasi (kolom A-O); default kosong (template hanya header). SAMPLE di atas hanya contoh acuan. */
-export function fillGlSheet(ws: Worksheet, rows: Cell[][] = [], top = 0, statuses: string[] = []): void {
+export function fillGlSheet(
+  ws: Worksheet, rows: Cell[][] = [], top = 0, statuses: string[] = [],
+  /** Mode file 1 sheet (sheet COA tidak ikut): nama akun per baris ditulis sebagai teks, bukan XLOOKUP ke COA. */
+  names?: string[],
+): void {
   // `top` = jumlah baris judul di atas sheet; semua baris template digeser sebesar ini.
   const R1 = 1 + top;
   const R2 = 2 + top;
@@ -88,7 +92,7 @@ export function fillGlSheet(ws: Worksheet, rows: Cell[][] = [], top = 0, statuse
   j1.font = FONT;
 
   const c2 = ws.getCell(`C${R2}`);
-  c2.value = { formula: `_xlfn.XLOOKUP(B${R2},COA!A:A,COA!B:B)` };
+  if (!names) c2.value = { formula: `_xlfn.XLOOKUP(B${R2},COA!A:A,COA!B:B)` }; // file 1 sheet: sel bantu ini dibiarkan kosong
   c2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
   c2.border = BORDER;
   c2.alignment = { horizontal: 'left' };
@@ -164,7 +168,7 @@ export function fillGlSheet(ws: Worksheet, rows: Cell[][] = [], top = 0, statuse
       c.font = { ...FONT, bold: col === 1 };
     });
     // Rumus yang pola barisnya sama di seluruh sheet acuan.
-    ws.getCell(r, 3).value = { formula: `_xlfn.XLOOKUP(B${r},COA!A:A,COA!B:B)` };
+    ws.getCell(r, 3).value = names ? (names[idx] ?? '') : { formula: `_xlfn.XLOOKUP(B${r},COA!A:A,COA!B:B)` };
     ws.getCell(r, 11).value = { formula: `I${r}-J${r}` };
   });
 

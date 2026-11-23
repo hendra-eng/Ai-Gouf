@@ -25,6 +25,17 @@ const TB_SOURCE_COLS = [3, 4, ...Array.from({ length: 12 }, (_, i) => tbColAfter
 
 const asCode = (s: string): number | string => (/^\d+$/.test(s) ? Number(s) : s);
 
+/**
+ * Rujukan ke sel sheet TB. Workbook penuh: `TB!J14`. Mode sheet tunggal (tbValues ada, sheet TB tidak ikut di file):
+ * diganti angka hasil hitung yang sama dengan isi sel itu (negatif diberi kurung supaya aman di dalam rumus).
+ */
+function tbRefOf(tbValues: Map<number, number[]> | undefined, tbCol: number, row: number): string {
+  if (!tbValues) return `TB!${colLetter(tbCol)}${row}`;
+  const idx = TB_SOURCE_COLS.indexOf(tbCol);
+  const v = Number(((tbValues.get(row) ?? [])[idx] ?? 0).toFixed(6));
+  return v < 0 ? `(${v})` : String(v);
+}
+
 export interface StatementResult {
   firstDataRow: number;
   lastRow: number;
@@ -54,7 +65,7 @@ function relabelHeaders(ws: Worksheet, headerRow: number, firstValueCol: number,
 }
 
 /** Penulis baris bersama untuk BS dan PNL CF. */
-function makeWriter(ws: Worksheet, lay: Layout) {
+function makeWriter(ws: Worksheet, lay: Layout, tbValues?: Map<number, number[]>) {
   const lastValueCol = lay.firstValueCol + TB_SOURCE_COLS.length - 1;
   const statuses: string[] = [];
   let r = lay.firstRow;
@@ -85,10 +96,12 @@ function makeWriter(ws: Worksheet, lay: Layout) {
     account(ref: TbRowRef): number {
       const row = next(ref.status);
       if (ref.code) ws.getCell(row, lay.codeCol).value = asCode(ref.shownCode || ref.code);
-      ws.getCell(row, lay.nameCol).value = { formula: `TB!B${ref.row}` };
+      // Mode sheet tunggal (tbValues ada): sheet TB tidak ikut di file, jadi nama & angka ditulis sebagai nilai.
+      const own = tbValues?.get(ref.row);
+      ws.getCell(row, lay.nameCol).value = own ? ref.name : { formula: `TB!B${ref.row}` };
       TB_SOURCE_COLS.forEach((tc, i) => {
         const cell = ws.getCell(row, lay.firstValueCol + i);
-        cell.value = { formula: `TB!${colLetter(tc)}${ref.row}` };
+        cell.value = own ? (own[i] ?? 0) : { formula: `TB!${colLetter(tc)}${ref.row}` };
         cell.numFmt = NUM_ACCT;
       });
       ws.getCell(row, lay.checkCol).value = {
@@ -153,7 +166,7 @@ export function fillBsSheet(
   relabelHeaders(ws, 4 + top, lay.firstValueCol, year);
   if (!tbSheet || !tbSheet.refs.length) return { firstDataRow: lay.firstRow, lastRow: lay.firstRow - 1, statuses: [] };
 
-  const w = makeWriter(ws, lay);
+  const w = makeWriter(ws, lay, tbSheet.values);
   const of = (key: string) => tbSheet.refs.filter(x => x.group === key);
   const block = (refs: TbRowRef[]) => {
     const from = w.row;
@@ -209,7 +222,7 @@ export function fillPnlSheet(
   relabelHeaders(ws, 5 + top, lay.firstValueCol, year);
   if (!tb || !tbSheet || !tbSheet.refs.length) return { firstDataRow: lay.firstRow, lastRow: lay.firstRow - 1, statuses: [] };
 
-  const w = makeWriter(ws, lay);
+  const w = makeWriter(ws, lay, tbSheet.values);
   const groupByKey = new Map<string, TbGroup>(tb.groups.filter(g => g.tipe === 'pnl').map(g => [g.key, g]));
   const totals = new Map<string, number>();
 
@@ -247,7 +260,7 @@ export function fillPnlSheet(
     profitDiffRow = w.total('SELISIH TERHADAP TB (PROFIT/LOSS)', L => {
       const idx = L.length === 1 ? L.charCodeAt(0) - 64 : 26 * (L.charCodeAt(0) - 64) + (L.charCodeAt(1) - 64);
       const tbCol = TB_SOURCE_COLS[idx - lay.firstValueCol];
-      return `TB!${colLetter(tbCol)}${tbSheet.profitRow}-${L}${finalRow}`;
+      return `${tbRefOf(tbSheet.values, tbCol, tbSheet.profitRow)}-${L}${finalRow}`;
     }, 2);
   }
 
@@ -293,7 +306,7 @@ function fillCashFlow(
   const liabCurrent = liabs.filter(x => !liabLong.includes(x));
   const equity = accounts.filter(x => x.group === 'EQUITY');
 
-  const tbCell = (L: string, offset: number, x: TbRowRef) => `TB!${colLetter(TB_SOURCE_COLS[colNum(L) - firstValueCol + offset])}${x.row}`;
+  const tbCell = (L: string, offset: number, x: TbRowRef) => tbRefOf(tbSheet.values, TB_SOURCE_COLS[colNum(L) - firstValueCol + offset], x.row);
   /** Jumlah perubahan saldo bulan ini (kolom L) untuk sekumpulan akun; YTD = jumlah Jan..Des. */
   const delta = (xs: TbRowRef[], sign: 1 | -1) => (L: string) => {
     const i = colNum(L) - firstValueCol;

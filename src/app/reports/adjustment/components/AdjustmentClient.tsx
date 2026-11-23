@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/auth';
 import { fetchTrialBalancePeriods, type TbPeriods } from '@/lib/trialBalanceStore';
 import { fetchAdjustment, type AdjEntry, type AdjStatusFilter, type AdjTbRow, type AdjustmentReport } from '@/lib/adjustmentStore';
 import { printReport, type PrintColumn, type PrintFormat, type PrintReport, type PrintRow, type PrintRowStyle } from '@/lib/printExport';
+import { downloadReportsSheet } from '@/lib/reportsWorkbook';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 import { readReportPeriodParams } from '@/lib/reportPeriodQuery';
 
@@ -330,8 +331,19 @@ export default function AdjustmentClient() {
     setDownloadOpen(false);
     setDownloading(format);
     try {
-      const by = user?.nama || user?.username;
-      await printReport(tab === 'journals' ? buildJournalsReport(data, entries, companyName, by) : buildEffectReport(data, effectRows, companyName, by), format);
+      if (format === 'excel') {
+        // Excel = sheet "ADJ" saja, dengan template yang sama seperti sheet ADJ di workbook Financial Statement (halaman Reports).
+        // Berlaku untuk kedua tab; periode mengikuti data yang sedang tampil (1 Januari s.d. akhir bulan terpilih).
+        const { year: y, end_month: m } = data.periode;
+        const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const label = `${m === 1 ? 'Jan' : `Jan – ${MON[m - 1]}`} ${y}`;
+        await downloadReportsSheet({ companyName, periodLabel: label, year: y, endMonth: m, managementClientId: activeClientId ?? null }, 'ADJ');
+      } else {
+        const by = user?.nama || user?.username;
+        await printReport(tab === 'journals' ? buildJournalsReport(data, entries, companyName, by) : buildEffectReport(data, effectRows, companyName, by), format);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to download the Excel file.');
     } finally {
       setDownloading(null);
     }

@@ -17,6 +17,7 @@ import {
 import { printReport, type PrintColumn, type PrintFormat, type PrintReport, type PrintRow, type PrintRowStyle } from '@/lib/printExport';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 import { readReportPeriodParams } from '@/lib/reportPeriodQuery';
+import { downloadReportsSheet } from '@/lib/reportsWorkbook';
 
 // Reports > Trial Balance. Susunan meniru sheet "TB" Excel: No Account | Account | Saldo Awal |
 // (Debet, Kredit, Balance) per bulan | YTD. Tanpa kolom ADJ (adjustment dikerjakan di aplikasi terpisah).
@@ -418,7 +419,17 @@ export default function TrialBalanceClient() {
     setDownloadOpen(false);
     setDownloading(format);
     try {
-      await printReport(buildPrintReport(data, companyName, user?.nama || user?.username), format);
+      if (format === 'excel') {
+        // Excel = sheet "TB" saja, dengan template yang sama seperti sheet TB di workbook Financial Statement (halaman Reports).
+        // Periode mengikuti data yang sedang tampil di halaman ini.
+        const { year: y, end_month: m } = data.periode;
+        const label = `${m === 1 ? 'Jan' : `Jan – ${MONTH_NAMES[m - 1]}`} ${y}`;
+        await downloadReportsSheet({ companyName, periodLabel: label, year: y, endMonth: m, managementClientId: activeClientId ?? null }, 'TB');
+      } else {
+        await printReport(buildPrintReport(data, companyName, user?.nama || user?.username), format);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to download the Excel file.');
     } finally {
       setDownloading(null);
     }
