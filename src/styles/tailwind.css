@@ -27,6 +27,7 @@
   --dark-foreground: #FFFFFF;
   --nav: #0E2F26;
   --nav-rgb: 14 47 38;
+  --nav-accent: #C9B27C; /* champagne: aksen hemat untuk logo, label grup & garis halus */
   --secondary: #F1F5F9;
   --secondary-foreground: #334155;
   --accent: #7C3AED;
@@ -60,7 +61,7 @@
   --chart-5: #0284C7;
   --chart-6: #DC2626;
 
-  --sidebar-width: 240px;
+  --sidebar-width: 264px;
   --sidebar-collapsed-width: 64px;
   --header-height: 64px;
 
@@ -524,26 +525,210 @@
   .table-row-hover  {
     @apply transition-colors duration-100 cursor-pointer;
   }
-  /* Menu Sidebar (latar nav #0E2F26): aktif = latar putih tipis + garis &
-     ikon highlight #22C55E; tidak aktif = putih redup. */
-  .nav-item-active  {
-    @apply bg-white/10 text-white font-semibold;
-    box-shadow: inset 3px 0 0 var(--highlight);
+  /* ===== Sidebar & Topbar "elegant" (2026-11-23) =====
+     Latar hijau gelap bergradasi halus, item aktif berpendar hijau highlight,
+     aksen champagne (--nav-accent) dipakai hemat. Ubah --nav-accent di :root
+     untuk mengganti nuansa. */
+  .nav-surface {
+    background:
+      radial-gradient(90% 38% at 50% 100%, rgba(34,197,94,0.09) 0%, transparent 70%),
+      linear-gradient(180deg, #0F362B 0%, #0E2F26 50%, #0A251D 100%);
   }
-  .nav-item-active svg {
-    color: var(--highlight);
+  /* Topbar: hijau gelap rata dengan sidebar (warna sama dengan ujung atas gradasi sidebar), sudut tajam. */
+  .nav-topbar {
+    position: relative;
+    background: #0F362B;
+    color: #fff;
   }
 
-  .nav-item-inactive {
-    @apply text-white/75 hover:bg-white/10 hover:text-white;
+  /* Wordmark logo: formal & tenang. "ZAFEB" = serif kapital (Cormorant Garamond, dimuat di app/layout.tsx)
+     dengan jarak huruf lebar; garis champagne tipis; "ACCOUNTING" = sans kecil berjarak lebar.
+     padding-right pada wordmark menyeimbangkan jarak huruf terakhir supaya teks terlihat rata. */
+  .nav-wordmark {
+    font-family: var(--font-cormorant), 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+    font-size: 18px; font-weight: 700; line-height: 1;
+    letter-spacing: 0.2em; text-transform: uppercase; color: #fff;
+  }
+  .nav-tagline {
+    margin-top: 5px; padding-top: 5px;
+    border-top: 1px solid rgba(201,178,124,0.35);
+    font-size: 9.5px; font-weight: 500; line-height: 1;
+    letter-spacing: 0.22em; text-transform: uppercase; color: var(--nav-accent);
+  }
+
+  .nav-group-label {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 12px; margin-bottom: 6px;
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: rgba(201,178,124,0.92);
+  }
+  .nav-group-label::after {
+    content: ''; flex: 1; height: 1px;
+    background: linear-gradient(90deg, rgba(201,178,124,0.28), transparent);
+  }
+
+  .nav-item-active {
+    position: relative;
+    color: #fff;
+    font-weight: 600;
+    background: linear-gradient(90deg, rgba(34,197,94,0.20) 0%, rgba(34,197,94,0.05) 100%);
+    box-shadow: inset 0 0 0 1px rgba(34,197,94,0.14);
+  }
+  .nav-item-active::before {
+    content: '';
+    position: absolute; left: 0; top: 22%; bottom: 22%; width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--highlight);
+    box-shadow: 0 0 10px rgba(34,197,94,0.7);
+  }
+  .nav-item-active svg { color: var(--highlight); }
+
+  .nav-item-inactive { color: rgba(255,255,255,0.68); }
+  .nav-item-inactive svg { color: rgba(255,255,255,0.5); transition: color 150ms; }
+  .nav-item-inactive:hover { background: rgba(255,255,255,0.06); color: #fff; }
+  .nav-item-inactive:hover svg { color: rgba(255,255,255,0.9); }
+
+  /* Sub-menu: tanpa bar kiri (sudah ada garis pohon), cukup latar tipis. */
+  .nav-sub-active { color: #fff; font-weight: 600; background: rgba(255,255,255,0.07); }
+  .nav-sub-active svg { color: var(--highlight); }
+
+  /* Chip kontrol di Topbar (company, periode): kotak datar, garis putih tipis, sudut tajam.
+     Override .text-foreground dkk. supaya CompanySwitcher.tsx terbaca di latar gelap tanpa diubah. */
+  .nav-chip {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 12px; border-radius: 3px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: #fff;
+    transition: background 150ms;
+  }
+  .nav-chip:hover, .nav-chip[aria-expanded='true'] { background: rgba(255,255,255,0.07); }
+  .nav-chip .text-foreground { color: #fff; }
+  .nav-chip .text-muted-foreground { color: rgba(255,255,255,0.65); }
+  .nav-chip .bg-muted { background: transparent; }
+  .nav-chip .border-border { border-color: transparent; }
+  .nav-chip-label {
+    font-size: 10px; font-weight: 600; line-height: 1;
+    letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.62);
+  }
+
+  /* Garis bawah header logo sidebar: nada yang sama dengan garis Topbar, jadi keduanya terbaca
+     sebagai satu garis yang menyambung (ujung kanan sidebar = ujung kiri Topbar). */
+  .nav-header-line { position: relative; }
+  .nav-header-line::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: -1px; height: 1px;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(201,178,124,0.14) 0%, rgba(201,178,124,0.38) 100%);
+  }
+
+  /* Tombol ikon di Topbar (search, notifikasi): kotak datar, setinggi chip. */
+  .nav-icon-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    height: 40px; min-width: 40px; padding: 0 10px; border-radius: 3px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: #fff;
+    transition: background 150ms;
+  }
+  .nav-icon-btn:hover, .nav-icon-btn[aria-expanded='true'] { background: rgba(255,255,255,0.07); }
+  .nav-kbd {
+    font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1;
+    padding: 3px 6px; border-radius: 2px;
+    color: rgba(255,255,255,0.55);
+    background: transparent;
+    border: 0;
+  }
+
+  /* ===== Kontrol Topbar =====
+     Search, Company, Period, notifikasi & user: kontrol TERPISAH berbentuk oval (pill), garis putih tipis.
+     Hover = latar tipis, ditekan = lebih terang, terbuka = garis champagne + latar menyala. */
+  .nav-seg { display: flex; align-items: center; gap: 10px; }
+  .nav-seg .nav-chip,
+  .nav-seg .nav-icon-btn {
+    height: 40px; min-width: 0; gap: 10px;
+    border: 1px solid rgba(255,255,255,0.22); border-radius: 999px;
+    background: rgba(255,255,255,0.04); color: #fff;
+    transition: background 150ms, border-color 150ms;
+  }
+  .nav-seg .nav-chip, .nav-seg .nav-icon-btn { padding: 0 18px; }
+  .nav-seg .nav-chip:hover, .nav-seg .nav-icon-btn:hover {
+    background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.34);
+  }
+  .nav-seg .nav-chip:active, .nav-seg .nav-icon-btn:active {
+    background: rgba(255,255,255,0.14);
+  }
+  .nav-seg .nav-chip[aria-expanded='true'],
+  .nav-seg .nav-icon-btn[aria-expanded='true'] {
+    background: rgba(255,255,255,0.10); border-color: var(--nav-accent);
+  }
+  /* Tombol user: tanpa bingkai (tetap seperti versi sebelumnya), hanya latar tipis & garis champagne saat terbuka. */
+  .nav-user { border-radius: 3px; transition: background 150ms, box-shadow 150ms; }
+  .nav-user:hover { background: rgba(255,255,255,0.07); }
+  .nav-user:active { background: rgba(255,255,255,0.12); }
+  .nav-user[aria-expanded='true'] { background: rgba(255,255,255,0.09); box-shadow: inset 0 -2px 0 var(--nav-accent); }
+
+  /* Panel yang keluar dari Topbar (company, period, notifikasi, user, pencarian). */
+  .nav-panel {
+    background: #fff;
+    border: 1px solid #D3DAE3;
+    border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(10,37,29,0.08), 0 20px 40px -16px rgba(10,37,29,0.38);
+  }
+  .nav-kbd-light {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; padding: 2px 5px;
+    font-family: inherit; font-size: 10.5px; font-weight: 600; line-height: 1.2;
+    color: #64748B; background: #fff;
+    border: 1px solid #D3DAE3; border-radius: 2px;
+  }
+
+  /* Flyout submenu saat sidebar collapsed. ::before = jembatan tak kasat mata di celah
+     antara ikon dan panel, supaya flyout tidak menutup saat kursor menyeberang. */
+  .nav-flyout {
+    min-width: 232px; padding: 6px; border-radius: 14px;
+    background: linear-gradient(180deg, #0F362B 0%, #0A251D 100%);
+    border: 1px solid rgba(255,255,255,0.10);
+    box-shadow: 0 18px 40px -12px rgba(3,15,11,0.55);
+  }
+  .nav-flyout::before { content: ''; position: absolute; left: -12px; top: 0; bottom: 0; width: 12px; }
+  .nav-flyout-title {
+    display: block; padding: 8px 10px; margin-bottom: 4px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+    color: rgba(201,178,124,0.95);
+    border-bottom: 1px solid rgba(201,178,124,0.22);
+    border-radius: 8px 8px 0 0;
+    transition: color 150ms;
+  }
+  .nav-flyout-title:hover { color: #fff; }
+
+  /* Fokus keyboard yang terlihat: hijau di sidebar (latar gelap), hitam di Topbar (latar putih). */
+  .nav-surface a:focus-visible,
+  .nav-surface button:focus-visible,
+  .nav-flyout a:focus-visible {
+    outline: 2px solid rgba(34,197,94,0.75);
+    outline-offset: 2px;
+  }
+  .nav-topbar a:focus-visible,
+  .nav-topbar button:focus-visible {
+    outline: 2px solid rgba(34,197,94,0.75);
+    outline-offset: 2px;
   }
 
   /* Scrollbar di atas latar gelap. */
-  .scrollbar-on-dark {
-    scrollbar-color: rgba(255,255,255,0.25) transparent;
-  }
+  .scrollbar-on-dark::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-on-dark::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-on-dark::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
   .scrollbar-on-dark::-webkit-scrollbar-thumb {
-    background-color: rgba(255,255,255,0.25);
+    background-color: rgba(255,255,255,0.14);
+    border-radius: 999px;
+  }
+  .scrollbar-on-dark:hover::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,0.28); }
+  /* Firefox & browser tanpa ::-webkit-scrollbar */
+  @supports not selector(::-webkit-scrollbar) {
+    .scrollbar-on-dark { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.22) transparent; }
   }
 }
 

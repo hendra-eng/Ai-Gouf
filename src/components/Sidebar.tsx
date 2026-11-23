@@ -1,13 +1,15 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import AppLogo from '@/components/ui/AppLogo';
-import { Boxes, LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, ShoppingCart, MoreHorizontal, RefreshCcw, NotebookText, BookOpen, Landmark, ListTree, CalendarCheck, Banknote, Cuboid } from 'lucide-react';
-import Icon from '@/components/ui/AppIcon';
+import BrandMark from '@/components/ui/BrandMark';
+import { ChevronLeft, ChevronRight, ChevronDown, X } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
-import { useAuth, userInitials } from '@/lib/auth';
+import { useNavBadges } from '@/lib/navBadges';
+import { navGroups, settingsItem, type NavItem } from '@/components/navConfig';
 
+// Struktur menu (grup, ikon, href) ada di navConfig.ts -- file ini hanya urusan tampilan.
+// Identitas user & tombol Log out sekarang hanya ada di Topbar (tidak lagi dobel di sini);
+// Settings dipasang permanen di bagian bawah sidebar.
 
 interface SidebarProps {
   collapsed: boolean;
@@ -17,123 +19,39 @@ interface SidebarProps {
   onMobileClose: () => void;
 }
 
-interface NavItem {
-  id: string;
-  label: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  href?: string;
-  badge?: string;
-  badgeVariant?: 'positive' | 'negative' | 'warning' | 'info' | 'ai';
-  children?: NavItem[];
-}
-
-const navGroups: { label: string; items: NavItem[] }[] = [
-  {
-    label: 'Overview',
-    items: [
-      { id: 'nav-overview', label: 'Overview', icon: LayoutDashboard, href: '/' },
-      { id: 'nav-memori-ai', label: 'Memori AI', icon: Brain, href: '/memori-ai' },
-    ],
-  },
-  {
-    label: 'Financial',
-    items: [
-      {
-        id: 'nav-statements', label: 'Financial Statements', icon: FileText, href: '/financial-statements',
-        children: [
-          { id: 'nav-pl', label: 'Profit & Loss', icon: TrendingUp, href: '/financial-statements/profit-loss' },
-          { id: 'nav-bs', label: 'Balance Sheet', icon: Scale, href: '/financial-statements/balance-sheet' },
-          { id: 'nav-cf', label: 'Cash Flow', icon: Activity, href: '/financial-statements/cash-flow' },
-          { id: 'nav-coe', label: 'Statement of Changes in Equity', icon: RefreshCcw, href: '/financial-statements/changes-in-equity' },
-          { id: 'nav-notes', label: 'Notes to Financial Statements', icon: NotebookText, href: '/financial-statements/notes' },
-          { id: 'nav-fs-mapping', label: 'Statement Mapping', icon: ListTree, href: '/financial-statements/mapping' },
-        ],
-      },
-      {
-        id: 'nav-transactions', label: 'Transactions', icon: ArrowLeftRight, href: '/transactions', badge: '248',
-        children: [
-          { id: 'nav-tx-sales', label: 'Sales', icon: ShoppingCart, href: '/transactions/sales' },
-          { id: 'nav-tx-purchase', label: 'Purchase', icon: CreditCard, href: '/transactions/purchase' },
-          { id: 'nav-tx-journal-entry', label: 'Journal Entry', icon: BookOpen, href: '/transactions/journal-entry' },
-          { id: 'nav-tx-bank-cash', label: 'Cash & Bank', icon: Landmark, href: '/transactions/bank-cash' },
-          { id: 'nav-tx-other', label: 'Other', icon: MoreHorizontal, href: '/transactions/other' },
-        ],
-      },
-      { id: 'nav-ar', label: 'Accounts Receivable', icon: DollarSign, href: '/accounts-receivable', badge: '3', badgeVariant: 'warning' },
-      { id: 'nav-ap', label: 'Accounts Payable', icon: CreditCard, href: '/accounts-payable' },
-      { id: 'nav-fx-revaluation', label: 'FX Revaluation', icon: RefreshCcw, href: '/fx-revaluation' },
-      { id: 'nav-fx-transfers', label: 'FX Transfers', icon: ArrowLeftRight, href: '/fx-transfers' },
-    ],
-  },
-  {
-    label: 'Assets & Equity',
-    items: [
-      { id: 'nav-assets', label: 'Fixed Assets', icon: Package, href: '/assets' },
-      { id: 'nav-inventory', label: 'Inventory', icon: Boxes, href: '/inventory' },
-      { id: 'nav-liabilities', label: 'Liabilities', icon: Wallet, href: '/liabilities' },
-      { id: 'nav-equity', label: 'Equity', icon: Scale, href: '/equity' },
-    ],
-  },
-  {
-    label: 'Planning',
-    items: [
-      { id: 'nav-budget', label: 'Budget & Forecast', icon: Calculator, href: '/budget-forecast' },
-      { id: 'nav-tax', label: 'Tax Compliance', icon: ShieldCheck, href: '/tax-compliance' },
-      { id: 'nav-analytics', label: 'Financial Analytics', icon: BarChart3, href: '/financial-analytics' },
-    ],
-  },
-  {
-    label: 'Intelligence',
-    items: [
-      { id: 'nav-ai', label: 'AI Financial Analyst', icon: Brain, href: '/ai-financial-analyst', badge: 'AI', badgeVariant: 'ai' },
-      { id: 'nav-audit', label: 'Audit', icon: ClipboardCheck, href: '/audit' },
-    ],
-  },
-  {
-    label: 'Management',
-    items: [
-      { id: 'nav-reports', label: 'Reports', icon: BarChart3, href: '/reports' },
-      { id: 'nav-clients', label: 'Clients', icon: Building2, href: '/clients' },
-      { id: 'nav-coa', label: 'Chart of Accounts', icon: ListTree, href: '/coa' },
-      { id: 'nav-year-end-closing', label: 'Year-End Closing', icon: CalendarCheck, href: '/year-end-closing' },
-      { id: 'nav-exchange-rates', label: 'Exchange Rates', icon: DollarSign, href: '/exchange-rates' },
-      { id: 'nav-documents', label: 'Documents', icon: FolderOpen, href: '/documents' },
-      { id: 'nav-settings', label: 'Settings', icon: Settings, href: '/settings' },
-      { id: 'nav-payroll', label: 'Payroll', icon: Banknote, href: '/payroll' },
-      { id: 'nav-agentic-ai', label: 'Agentic AI', icon: Cuboid, href: '/agentic-ai', badge: 'AI', badgeVariant: 'ai' },
-    ],
-  },
-];
-
 function getBadgeClasses(variant?: string) {
   switch (variant) {
-    case 'positive': return 'bg-positive-subtle text-positive';
-    case 'negative': return 'bg-negative-subtle text-negative';
-    case 'warning': return 'bg-warning-subtle text-warning';
-    case 'ai': return 'bg-ai-subtle text-ai';
-    default: return 'bg-muted text-muted-foreground';
+    case 'positive': return 'bg-emerald-400/15 text-emerald-200 ring-1 ring-emerald-300/20';
+    case 'negative': return 'bg-rose-400/15 text-rose-200 ring-1 ring-rose-300/20';
+    case 'warning': return 'bg-amber-400/15 text-amber-200 ring-1 ring-amber-300/20';
+    case 'ai': return 'bg-violet-400/20 text-violet-200 ring-1 ring-violet-300/25';
+    default: return 'bg-white/10 text-white/80 ring-1 ring-white/10';
   }
 }
 
+// prefix=true: halaman turunan ikut menandai menu aktif (mis. /settings/users -> Settings,
+// /coa/new -> Chart of Accounts). Hanya untuk menu TANPA sub-menu, supaya menu induk
+// (Transactions, Financial Statements) tetap seperti semula.
+function pathMatches(href: string | undefined, currentPath: string, prefix = false) {
+  if (!href) return false;
+  if (href === currentPath) return true;
+  return prefix && href !== '/' && !!currentPath && currentPath.startsWith(`${href}/`);
+}
+
 export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileOpen, onMobileClose }: SidebarProps) {
-  const router = useRouter();
   const { t } = useLanguage();
-  const { user, logout } = useAuth();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-  const displayName = user?.nama || user?.username || 'Pengguna';
+  // Angka badge asli dari database (company aktif), bukan angka tetap.
+  const liveBadges = useNavBadges();
 
-  const goToSettings = () => router.push('/settings');
-
-  const handleLogout = () => {
-    logout();
-  };
-
+  // Buka otomatis induk dari halaman yang sedang aktif (termasuk halaman turunan submenu).
   useEffect(() => {
     navGroups.forEach((group) => {
       group.items.forEach((item) => {
-        const isOnParent = item.href === currentPath;
-        const isOnChild = item.children?.some((child) => child.href === currentPath);
-        if (item.children && (isOnParent || isOnChild)) {
+        if (!item.children) return;
+        const onParent = item.href === currentPath;
+        const onChild = item.children.some((child) => pathMatches(child.href, currentPath, true));
+        if (onParent || onChild) {
           setExpandedItems((prev) => {
             if (prev.has(item.id)) return prev;
             const next = new Set(prev);
@@ -163,40 +81,105 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
     });
   };
 
-  // prefix=true: halaman turunan ikut menandai menu aktif (mis. /settings/users -> Settings,
-  // /coa/new -> Chart of Accounts). Hanya untuk menu TANPA sub-menu, supaya menu induk
-  // (Transactions, Financial Statements) tetap seperti semula.
-  const isActive = (href?: string, prefix = false) =>
-    href === currentPath ||
-    (href === '/' && currentPath === '/') ||
-    (prefix && !!href && href !== '/' && !!currentPath && currentPath.startsWith(`${href}/`));
+  // ---- Mode collapsed ------------------------------------------------------
+  // Tooltip (menu biasa) dan flyout (menu yang punya submenu) memakai posisi fixed
+  // supaya tidak terpotong overflow-hidden pada <aside>.
+  const [tip, setTip] = useState<{ label: string; top: number; left: number } | null>(null);
+  const [flyout, setFlyout] = useState<{ item: NavItem; top: number; left: number } | null>(null);
+  const flyoutRef = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<number | null>(null);
 
-  const renderNavItem = (item: NavItem, depth = 0) => {
-    const hasChildren = item.children && item.children.length > 0;
-    const active = isActive(item.href, !hasChildren);
+  const showTip = (label: string, el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    setTip({ label, top: r.top + r.height / 2, left: r.right + 10 });
+  };
+
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }, []);
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => setFlyout(null), 140);
+  }, [cancelClose]);
+
+  const openFlyout = (item: NavItem, el: HTMLElement) => {
+    cancelClose();
+    setTip(null);
+    const r = el.getBoundingClientRect();
+    const estimatedHeight = (item.children?.length ?? 0) * 36 + 56;
+    const top = Math.max(8, Math.min(r.top - 6, window.innerHeight - estimatedHeight - 8));
+    setFlyout({ item, top, left: r.right + 10 });
+  };
+
+  // Tutup flyout/tooltip saat pindah halaman atau sidebar dilebarkan lagi.
+  useEffect(() => {
+    setFlyout(null);
+    setTip(null);
+  }, [currentPath, collapsed]);
+
+  useEffect(() => () => cancelClose(), [cancelClose]);
+
+  useEffect(() => {
+    if (!flyout) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFlyout(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [flyout]);
+
+  // Badge live (angka dari database) menang atas label statis seperti "AI".
+  const resolveBadge = (item: NavItem) => {
+    const live = liveBadges[item.id];
+    if (live) {
+      return { text: live.count > 99 ? '99+' : String(live.count), variant: live.severity as string, title: live.label };
+    }
+    if (item.badge) return { text: item.badge, variant: item.badgeVariant as string | undefined, title: undefined };
+    return null;
+  };
+
+  const renderBadge = (item: NavItem) => {
+    const b = resolveBadge(item);
+    if (!b) return null;
+    return (
+      <span
+        title={b.title}
+        aria-label={b.title}
+        className={`text-[11px] min-w-[22px] text-center px-1.5 py-0.5 rounded-full font-semibold tabular-nums ${getBadgeClasses(b.variant)}`}
+      >
+        {b.text}
+      </span>
+    );
+  };
+
+  const renderNavItem = (item: NavItem, collapsed: boolean, onNavigate?: () => void, depth = 0): React.ReactNode => {
+    const hasChildren = !!item.children && item.children.length > 0;
+    const active = pathMatches(item.href, currentPath, !hasChildren);
     const isExpanded = expandedItems.has(item.id);
     const Icon = item.icon;
 
+    // Menu dengan submenu, sidebar lebar: baris induk + daftar anak di bawahnya.
     if (hasChildren && !collapsed) {
       return (
         <div key={item.id}>
           <div
-            className={`flex items-center rounded-lg text-sm font-medium transition-all duration-150 ${
+            className={`flex items-center rounded-xl text-[13px] font-medium transition-all duration-150 ${
               active ? 'nav-item-active' : 'nav-item-inactive'
             }`}
           >
             <Link
               href={item.href || '/'}
-              onClick={() => expandItem(item.id)}
-              className="flex-1 flex items-center gap-3 px-3 py-2 min-w-0"
+              aria-current={active ? 'page' : undefined}
+              onClick={() => { expandItem(item.id); onNavigate?.(); }}
+              className="flex-1 flex items-center gap-3 pl-3 pr-1 py-2 min-w-0"
             >
               <Icon size={18} className="flex-shrink-0" />
               <span className="flex-1 text-left truncate">{t(item.label)}</span>
-              {item.badge && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${getBadgeClasses(item.badgeVariant)}`}>
-                  {item.badge}
-                </span>
-              )}
+              {renderBadge(item)}
             </Link>
             <button
               onClick={(e) => {
@@ -205,212 +188,233 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
                 toggleExpand(item.id);
               }}
               className="px-2.5 py-2 flex-shrink-0 text-current"
+              aria-expanded={isExpanded}
               aria-label={isExpanded ? t('Collapse submenu') : t('Expand submenu')}
             >
-              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              <ChevronDown size={14} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
             </button>
           </div>
           {isExpanded && (
-            <div className="ml-4 mt-0.5 border-l border-white/15 pl-3 space-y-0.5">
-              {item.children!.map((child) => renderNavItem(child, depth + 1))}
+            <div className="ml-[22px] mt-1 mb-1 border-l border-white/10 pl-2.5 space-y-0.5 fade-in">
+              {item.children!.map((child) => renderNavItem(child, collapsed, onNavigate, depth + 1))}
             </div>
           )}
         </div>
       );
     }
 
+    // Sidebar collapsed: ikon saja. Menu biasa -> tooltip; menu bersubmenu -> flyout berisi anak-anaknya.
     if (collapsed) {
+      const live = liveBadges[item.id];
+      const childActive = hasChildren && item.children!.some((c) => pathMatches(c.href, currentPath, true));
+      const on = active || childActive;
       return (
-        <div key={item.id} className="relative group">
+        <div
+          key={item.id}
+          className="relative"
+          onMouseEnter={(e) => {
+            if (hasChildren) openFlyout(item, e.currentTarget);
+            else showTip(live ? `${t(item.label)} · ${live.label}` : t(item.label), e.currentTarget);
+          }}
+          onMouseLeave={() => (hasChildren ? scheduleClose() : setTip(null))}
+          onFocus={(e) => { if (hasChildren) openFlyout(item, e.currentTarget); }}
+          onBlur={() => { if (hasChildren) scheduleClose(); }}
+          onKeyDown={(e) => {
+            if (hasChildren && e.key === 'ArrowRight') {
+              e.preventDefault();
+              openFlyout(item, e.currentTarget);
+              window.setTimeout(() => flyoutRef.current?.querySelector<HTMLElement>('a')?.focus(), 30);
+            }
+          }}
+        >
           <Link
             href={item.href || '/'}
-            className={`flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all duration-150 ${
-              active ? 'nav-item-active' : 'nav-item-inactive'
+            aria-label={t(item.label)}
+            aria-current={on ? 'page' : undefined}
+            aria-haspopup={hasChildren ? 'menu' : undefined}
+            className={`flex items-center justify-center w-10 h-10 mx-auto rounded-xl transition-all duration-150 ${
+              on ? 'nav-item-active' : 'nav-item-inactive'
             }`}
           >
             <Icon size={18} />
           </Link>
-          <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-foreground text-background text-xs font-medium rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-50">
-            {t(item.label)}
-          </div>
+          {live && (
+            <span
+              className={`absolute top-1 right-1 w-2.5 h-2.5 rounded-full ring-2 ring-[#0E2F26] pointer-events-none ${
+                live.severity === 'negative' ? 'bg-rose-400' : 'bg-amber-300'
+              }`}
+            />
+          )}
+          {hasChildren && (
+            <span className="absolute bottom-1 right-1 w-1 h-1 rounded-full bg-white/40 pointer-events-none" aria-hidden />
+          )}
         </div>
       );
     }
 
+    // Menu biasa / submenu, sidebar lebar.
+    const isSub = depth > 0;
     return (
       <Link
         key={item.id}
         href={item.href || '/'}
-        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
-          active ? 'nav-item-active' : 'nav-item-inactive'
-        } ${depth > 0 ? 'text-xs' : ''}`}
+        onClick={onNavigate}
+        aria-current={active ? 'page' : undefined}
+        className={`flex items-center gap-3 rounded-xl font-medium transition-all duration-150 ${
+          isSub
+            ? `px-2.5 py-1.5 text-[12.5px] ${active ? 'nav-sub-active' : 'nav-item-inactive'}`
+            : `px-3 py-2 text-[13px] ${active ? 'nav-item-active' : 'nav-item-inactive'}`
+        }`}
       >
-        <Icon size={depth > 0 ? 15 : 18} className="flex-shrink-0" />
+        <Icon size={isSub ? 15 : 18} className="flex-shrink-0" />
         <span className="flex-1 truncate">{t(item.label)}</span>
-        {item.badge && (
-          <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${getBadgeClasses(item.badgeVariant)}`}>
-            {item.badge}
-          </span>
-        )}
+        {renderBadge(item)}
       </Link>
     );
   };
 
-  const sidebarContent = (
-    <div className="flex flex-col h-full">
-      <div className={`flex items-center h-16 border-b border-white/10 flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'px-4 justify-between'}`}>
-        {!collapsed && (
-          <div className="flex items-center gap-2.5">
-            <AppLogo size={32} />
-            <div>
-              <span className="font-bold text-sm text-white tracking-tight">zafeb</span>
-              <p className="text-[10px] text-white/60 leading-none mt-0.5">{t('Accounting')}</p>
+  // Satu isi sidebar dipakai desktop (bisa collapsed) dan drawer mobile (selalu penuh).
+  const renderContent = (collapsed: boolean, mobile: boolean) => {
+    const onNavigate = mobile ? onMobileClose : undefined;
+    return (
+      <div className="flex flex-col h-full">
+        {/* Header logo -- tinggi 64px sejajar dengan Topbar; garis bawahnya menyambung ke garis Topbar */}
+        <div className={`nav-header-line flex items-center h-16 border-b border-white/[0.07] flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'px-4 justify-between'}`}>
+          {collapsed ? (
+            <BrandMark size={36} />
+          ) : (
+            <div className="flex items-center gap-3 min-w-0">
+              <BrandMark size={36} />
+              <div className="min-w-0">
+                <p className="nav-wordmark">zafeb</p>
+                <p className="nav-tagline">{t('Accounting')}</p>
+              </div>
             </div>
-          </div>
-        )}
-        {collapsed && <AppLogo size={32} />}
-        {!collapsed && (
+          )}
+          {!collapsed && !mobile && (
+            <button
+              onClick={onToggle}
+              className="p-1.5 rounded-lg text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+              aria-label={t('Collapse sidebar')}
+            >
+              <ChevronLeft size={16} />
+            </button>
+          )}
+          {mobile && (
+            <button
+              onClick={onMobileClose}
+              className="p-1.5 rounded-lg text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+              aria-label="Close menu"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+
+        {collapsed && (
           <button
             onClick={onToggle}
-            className="p-1.5 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition-colors"
-            aria-label={t('Collapse sidebar')}
+            className="flex items-center justify-center w-8 h-8 mx-auto mt-2 rounded-lg text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+            aria-label={t('Expand sidebar')}
           >
-            <ChevronLeft size={16} />
+            <ChevronRight size={16} />
           </button>
         )}
-      </div>
 
-      {collapsed && (
-        <button
-          onClick={onToggle}
-          className="flex items-center justify-center w-8 h-8 mx-auto mt-2 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition-colors"
-          aria-label={t('Expand sidebar')}
-        >
-          <ChevronRight size={16} />
-        </button>
-      )}
-
-      <nav className="flex-1 overflow-y-auto scrollbar-thin scrollbar-on-dark py-3 px-2 space-y-4">
-        {navGroups.map((group) => (
-          <div key={`group-${group.label}`}>
-            {!collapsed && (
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/50 px-3 mb-1.5">
-                {t(group.label)}
-              </p>
-            )}
-            <div className="space-y-0.5">
-              {group.items.map((item) => renderNavItem(item))}
-            </div>
-          </div>
-        ))}
-      </nav>
-
-      <div className={`border-t border-white/10 p-3 flex-shrink-0 ${collapsed ? 'flex flex-col items-center gap-2' : ''}`}>
-        {!collapsed ? (
-          <>
-            <div
-              onClick={goToSettings}
-              className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/10 transition-colors cursor-pointer mb-1"
-            >
-              <div className="w-8 h-8 rounded-full bg-highlight flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-white">{userInitials(displayName)}</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-white truncate">{displayName}</p>
-                <p className="text-xs text-white/60 truncate">{user?.role_label || '—'}</p>
-              </div>
-            </div>
-            <div className="flex gap-1">
-              <button
-                onClick={goToSettings}
-                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-white/70 hover:bg-white/10 hover:text-white transition-colors"
-              >
-                <Settings size={14} />
-                <span>{t('Settings')}</span>
-              </button>
-              <button
-                onClick={handleLogout}
-                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-white/70 hover:bg-red-500/20 hover:text-red-100 transition-colors"
-              >
-                <LogOut size={14} />
-                <span>{t('Logout')}</span>
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="w-8 h-8 rounded-full bg-highlight flex items-center justify-center">
-              <span className="text-xs font-bold text-white">{userInitials(displayName)}</span>
-            </div>
-            <button onClick={goToSettings} className="p-1.5 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition-colors" aria-label={t('Settings')}>
-              <Settings size={16} />
-            </button>
-            <button onClick={handleLogout} className="p-1.5 rounded-lg hover:bg-red-500/20 text-white/70 hover:text-red-100 transition-colors" aria-label={t('Logout')}>
-              <LogOut size={16} />
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  );
-
-  return (
-    <>
-      <aside
-        className={`hidden lg:flex flex-col h-screen sticky top-0 self-start overflow-hidden bg-nav border-r border-nav transition-sidebar flex-shrink-0 ${
-          collapsed ? 'sidebar-collapsed' : 'sidebar-expanded'
-        }`}
-      >
-        {sidebarContent}
-      </aside>
-
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-64 bg-nav border-r border-nav lg:hidden transition-transform duration-300 ${
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <div className="flex items-center justify-between h-16 px-4 border-b border-white/10">
-          <div className="flex items-center gap-2.5">
-            <AppLogo size={32} />
-            <span className="font-bold text-sm text-white">zafeb</span>
-          </div>
-          <button onClick={onMobileClose} className="p-1.5 rounded-lg hover:bg-white/10 text-white/70 hover:text-white">
-            <X size={16} />
-          </button>
-        </div>
-        <nav className="flex-1 overflow-y-auto scrollbar-thin scrollbar-on-dark py-3 px-2 space-y-4">
-          {navGroups.map((group) => (
-            <div key={`mobile-group-${group.label}`}>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/50 px-3 mb-1.5">
-                {t(group.label)}
-              </p>
+        <nav aria-label="Main navigation" className="flex-1 overflow-y-auto scrollbar-thin scrollbar-on-dark py-4 px-3 space-y-5">
+          {navGroups.map((group, gi) => (
+            <div key={`${mobile ? 'm-' : ''}group-${group.label}`}>
+              {collapsed ? (
+                gi > 0 && <div className="mx-3 mb-3 h-px bg-white/10" />
+              ) : (
+                <p className="nav-group-label">{t(group.label)}</p>
+              )}
               <div className="space-y-0.5">
-                {group.items.map((item) => {
-                  const active = isActive(item.href, !item.children?.length);
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={`mobile-${item.id}`}
-                      href={item.href || '/'}
-                      onClick={onMobileClose}
-                      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
-                        active ? 'nav-item-active' : 'nav-item-inactive'
-                      }`}
-                    >
-                      <Icon size={18} className="flex-shrink-0" />
-                      <span className="flex-1 truncate">{t(item.label)}</span>
-                      {item.badge && (
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${getBadgeClasses(item.badgeVariant)}`}>
-                          {item.badge}
-                        </span>
-                      )}
-                    </Link>
-                  );
-                })}
+                {group.items.map((item) => renderNavItem(item, collapsed, onNavigate))}
               </div>
             </div>
           ))}
         </nav>
+
+        {/* Settings: permanen di bawah, tidak ikut ter-scroll bersama daftar menu */}
+        <div className="border-t border-white/[0.07] p-3 flex-shrink-0">
+          {renderNavItem(settingsItem, collapsed, onNavigate)}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <aside
+        className={`hidden lg:flex flex-col h-screen sticky top-0 self-start overflow-hidden nav-surface border-r border-white/[0.06] transition-sidebar flex-shrink-0 ${
+          collapsed ? 'sidebar-collapsed' : 'sidebar-expanded'
+        }`}
+      >
+        {renderContent(collapsed, false)}
+      </aside>
+
+      {/* Tooltip mode collapsed (menu tanpa submenu) */}
+      {collapsed && tip && (
+        <div
+          className="hidden lg:block fixed z-[60] -translate-y-1/2 px-2.5 py-1.5 rounded-lg bg-[#0A251D] border border-white/10 text-white text-xs font-medium shadow-card-lg whitespace-nowrap pointer-events-none fade-in"
+          style={{ top: tip.top, left: tip.left }}
+        >
+          {tip.label}
+        </div>
+      )}
+
+      {/* Flyout mode collapsed (menu bersubmenu): judul = halaman induk, isi = submenu */}
+      {collapsed && flyout && (
+        <div
+          ref={flyoutRef}
+          role="menu"
+          aria-label={t(flyout.item.label)}
+          className="hidden lg:block fixed z-[60] nav-flyout fade-in"
+          style={{ top: flyout.top, left: flyout.left }}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+          onFocus={cancelClose}
+          onBlur={scheduleClose}
+        >
+          <Link
+            href={flyout.item.href || '/'}
+            onClick={() => setFlyout(null)}
+            className="nav-flyout-title"
+          >
+            {t(flyout.item.label)}
+          </Link>
+          <div className="space-y-0.5">
+            {flyout.item.children!.map((child) => {
+              const ChildIcon = child.icon;
+              const childOn = pathMatches(child.href, currentPath, true);
+              return (
+                <Link
+                  key={child.id}
+                  href={child.href || '/'}
+                  role="menuitem"
+                  aria-current={childOn ? 'page' : undefined}
+                  onClick={() => setFlyout(null)}
+                  className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition-colors ${
+                    childOn ? 'nav-sub-active' : 'nav-item-inactive'
+                  }`}
+                >
+                  <ChildIcon size={15} className="flex-shrink-0" />
+                  <span className="flex-1 truncate">{t(child.label)}</span>
+                  {renderBadge(child)}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-64 nav-surface border-r border-white/[0.06] lg:hidden transition-transform duration-300 ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {renderContent(false, true)}
       </aside>
     </>
   );

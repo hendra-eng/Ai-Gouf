@@ -135,24 +135,27 @@ export default function CompanySwitcher({ open, onOpenChange }: CompanySwitcherP
     <div ref={wrapperRef} className="relative hidden sm:block">
       <button
         onClick={() => onOpenChange(!open)}
-        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted transition-colors text-sm"
+        className="nav-chip text-sm"
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <div className="w-6 h-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
-          <Building2 size={12} className="text-primary" />
+        <div className="w-7 h-7 rounded-lg bg-muted border border-border flex items-center justify-center flex-shrink-0">
+          <Building2 size={14} className="text-muted-foreground" />
         </div>
-        <span className="font-semibold text-foreground truncate max-w-[160px] hidden lg:block">
-          {activeName ? pisahBadanUsaha(activeName).nama : 'No clients yet'}
-        </span>
-        <span className="font-semibold text-foreground lg:hidden">
-          {activeName ? companyShortCode(activeName) : '—'}
-        </span>
+        <div className="text-left leading-none min-w-0">
+          <p className="nav-chip-label">Company</p>
+          <p className="mt-1 text-[13px] font-semibold text-foreground truncate max-w-[180px] hidden lg:block">
+            {activeName ? pisahBadanUsaha(activeName).nama : 'No clients yet'}
+          </p>
+          <p className="mt-1 text-[13px] font-semibold text-foreground lg:hidden">
+            {activeName ? companyShortCode(activeName) : '—'}
+          </p>
+        </div>
         <ChevronDown size={14} className={`text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1 w-80 bg-card border border-border rounded-xl shadow-card-lg z-50 py-1 fade-in">
+        <div className="nav-panel absolute left-0 top-full mt-[14px] w-80 z-50 py-1 fade-in">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-3 py-2">Switch Company</p>
 
           {noClientsAtAll ? (
@@ -177,7 +180,7 @@ export default function CompanySwitcher({ open, onOpenChange }: CompanySwitcherP
                     onKeyDown={onKeyDown}
                     placeholder="Search company name or code…"
                     maxLength={100}
-                    className="w-full pl-8 pr-8 py-2 text-sm rounded-lg border border-border bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-[#22C55E]/40 focus:border-[#22C55E]"
+                    className="w-full pl-8 pr-8 py-2 text-sm rounded-lg border border-border bg-card text-foreground focus:outline-none focus:border-foreground"
                     role="combobox"
                     aria-expanded
                     aria-controls="company-switcher-list"
@@ -210,8 +213,8 @@ export default function CompanySwitcher({ open, onOpenChange }: CompanySwitcherP
                       onClick={() => pick(co)}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${i === highlight ? 'bg-muted' : ''}`}
                     >
-                      <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <span className="text-[10px] font-bold text-primary">{badan}</span>
+                      <div className="w-7 h-7 rounded-lg bg-muted border border-border flex items-center justify-center flex-shrink-0">
+                        <span className="text-[10px] font-bold text-foreground">{badan}</span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{nama}</p>
@@ -219,7 +222,7 @@ export default function CompanySwitcher({ open, onOpenChange }: CompanySwitcherP
                           <p className="text-[11px] text-muted-foreground truncate">{co.clientCode}</p>
                         )}
                       </div>
-                      {co.id === activeClientId && <Check size={14} className="text-primary flex-shrink-0" />}
+                      {co.id === activeClientId && <Check size={14} className="text-foreground flex-shrink-0" />}
                     </button>
                     );
                   })

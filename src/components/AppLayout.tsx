@@ -21,10 +21,9 @@ import { AuthProvider } from '@/lib/auth';
 
 interface AppLayoutProps {
   children: React.ReactNode;
-  company?: string;
 }
 
-export default function AppLayout({ children, company }: AppLayoutProps) {
+export default function AppLayout({ children }: AppLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const currentPath = usePathname();
@@ -85,10 +84,7 @@ export default function AppLayout({ children, company }: AppLayoutProps) {
 
           {/* Main area */}
           <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-            <Topbar
-              onMobileMenuToggle={() => setMobileSidebarOpen(true)}
-              company={company}
-            />
+            <Topbar onMobileMenuToggle={() => setMobileSidebarOpen(true)} />
             <main className="flex-1 overflow-y-auto scrollbar-thin">
               {/* [DIUBAH] Halaman Agentic AI (peta 3D) tampil penuh selebar area konten: tanpa batas lebar max-w-screen-2xl & padding,
                   supaya saat browser di-zoom out kanvas tidak berhenti di kanan/kiri (dulu ada tepi gelap/"dinding" di sisi layar). */}
