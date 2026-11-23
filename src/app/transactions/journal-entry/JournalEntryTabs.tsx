@@ -1,11 +1,15 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { BadgeCheck, Layers, LayoutDashboard, ReceiptText, ScanSearch, ShieldAlert } from 'lucide-react';
+import { BadgeCheck, CalendarDays, ChevronDown, Layers, LayoutDashboard, Plus, ReceiptText, ScanSearch, ShieldAlert, Upload } from 'lucide-react';
+import { toast } from 'sonner';
 import { salesFont } from '@/app/transactions/sales/components/salesFont';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
+import ImportJournalModal from '@/app/transactions/journal-entry/components/ImportJournalModal';
+import NewJournalEntryModal from '@/app/transactions/journal-entry/components/NewJournalEntryModal';
 import { jeFlagReasons, mapJeDraftToUi, useJeDrafts } from '@/lib/journalEntryStore';
 
 type TabKey = 'overview' | 'source' | 'transaction' | 'preview' | 'exceptions' | 'posted';
@@ -45,7 +49,7 @@ const tabBadgeCls = 'inline-flex min-w-[18px] items-center justify-center rounde
 
 interface JournalEntryTabsProps {
   activeTab: TabKey;
-  /** Tombol aksi di kanan judul halaman (posisi sama dengan tombol rentang tanggal di Sales). */
+  /** Tombol aksi tambahan di kanan judul halaman, tampil sebelum Upload File & Add Transaction. */
   actions?: React.ReactNode;
   /** Tombol aksi di baris yang sama dengan nama tab, rata kanan (gaya Sales > Posted / Source Data). */
   tabActions?: React.ReactNode;
@@ -54,6 +58,22 @@ interface JournalEntryTabsProps {
 export default function JournalEntryTabs({ activeTab, actions, tabActions }: JournalEntryTabsProps) {
   const { t } = useLanguage();
   const { user } = useAuth();
+  const { activeClientId } = useActiveClient();
+  // Upload File & Add Transaction -- tampil di header SEMUA tab Journal Entry (posisi sama dgn Sales/Purchase).
+  // Upload File = ImportJournalModal, Add Transaction = NewJournalEntryModal (ex "New Journal Entry").
+  // Store jurnal memanggil notifyJeChanged() setelah simpan/upload, jadi daftar di tab lain ter-refresh otomatis.
+  const [showImport, setShowImport] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const userId = user?.id ?? null;
+  const createdByName = user?.nama || user?.username || 'System';
+
+  const handleUploadClick = () => {
+    if (!userId || !activeClientId) {
+      toast.error('Select a company in the header before uploading a file.');
+      return;
+    }
+    setShowImport(true);
+  };
 
   // Badge di tab "Exceptions" -- jumlah JE bermasalah dari data asli (aturan sama dengan halaman
   // Exceptions: jeFlagReasons), bukan angka statis. Cache hook dibagi dengan halaman lain, jadi tidak fetch ganda.
@@ -71,8 +91,38 @@ export default function JournalEntryTabs({ activeTab, actions, tabActions }: Jou
           <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">{t('Journal Entry')}</h1>
           <p className="mt-1 text-sm font-medium text-neutral-500">{t(DESCRIPTIONS[activeTab])}</p>
         </div>
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
+        <div className="flex items-center gap-2">
+          {/* Tombol tanggal -- desain sama dengan header Sales (urutan: tanggal, Upload File, Add Transaction). */}
+          <button className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
+            <CalendarDays size={14} className="text-neutral-500" />
+            <span className="font-medium text-neutral-900">{`01 Jan ${new Date().getFullYear()} – 31 Dec ${new Date().getFullYear()}`}</span>
+            <ChevronDown size={14} className="text-neutral-500" />
+          </button>
+          {actions}
+          <button
+            type="button"
+            onClick={handleUploadClick}
+            disabled={!userId || !activeClientId}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Upload size={14} /> Upload File
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowNew(true)}
+            disabled={!userId}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus size={14} /> Add Journal Entry
+          </button>
+        </div>
       </div>
+      {showImport && userId && (
+        <ImportJournalModal clientId={userId} createdByName={createdByName} onClose={() => setShowImport(false)} />
+      )}
+      {showNew && userId && (
+        <NewJournalEntryModal clientId={userId} createdByName={createdByName} onClose={() => setShowNew(false)} />
+      )}
 
       {/* Tabs -- sama dengan halaman Sales */}
       <div className={tabBarCls}>

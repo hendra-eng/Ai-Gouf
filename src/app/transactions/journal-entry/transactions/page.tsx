@@ -3,12 +3,10 @@
 import React, { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
-  Search, ArrowUpDown, Eye, X, Plus, Upload,
+  Search, ArrowUpDown, Eye, X,
   Clock, CheckCircle, Send, AlertTriangle, ShieldCheck,
 } from 'lucide-react';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
-import NewJournalEntryModal from '@/app/transactions/journal-entry/components/NewJournalEntryModal';
-import ImportJournalModal from '@/app/transactions/journal-entry/components/ImportJournalModal';
 import JeKpiTile, { type KpiTone } from '@/app/transactions/journal-entry/components/JeKpiTile';
 import JeFilterSelect from '@/app/transactions/journal-entry/components/JeFilterSelect';
 import JeTablePagination from '@/app/transactions/journal-entry/components/JeTablePagination';
@@ -85,8 +83,6 @@ export default function JournalEntryTransactionPage() {
   const { lines: selectedLines } = useJeDraftLines(selectedRow?.id);
   const mappedLines = useMemo(() => selectedLines.map(mapJeDraftLineToUi), [selectedLines]);
 
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
 
   const { clients, activeClientId, activeClientName } = useActiveClient();
   const companyName = clients.find(c => c.id === activeClientId)?.companyName || activeClientName || undefined;
@@ -171,26 +167,7 @@ export default function JournalEntryTransactionPage() {
 
   return (
     <div className="fade-in">
-      <JournalEntryTabs
-        activeTab="transaction"
-        actions={
-          <>
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50"
-            >
-              <Upload size={14} />
-              Import
-            </button>
-            <button
-              onClick={() => setShowNewModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
-            >
-              <Plus size={14} /> New Journal Entry
-            </button>
-          </>
-        }
-      />
+      <JournalEntryTabs activeTab="transaction" />
 
       <div className="pt-5 space-y-4">
         {/* KPI Cards */}
@@ -426,20 +403,6 @@ export default function JournalEntryTransactionPage() {
         </div>
       </div>
 
-      {showNewModal && clientId && (
-        <NewJournalEntryModal
-          clientId={clientId}
-          createdByName={user?.nama || user?.username || 'System'}
-          onClose={() => setShowNewModal(false)}
-        />
-      )}
-      {showImportModal && clientId && (
-        <ImportJournalModal
-          clientId={clientId}
-          createdByName={user?.nama || user?.username || 'System'}
-          onClose={() => setShowImportModal(false)}
-        />
-      )}
     </div>
   );
 }

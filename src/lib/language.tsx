@@ -1523,6 +1523,7 @@ const translations: Dict = {
   'Semua Project': { en: 'All Projects', id: 'Semua Project', zh: '全部项目' },
   'Cari no. invoice, customer, deskripsi...': { en: 'Search invoice no., customer, description...', id: 'Cari no. invoice, customer, deskripsi...', zh: '搜索发票号、客户、描述...' },
   'Tambah Transaksi': { en: 'Add Transaction', id: 'Tambah Transaksi', zh: '添加交易' },
+  'Add Sales Invoice': { en: 'Add Sales Invoice', id: 'Tambah Faktur Penjualan', zh: '添加销售发票' },
   'Tampilkan Kolom': { en: 'Show Columns', id: 'Tampilkan Kolom', zh: '显示列' },
   'Daftar Transaksi Penjualan': { en: 'Sales Transaction List', id: 'Daftar Transaksi Penjualan', zh: '销售交易列表' },
   'Memuat...': { en: 'Loading...', id: 'Memuat...', zh: '加载中...' },

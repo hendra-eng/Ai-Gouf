@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { BadgeCheck, CalendarDays, ChevronDown, Layers, LayoutDashboard, Plus, ReceiptText, ScanSearch, ShieldAlert } from 'lucide-react';
+import { BadgeCheck, CalendarDays, ChevronDown, Layers, LayoutDashboard, Plus, ReceiptText, ScanSearch, ShieldAlert, Upload } from 'lucide-react';
+import { toast } from 'sonner';
 import SalesOverview from './SalesOverview';
 import SalesSourceData from './SalesSourceData';
 import SalesTransaction from './SalesTransaction';
@@ -13,7 +14,7 @@ import { salesFont } from './salesFont';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
-import { useSalesExceptions } from '@/lib/salesStore';
+import { useSalesExceptions, uploadSalesSourceFile } from '@/lib/salesStore';
 
 const TABS: { key: string; label: string; icon: React.ElementType }[] = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -46,6 +47,64 @@ export default function SalesClient() {
     if (t && TABS.some(x => x.key === t)) setActiveTab(t);
   }, []);
 
+  // Upload File (dipindah dari tab Source Data ke header, tampil di semua tab Sales). File dikirim
+  // sungguhan ke backend lewat uploadSalesSourceFile(); store otomatis refresh
+  // (notifySalesChanged), jadi tab Source Data langsung menampilkan hasilnya.
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleUploadClick = () => {
+    if (!activeClientId) {
+      toast.error(t('Select a company in the header before uploading a file.'));
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    if (!user?.id) {
+      toast.error(t('Sesi login tidak ditemukan, silakan login ulang.'));
+      return;
+    }
+    if (!activeClientId) {
+      toast.error(t('Select a company in the header before uploading a file.'));
+      return;
+    }
+    setIsUploading(true);
+    let berhasil = 0;
+    let butuhReview = 0;
+    try {
+      for (const file of files) {
+        try {
+          const hasil = await uploadSalesSourceFile(file, activeClientId);
+          if (hasil.template_matched) {
+            berhasil += 1;
+            toast.success(t('File berhasil diekstrak'), {
+              description: `${file.name}: ${hasil.rows_extracted} ${t('baris ditemukan.')}`,
+            });
+          } else {
+            butuhReview += 1;
+            toast.info(t('Belum ada template yang cocok'), {
+              description: `${file.name} ${t('ditandai "Butuh Review" -- perlu template baru untuk klien/format ini.')}`,
+            });
+          }
+        } catch (err) {
+          toast.error(`${file.name}: ${err instanceof Error ? err.message : t('Gagal mengunggah file')}`);
+        }
+      }
+      if (files.length > 1) {
+        toast.message(t('Upload selesai'), {
+          description: `${berhasil} ${t('berhasil diekstrak')}, ${butuhReview} ${t('butuh review')}.`,
+        });
+      }
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
   // Badge di tab "Exceptions" -- jumlah exception yang BELUM selesai
   // (Open/In Review), dari data asli (financial_transaction_sales_
   // exceptions), bukan lagi angka statis "24".
@@ -73,6 +132,20 @@ export default function SalesClient() {
             <span className="font-medium text-neutral-900">{`01 Jan ${new Date().getFullYear()} – 31 Dec ${new Date().getFullYear()}`}</span>
             <ChevronDown size={14} className="text-neutral-500" />
           </button>
+          <input ref={fileInputRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.txt" className="hidden" onChange={handleFilesSelected} />
+          <button
+            onClick={handleUploadClick}
+            disabled={isUploading || !activeClientId}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Upload size={14} /> {isUploading ? t('Mengunggah...') : t('Upload File')}
+          </button>
+          <Link
+            href="/transactions/sales/invoice/new"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+          >
+            <Plus size={14} /> {t('Add Sales Invoice')}
+          </Link>
         </div>
       </div>
 
@@ -93,16 +166,6 @@ export default function SalesClient() {
           ))}
         </nav>
         {(activeTab === 'source-data' || activeTab === 'posted') && <div ref={setActionSlot} className="flex items-center" />}
-        {activeTab === 'sales-transaction' && (
-          <div className={`${salesFont.className} flex items-center justify-end pb-2 lg:pb-0`}>
-            <Link
-              href="/transactions/sales/invoice/new"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
-            >
-              <Plus size={13} /> {t('Tambah Transaksi')}
-            </Link>
-          </div>
-        )}
       </div>
 
       {/* Tab Content */}

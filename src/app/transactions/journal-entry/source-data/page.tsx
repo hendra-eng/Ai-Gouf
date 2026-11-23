@@ -6,14 +6,13 @@ import { toast } from 'sonner';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
 import { salesFont as sourceFont } from '@/app/transactions/sales/components/salesFont';
 import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, FileText, ShieldCheck, MoreHorizontal, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
-import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
 import {
   useJeSourceFiles, useJeSourceRows, deleteJeSourceFile, promoteJeSourceFileToJournals, listJeImportTemplates,
   type BackendJeSourceFile,
 } from '@/lib/journalEntryStore';
 import { formatTanggalWaktu, formatTanggalSingkat } from '@/lib/salesStore';
-import ImportJournalModal, { HEADER_ALIASES, JE_REQUIRED_COLUMNS } from '@/app/transactions/journal-entry/components/ImportJournalModal';
+import { HEADER_ALIASES, JE_REQUIRED_COLUMNS } from '@/app/transactions/journal-entry/components/ImportJournalModal';
 import MappingRulesModal from '@/app/transactions/components/MappingRulesModal';
 import { downloadBlob } from '@/app/transactions/components/exportTemplates/exportExcelShared';
 import { JeErrorBanner } from '@/app/transactions/journal-entry/components/JeNotice';
@@ -111,8 +110,6 @@ function buildPageItems(current: number, total: number): (number | '…')[] {
 }
 
 export default function SourceDataPage() {
-  const { user } = useAuth();
-  const userId = user?.id ?? null;
   const { activeClientId } = useActiveClient();
 
   const { files: sourceFiles, loading, error, refresh } = useJeSourceFiles(activeClientId);
@@ -175,7 +172,6 @@ export default function SourceDataPage() {
     }
   };
 
-  const [showImport, setShowImport] = useState(false);
   const [showMapping, setShowMapping] = useState(false);
   const loadTemplates = useCallback(() => listJeImportTemplates(activeClientId ?? ''), [activeClientId]);
 
@@ -232,9 +228,6 @@ export default function SourceDataPage() {
 
   const actionBar = (
     <div className={`${sourceFont.className} flex flex-wrap items-center justify-end gap-2 pb-2 lg:pb-0`}>
-      <button onClick={() => setShowImport(true)} disabled={!userId || !activeClientId} className={ACTION_BTN_SECONDARY}>
-        <Upload size={13} /> Upload File
-      </button>
       <button onClick={handleDownloadTemplate} className={ACTION_BTN_SECONDARY}>
         <Download size={13} /> Excel Template
       </button>
@@ -262,13 +255,6 @@ export default function SourceDataPage() {
   return (
     <div className="fade-in">
       <JournalEntryTabs activeTab="source" tabActions={actionBar} />
-      {showImport && userId && (
-        <ImportJournalModal
-          clientId={userId}
-          createdByName={user?.nama || user?.username || 'System'}
-          onClose={() => { setShowImport(false); refresh(); }}
-        />
-      )}
       {showMapping && (
         <MappingRulesModal
           onClose={() => setShowMapping(false)}

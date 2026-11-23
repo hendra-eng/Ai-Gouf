@@ -1,7 +1,8 @@
 'use client';
 
-// Tab Bank Feed: upload rekening koran (PDF/Excel/CSV) per akun bank -> baris
+// Tab Source Data: rekening koran (PDF/Excel/CSV) per akun bank -> baris
 // mutasi tersimpan di database (financial_transaction_bank_cash_mutations).
+// Upload File sekarang ada di header semua tab (CashBankTabs + useStatementUpload.tsx).
 // Upload = preview dulu (backend bank_statement_extractor: tabel PDF / posisi
 // kata / OCR + validasi saldo). File yang template-nya cocok & lolos validasi
 // langsung di-import; selain itu muncul StatementReviewModal untuk mengecek /
@@ -12,18 +13,17 @@
 // (BankMappings -- nomor rekening / judul dokumen / template / nama bank);
 // upload dengan akun pilihan manual mencatat mapping baru untuk rekening itu.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
-  Upload, FileText, ShieldCheck, AlertTriangle, CheckCircle, Loader2, Trash2, Pencil, EyeOff, Undo2, FileUp,
+  FileText, ShieldCheck, AlertTriangle, CheckCircle, Trash2, Pencil, EyeOff, Undo2,
 } from 'lucide-react';
 import BankMappings from '../components/BankMappings';
 import CashBankTabs from '../components/CashBankTabs';
 import ConfidenceBadge from '../components/ConfidenceBadge';
 import ExtractionTemplates from '../components/ExtractionTemplates';
 import ReviewLineModal from '../components/ReviewLineModal';
-import StatementReviewModal from '../components/StatementReviewModal';
 import {
   FIELD_CLS, ICON_BTN, ICON_BTN_DANGER, PANEL_ICON_CHIP, TD_CLS, TH_CLS, TR_CLS,
   FileTypeChip, FilterSelect, MiniBar, SourceKpiTile, SourcePanel, StatusPill, TablePagination,
@@ -31,10 +31,9 @@ import {
 } from '../components/sourceUi';
 import { formatIDR } from '../lib/formatMoney';
 import { useBankFeed, type BankFeedMutation, type MatchStatus } from '../context/BankFeedContext';
-import { useActiveClient } from '@/lib/activeClient';
 import {
-  useBcAccounts, METHOD_LABEL, TX_STATUS_LABEL, VALIDATION_LABEL,
-  type BcPreview, type BcStatement, type BcUploadResult,
+  METHOD_LABEL, TX_STATUS_LABEL, VALIDATION_LABEL,
+  type BcStatement,
 } from '@/lib/bankCashStore';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
@@ -46,173 +45,6 @@ const VALIDATION_TONE: Record<NonNullable<BcStatement['validation']>['status'], 
 
 /** Baris hasil ekstraksi yang meragukan & belum dicocokkan -> wajib review (dilewati auto-match). */
 const perluReview = (m: BankFeedMutation) => m.confidence === 'low' && m.status !== 'matched';
-
-function toastImport({ data, message }: { data: BcUploadResult; message: string }) {
-  const tpl = data.template
-    ? data.template.action === 'used'
-      ? ` Read with template “${data.template.name}”.`
-      : ` Saved as extraction template “${data.template.name}”.`
-    : '';
-  const map = data.bank_mapping
-    ? data.bank_mapping.action === 'created'
-      ? ` Bank mapping saved: ${data.bank_mapping.bank_name}${data.bank_mapping.account_number ? ` ${data.bank_mapping.account_number}` : ''} → ${kodeAkun(data.bank_account_code)}.`
-      : ''
-    : '';
-  const auto = data.auto_match;
-  const arahan = auto
-    ? `Auto-match: ${auto.matched} matched to invoices, ${auto.rule_matched} recorded by auto rules (saved as DRAFT, review in Journal Preview). ${auto.skipped} line(s) still need matching in the Reconciliation tab.`
-      + (data.confidence?.low ? ' Lines marked “Needs review” are skipped until you review them below.' : '')
-    : data.confidence?.low
-      ? 'Lines marked “Needs review” are skipped by auto-match until you review them below.'
-      : 'Match the imported lines in the Reconciliation tab.';
-  toast.success(`${message} Posted to ${kodeAkun(data.bank_account_code)} - ${data.bank_account_name}.`, {
-    description: arahan + tpl + map,
-  });
-  if (data.warnings.length) toast.warning(data.warnings.join(' '));
-}
-
-/** Pilihan akun "Auto-detect": akun tujuan dari mapping bank (nomor rekening / judul dokumen / template). */
-const AUTO = '';
-
-function UploadPanel() {
-  const { previewFile, importFile, importing } = useBankFeed();
-  const { activeClientId } = useActiveClient();
-  const { accounts, loading: loadingAkun } = useBcAccounts(activeClientId ? String(activeClientId) : null);
-  // Rekening koran untuk akun bank; laporan kas tunai (mis. Laporan Kas Kasir) untuk akun kas.
-  const akunBank = useMemo(() => accounts.filter((a) => a.cash_type === 'bank' && a.is_active), [accounts]);
-  const akunKas = useMemo(
-    () => accounts.filter((a) => (a.cash_type === 'cash_on_hand' || a.cash_type === 'petty_cash') && a.is_active),
-    [accounts],
-  );
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [bankCoaId, setBankCoaId] = useState(AUTO);
-  const [isDragging, setIsDragging] = useState(false);
-  const [review, setReview] = useState<{ file: File; preview: BcPreview } | null>(null);
-
-  useEffect(() => {
-    if (bankCoaId !== AUTO && ![...akunBank, ...akunKas].some((a) => a.id === bankCoaId)) setBankCoaId(AUTO);
-  }, [akunBank, akunKas, bankCoaId]);
-
-  const handleFile = async (file: File | null) => {
-    if (!file) return;
-    try {
-      const preview = await previewFile(file, bankCoaId);
-      // Pola sudah dikenal (template) & seluruh saldo cocok & akun tidak bentrok dengan mapping
-      // -> langsung import tanpa modal, ke akun hasil mapping / pilihan user.
-      if (preview.template_matched && preview.validation.status === 'verified' && !preview.already_uploaded_on
-          && !preview.bank_mapping?.conflict) {
-        toastImport(await importFile(file, preview.bank_coa_id));
-      } else {
-        setReview({ file, preview });
-      }
-    } catch (e: any) {
-      if (e?.code === 'BANK_ACCOUNT_REQUIRED') {
-        toast.error(e.message, { duration: 10000 });
-      } else {
-        toast.error(e?.message || 'Failed to import the bank statement.');
-      }
-    } finally {
-      if (inputRef.current) inputRef.current.value = '';
-    }
-  };
-
-  const akunTerpilih = [...akunBank, ...akunKas].find((a) => a.id === bankCoaId);
-
-  return (
-    <>
-      <SourcePanel
-        title="Import Bank Statement"
-        subtitle="PDF (including scanned), Excel or CSV, or a cash report. Every line is checked against the running balance and statement totals."
-        leading={<span className={PANEL_ICON_CHIP}><Upload size={17} /></span>}
-        action={
-          <FilterSelect
-            value={bankCoaId}
-            onChange={setBankCoaId}
-            disabled={importing || loadingAkun}
-            ariaLabel="Target account"
-            className="min-w-[260px] max-w-[340px] shrink-0"
-            menuMaxWidth={380}
-            options={[
-              { value: AUTO, label: loadingAkun ? 'Loading accounts...' : 'Auto-detect account (bank mapping)' },
-              ...akunBank.map((a) => ({ value: a.id, label: `${kodeAkun(a.code)} - ${a.name}`, group: 'Bank accounts' })),
-              ...akunKas.map((a) => ({ value: a.id, label: `${kodeAkun(a.code)} - ${a.name}`, group: 'Cash accounts' })),
-            ]}
-          />
-        }
-      >
-        <div
-          role="button"
-          tabIndex={0}
-          onDragOver={(e) => { e.preventDefault(); if (!importing) setIsDragging(true); }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setIsDragging(false);
-            if (importing) return;
-            handleFile(e.dataTransfer.files?.[0] || null);
-          }}
-          onClick={() => { if (!importing) inputRef.current?.click(); }}
-          onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !importing) { e.preventDefault(); inputRef.current?.click(); } }}
-          className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed py-9 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-neutral-800 ${
-            importing
-              ? 'cursor-wait border-neutral-300 bg-neutral-50'
-              : isDragging
-                ? 'cursor-copy border-neutral-800 bg-neutral-100'
-                : 'cursor-pointer border-neutral-300 bg-neutral-50/60 hover:border-neutral-600 hover:bg-neutral-50'
-          }`}
-        >
-          {importing ? (
-            <>
-              <span className={PANEL_ICON_CHIP}><Loader2 size={18} className="animate-spin" /></span>
-              <p className="text-sm font-semibold text-neutral-900">Reading bank statement…</p>
-              <p className="text-xs font-medium text-neutral-500">Long PDFs may take a moment.</p>
-            </>
-          ) : (
-            <>
-              <span className={PANEL_ICON_CHIP}><FileUp size={18} /></span>
-              <p className="text-sm font-semibold text-neutral-900">Drop a file here or click to browse</p>
-              <p className="text-xs font-medium text-neutral-500">
-                {akunTerpilih
-                  ? `Statement for account ${kodeAkun(akunTerpilih.code)} - ${akunTerpilih.name}`
-                  : 'Target account is detected from the bank / account number in the file'}
-              </p>
-              <div className="mt-1 flex items-center gap-1.5">
-                {['PDF', 'XLSX', 'XLS', 'CSV'].map((t) => (
-                  <span key={t} className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-neutral-600">{t}</span>
-                ))}
-              </div>
-            </>
-          )}
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".pdf,.xlsx,.xls,.csv"
-            className="hidden"
-            disabled={importing}
-            onChange={(e) => handleFile(e.target.files?.[0] || null)}
-          />
-        </div>
-        <p className="mt-3 text-[11px] font-medium text-neutral-500">
-          Known layouts are imported straight away; new ones are shown for review first. Files and lines already uploaded are skipped.
-        </p>
-      </SourcePanel>
-
-      {review && (
-        <StatementReviewModal
-          file={review.file}
-          bankCoaId={review.preview.bank_coa_id}
-          bankLabel={`${kodeAkun(review.preview.bank_account_code)} - ${review.preview.bank_account_name}`}
-          initial={review.preview}
-          onClose={() => setReview(null)}
-          onImported={(hasil) => {
-            setReview(null);
-            toastImport(hasil);
-          }}
-        />
-      )}
-    </>
-  );
-}
 
 function StatementList() {
   const { statements, removeStatement } = useBankFeed();
@@ -453,8 +285,6 @@ export default function BankFeedPage() {
         ))}
       </div>
 
-      <UploadPanel />
-
       {error && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
           <span>{error}</span>
@@ -515,7 +345,7 @@ export default function BankFeedPage() {
               {!(loading && mutations.length === 0) && filtered.length === 0 && (
                 <tr>
                   <td colSpan={lineHeads.length} className="px-2 py-10 text-center text-xs text-neutral-500">
-                    {mutations.length === 0 ? 'No lines yet. Import a bank statement above to get started.' : 'No lines match this filter.'}
+                    {mutations.length === 0 ? 'No lines yet. Click Upload File at the top to import a bank statement.' : 'No lines match this filter.'}
                   </td>
                 </tr>
               )}

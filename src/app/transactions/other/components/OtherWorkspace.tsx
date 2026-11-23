@@ -42,6 +42,10 @@ const ACTION_BTN_BASE = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5
 const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
 const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
 
+// Tombol header (Upload File & Add Transaction) -- ukuran & gaya sama dengan header Sales / Purchase / Journal Entry.
+const HEADER_BTN_SECONDARY = 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50';
+const HEADER_BTN_PRIMARY = 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50';
+
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutGrid },
   { id: 'categories', label: 'Categories', icon: Tag },
@@ -95,11 +99,10 @@ export default function OtherWorkspace() {
 
   const ctx: Ctx | null = kid ? { clientId: kid, meta: meta.data, txs: txs.data, loading: txs.loading && !txs.data.length, error: txs.error || meta.error, open: setBuka } : null;
   const templates = (meta.data?.templates ?? []).filter(t => t.is_active);
-  // Tombol aksi hanya tampil di tab yang relevan.
-  const showImport = tab === 'overview';
+  // Upload File & Add Transaction ada di header SEMUA tab (posisi sama dgn Sales/Purchase/Journal Entry).
+  // Export & Templates tetap di baris tab dan hanya tampil di tab yang relevan.
   const showExport = tab === 'overview' || tab === 'categories' || tab === 'posted';
   const showTemplates = tab === 'overview' || tab === 'categories';
-  const showCreate = tab === 'overview' || tab === 'categories';
 
   return (
     <div className="min-h-screen bg-background pb-16">
@@ -108,6 +111,23 @@ export default function OtherWorkspace() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Other Transactions</h1>
             <p className="mt-1 text-sm font-medium text-neutral-500">Special business events outside Sales, Purchase, and Cash &amp; Bank.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Upload File = ex tombol "Import" (OtherImportModal; modal butuh meta, jadi tombol nonaktif sampai meta termuat). */}
+            <button type="button" disabled={!kid || !meta.data} onClick={() => setModal('import')} className={HEADER_BTN_SECONDARY}><Upload size={14} /> Upload File</button>
+            {/* Add Transaction = ex tombol "Create Transaction" (dropdown template -> /transactions/other/create). */}
+            <Menu width="w-72" button={() => (
+              <button type="button" disabled={!kid} className={HEADER_BTN_PRIMARY}><Plus size={14} /> Add Other Transaction <ChevronDown size={12} /></button>
+            )}>
+              {close => <>
+                {templates.map(t => (
+                  <MenuItem strong key={t.id} href={createHref(t.type_key, t.id)} onClick={close}>
+                    <MonoTypeIcon type={t.type_key} /> <span className="flex-1">{t.name}</span>{!t.is_system && <span className="text-[10px] text-neutral-600">Custom</span>}
+                  </MenuItem>
+                ))}
+                {!templates.length && <p className="px-3 py-2 text-xs text-neutral-600">Loading templates...</p>}
+              </>}
+            </Menu>
           </div>
         </div>
         <div className={tabBarCls}>
@@ -122,10 +142,7 @@ export default function OtherWorkspace() {
             );
           })}
         </nav>
-        {(showImport || showExport || showTemplates || showCreate) && <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 whitespace-nowrap pb-2 lg:flex-nowrap lg:pb-0">
-            {showImport && (
-              <button type="button" disabled={!kid} onClick={() => setModal('import')} className={ACTION_BTN_SECONDARY}><Upload size={13} /> Import</button>
-            )}
+        {(showExport || showTemplates) && <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 whitespace-nowrap pb-2 lg:flex-nowrap lg:pb-0">
             {showExport && (
               <Menu width="w-44" button={() => (
                 <button type="button" disabled={!kid || exporting} className={ACTION_BTN_SECONDARY}>{exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} Export</button>
@@ -139,20 +156,6 @@ export default function OtherWorkspace() {
             )}
             {showTemplates && (
               <button type="button" disabled={!kid} onClick={() => setModal('templates')} className={ACTION_BTN_SECONDARY}><FileText size={13} /> Templates</button>
-            )}
-            {showCreate && (
-              <Menu width="w-72" button={() => (
-                <button type="button" disabled={!kid} className={ACTION_BTN_PRIMARY}><Plus size={13} /> Create Transaction <ChevronDown size={12} /></button>
-              )}>
-                {close => <>
-                  {(templates.length ? templates : []).map(t => (
-                    <MenuItem strong key={t.id} href={createHref(t.type_key, t.id)} onClick={close}>
-                      <MonoTypeIcon type={t.type_key} /> <span className="flex-1">{t.name}</span>{!t.is_system && <span className="text-[10px] text-neutral-600">Custom</span>}
-                    </MenuItem>
-                  ))}
-                  {!templates.length && <p className="px-3 py-2 text-xs text-neutral-600">Loading templates...</p>}
-                </>}
-              </Menu>
             )}
         </div>}
         </div>

@@ -1,17 +1,16 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { salesFont as sourceFont } from './salesFont';
 import ExcelJS from 'exceljs';
 import { toast } from 'sonner';
 import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, FileText, ShieldCheck, MoreHorizontal, ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
-import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
 import { downloadBlob } from '../../components/exportTemplates/exportExcelShared';
 import {
-  useSalesSourceFiles, uploadSalesSourceFile, updateSalesSourceFile, deleteSalesSourceFile,
+  useSalesSourceFiles, updateSalesSourceFile, deleteSalesSourceFile,
   useSalesSourceRows, promoteSourceFileToInvoices, formatTanggalWaktu, formatTanggalSingkat,
   type BackendSalesSourceFile,
 } from '@/lib/salesStore';
@@ -150,8 +149,6 @@ function buildPageItems(current: number, total: number): (number | '…')[] {
 // (perilaku lama), null = slot belum siap (tunggu), element = portal ke slot.
 export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLElement | null } = {}) {
   const { t } = useLanguage();
-  const { user } = useAuth();
-  const userId = user?.id ?? null;
 
   // [FIX] Klien untuk upload diambil dari dropdown "Switch Company" di header
   // (useActiveClient) -- TIDAK ada lagi dropdown klien terpisah di halaman ini.
@@ -238,8 +235,6 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
     }
   };
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
   const [showMappingModal, setShowMappingModal] = useState(false);
   const [mappingRules, setMappingRules] = useState<Record<string, string>>(
     () => Object.fromEntries(MAPPING_FIELDS.map((f) => [f.key, f.defaultSource]))
@@ -267,63 +262,6 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
         : Object.fromEntries(MAPPING_FIELDS.map((f) => [f.key, f.defaultSource]))
     );
     setShowMappingModal(true);
-  };
-
-  const handleUploadClick = () => {
-    if (!managementClientId) {
-      toast.error(t('Select a company in the header before uploading a file.'));
-      return;
-    }
-    fileInputRef.current?.click();
-  };
-
-  // ── Upload File: file dikirim SUNGGUHAN (multipart) ke backend lewat
-  // uploadSalesSourceFile() -- backend yang mendeteksi pola kolom,
-  // mencocokkan ke template pola yang sudah dipelajari untuk klien+format
-  // ini, lalu langsung mengekstrak barisnya ke source_rows kalau cocok.
-  // Lihat root/SALES_IMPORT_TEMPLATES.md untuk alur lengkapnya. ──
-  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
-    if (!userId) {
-      toast.error(t('Sesi login tidak ditemukan, silakan login ulang.'));
-      return;
-    }
-    if (!managementClientId) {
-      toast.error(t('Select a company in the header before uploading a file.'));
-      return;
-    }
-    setIsUploading(true);
-    let berhasil = 0;
-    let butuhReview = 0;
-    try {
-      for (const file of files) {
-        try {
-          const hasil = await uploadSalesSourceFile(file, managementClientId);
-          if (hasil.template_matched) {
-            berhasil += 1;
-            toast.success(t('File berhasil diekstrak'), {
-              description: `${file.name}: ${hasil.rows_extracted} ${t('baris ditemukan.')}`,
-            });
-          } else {
-            butuhReview += 1;
-            toast.info(t('Belum ada template yang cocok'), {
-              description: `${file.name} ${t('ditandai "Butuh Review" -- perlu template baru untuk klien/format ini.')}`,
-            });
-          }
-        } catch (err) {
-          toast.error(`${file.name}: ${err instanceof Error ? err.message : t('Gagal mengunggah file')}`);
-        }
-      }
-      if (files.length > 1) {
-        toast.message(t('Upload selesai'), {
-          description: `${berhasil} ${t('berhasil diekstrak')}, ${butuhReview} ${t('butuh review')}.`,
-        });
-      }
-    } finally {
-      setIsUploading(false);
-      e.target.value = '';
-    }
   };
 
   const handleDownloadTemplate = async () => {
@@ -408,9 +346,6 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
 
   const actionBar = (
     <div className={`${sourceFont.className} flex flex-wrap items-center justify-end gap-2 pb-2 lg:pb-0`}>
-      <button onClick={handleUploadClick} disabled={isUploading || !managementClientId} className={ACTION_BTN_SECONDARY}>
-        <Upload size={13} /> {isUploading ? t('Mengunggah...') : t('Upload File')}
-      </button>
       <button onClick={handleDownloadTemplate} className={ACTION_BTN_SECONDARY}>
         <Download size={13} /> {t('Template Excel')}
       </button>
@@ -425,8 +360,6 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
 
   return (
     <div className={`${sourceFont.className} space-y-5`}>
-      <input ref={fileInputRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.txt" className="hidden" onChange={handleFilesSelected} />
-
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700 flex items-center justify-between">
           <span>{error}</span>

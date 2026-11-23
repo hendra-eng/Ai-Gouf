@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Plus } from 'lucide-react';
+import { CalendarDays, ChevronDown, Loader2, Plus, Upload } from 'lucide-react';
+import { useStatementUpload } from './useStatementUpload';
 import CashBankTransactionModal from './CashBankTransactionModal';
 import { LayoutDashboard, ArrowUpRight, ArrowDownLeft, Database, Scale, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
@@ -15,8 +16,10 @@ interface Tab {
   icon: React.ComponentType<{ size?: number | string; strokeWidth?: number | string; className?: string }>;
 }
 
-// Tab Cash & Bank + tombol "Transaksi Baru" (input manual kas/bank tanpa
-// rekening koran, lihat CashBankTransactionModal.tsx).
+// Tab Cash & Bank + header: [tanggal] [Upload File] [Add Cash/Bank Transaction] -- sama dengan
+// Sales/Purchase/Journal Entry/Other, tampil di SEMUA tab. Add Cash/Bank Transaction = input manual
+// kas/bank tanpa rekening koran (CashBankTransactionModal.tsx); Upload File = import rekening koran
+// (useStatementUpload.tsx).
 const tabs: Tab[] = [
   {
     id: 'tab-overview',
@@ -90,13 +93,40 @@ export default function CashBankTabs() {
 
   const activeTab = tabs.find((tab) => isActive(tab.href)) ?? tabs[0];
   const [formBaru, setFormBaru] = useState(false);
+  const { openPicker, importing, canUpload, ui: uploadUi } = useStatementUpload();
 
   return (
     <div className="mb-4">
-      <div className="mb-4">
-        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Cash & Bank</h1>
-        <p className="mt-1 text-sm font-medium text-neutral-500">{activeTab.description}</p>
+      <div className="mb-4 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Cash & Bank</h1>
+          <p className="mt-1 text-sm font-medium text-neutral-500">{activeTab.description}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Tombol tanggal -- desain sama dengan header Sales */}
+          <button className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
+            <CalendarDays size={14} className="text-neutral-500" />
+            <span className="font-medium text-neutral-900">{`01 Jan ${new Date().getFullYear()} – 31 Dec ${new Date().getFullYear()}`}</span>
+            <ChevronDown size={14} className="text-neutral-500" />
+          </button>
+          <button
+            type="button"
+            onClick={openPicker}
+            disabled={importing || !canUpload}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} {importing ? 'Reading...' : 'Upload File'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setFormBaru(true)}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+          >
+            <Plus size={14} /> Add Cash/Bank Transaction
+          </button>
+        </div>
       </div>
+      {uploadUi}
       <CashBankTransactionModal open={formBaru} onClose={() => setFormBaru(false)} />
 
       <div className={tabBarCls}>
@@ -110,14 +140,6 @@ export default function CashBankTabs() {
             );
           })}
         </nav>
-        <div className="flex items-center justify-end pb-2 lg:pb-0">
-          <button
-            onClick={() => setFormBaru(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
-          >
-            <Plus size={13} /> New Transaction
-          </button>
-        </div>
       </div>
     </div>
   );

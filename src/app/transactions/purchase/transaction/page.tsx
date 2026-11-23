@@ -6,7 +6,7 @@ import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
 import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
 import { buildPurchaseListReport, buildPurchaseDetailReport } from '@/app/transactions/purchase/components/purchasePrintReports';
-import { Search, ShoppingBag, Clock, CheckCircle, FileCheck, AlertTriangle, CircleDollarSign, MoreHorizontal, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X, FileText, Eye, Edit, Plus, Calendar } from 'lucide-react';
+import { Search, ShoppingBag, Clock, CheckCircle, FileCheck, AlertTriangle, CircleDollarSign, MoreHorizontal, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X, FileText, Eye, Edit, Calendar } from 'lucide-react';
 import { formatTanggalSingkat } from '@/lib/salesStore';
 import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 import PrintMenu from '@/components/shared/PrintMenu';
@@ -291,18 +291,8 @@ export default function PurchaseTransactionPage() {
     { label: 'Total Amount', value: fmt(summary.totalAmount), detail: `${summary.total} bills`, pct: summary.total > 0 ? 100 : 0, pctLabel: 'of gross value', icon: CircleDollarSign, barActive: summary.total > 0 },
   ];
 
-  // Tombol aksi di baris tab -- tombol hitam "Create Bill", sama dengan "Tambah Transaksi" di Sales Transaction.
+  // Tombol Add Transaction (ex Create Bill) sudah dipindah ke header semua tab (PurchaseTabs).
   // (Print All dipindah ke header tabel, seperti di Sales.)
-  const actionBar = (
-    <div className={`${salesFont.className} flex flex-nowrap items-center justify-end gap-2 pb-2 xl:pb-0 [&>a]:whitespace-nowrap`}>
-      <Link
-        href="/transactions/purchase/bill/new"
-        className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
-      >
-        <Plus size={13} /> Create Bill
-      </Link>
-    </div>
-  );
 
   const columns = [
     { label: 'Purchase ID', field: 'purchaseId' },
@@ -325,7 +315,7 @@ export default function PurchaseTransactionPage() {
 
   return (
     <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-0">
-      <PurchaseTabs actions={actionBar} variant="elegant" />
+      <PurchaseTabs variant="elegant" />
 
       <div className={`${salesFont.className} pt-5 space-y-4`}>
         {/* KPI Cards -- desain sama dengan Sales Transaction, grid 6 kartu */}

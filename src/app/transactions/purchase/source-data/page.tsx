@@ -4,7 +4,6 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import ExcelJS from 'exceljs';
 import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import ImportPurchaseModal from '@/app/transactions/purchase/components/ImportPurchaseModal';
 import { downloadBlob } from '@/app/transactions/components/exportTemplates/exportExcelShared';
 import MappingRulesModal from '@/app/transactions/components/MappingRulesModal';
 import { salesFont as sourceFont } from '@/app/transactions/sales/components/salesFont';
@@ -260,18 +259,7 @@ export default function PurchaseSourceDataPage() {
   const goToPage = (n: number) => setCurrentPage(Math.min(Math.max(1, n), totalPages));
 
 
-  // ── Action bar (pola sama dengan tab Source Data Sales) ──
-  // Upload File = ImportPurchaseModal yang sama dengan tab Transaction (file
-  // dicocokkan ke Purchase Import Template company aktif di backend).
-  const [showImport, setShowImport] = useState(false);
-  const handleUploadClick = () => {
-    if (!activeClientId) {
-      toast.error('Select a company in the header before uploading a file.');
-      return;
-    }
-    setShowImport(true);
-  };
-
+  // ── Action bar (pola sama dengan tab Source Data Sales). Upload File sudah dipindah ke header (PurchaseTabs). ──
   const handleDownloadTemplate = async () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Purchase Template');
@@ -366,9 +354,6 @@ export default function PurchaseSourceDataPage() {
   // Tombol aksi -- ditaruh di baris yang sama dengan tab (sama dengan Source Data Sales).
   const actionBar = (
     <div className={`${sourceFont.className} flex flex-nowrap items-center justify-end gap-2 pb-2 xl:pb-0 [&>button]:whitespace-nowrap`}>
-      <button onClick={handleUploadClick} disabled={!activeClientId} className={ACTION_BTN_SECONDARY}>
-        <Upload size={13} /> Upload File
-      </button>
       <button onClick={handleDownloadTemplate} className={ACTION_BTN_SECONDARY}>
         <Download size={13} /> Template Excel
       </button>
@@ -407,7 +392,6 @@ export default function PurchaseSourceDataPage() {
   return (
     <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-0">
       <PurchaseTabs actions={actionBar} variant="elegant" />
-      {showImport && <ImportPurchaseModal onClose={() => setShowImport(false)} />}
 
       <div className={`${sourceFont.className} pt-5 space-y-5`}>
         {/* KPI Cards -- 4 kartu, ukuran & posisi sama dengan Source Data Sales */}
