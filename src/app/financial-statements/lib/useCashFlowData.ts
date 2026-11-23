@@ -137,7 +137,7 @@ function tebakHrefArusKas(aktivitas: 'operasi' | 'investasi' | 'pendanaan', nama
     if (/piutang/.test(t)) return '/accounts-receivable';
     if (/hutang usaha|utang usaha|payable/.test(t)) return '/accounts-payable';
     if (/pajak|tax/.test(t)) return '/liabilities';
-    return '/transactions';
+    return '/transactions/journal-entry';
   }
   if (aktivitas === 'investasi') return '/assets';
   if (/modal|capital|saham/.test(t)) return '/equity';

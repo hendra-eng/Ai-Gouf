@@ -171,16 +171,30 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
               active ? 'nav-item-active' : 'nav-item-inactive'
             }`}
           >
-            <Link
-              href={item.href || '/'}
-              aria-current={active ? 'page' : undefined}
-              onClick={() => { expandItem(item.id); onNavigate?.(); }}
-              className="flex-1 flex items-center gap-3 pl-3 pr-1 py-2 min-w-0"
-            >
-              <Icon size={18} className="flex-shrink-0" />
-              <span className="flex-1 text-left truncate">{t(item.label)}</span>
-              {renderBadge(item)}
-            </Link>
+            {item.href ? (
+              <Link
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+                onClick={() => { expandItem(item.id); onNavigate?.(); }}
+                className="flex-1 flex items-center gap-3 pl-3 pr-1 py-2 min-w-0"
+              >
+                <Icon size={18} className="flex-shrink-0" />
+                <span className="flex-1 text-left truncate">{t(item.label)}</span>
+                {renderBadge(item)}
+              </Link>
+            ) : (
+              // Induk tanpa halaman sendiri: klik hanya buka/tutup submenu.
+              <button
+                type="button"
+                onClick={() => toggleExpand(item.id)}
+                aria-expanded={isExpanded}
+                className="flex-1 flex items-center gap-3 pl-3 pr-1 py-2 min-w-0"
+              >
+                <Icon size={18} className="flex-shrink-0" />
+                <span className="flex-1 text-left truncate">{t(item.label)}</span>
+                {renderBadge(item)}
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.preventDefault();
@@ -227,17 +241,31 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
             }
           }}
         >
-          <Link
-            href={item.href || '/'}
-            aria-label={t(item.label)}
-            aria-current={on ? 'page' : undefined}
-            aria-haspopup={hasChildren ? 'menu' : undefined}
-            className={`flex items-center justify-center w-10 h-10 mx-auto rounded-xl transition-all duration-150 ${
-              on ? 'nav-item-active' : 'nav-item-inactive'
-            }`}
-          >
-            <Icon size={18} />
-          </Link>
+          {item.href ? (
+            <Link
+              href={item.href}
+              aria-label={t(item.label)}
+              aria-current={on ? 'page' : undefined}
+              aria-haspopup={hasChildren ? 'menu' : undefined}
+              className={`flex items-center justify-center w-10 h-10 mx-auto rounded-xl transition-all duration-150 ${
+                on ? 'nav-item-active' : 'nav-item-inactive'
+              }`}
+            >
+              <Icon size={18} />
+            </Link>
+          ) : (
+            <button
+              type="button"
+              aria-label={t(item.label)}
+              aria-haspopup="menu"
+              onClick={(e) => openFlyout(item, e.currentTarget.parentElement as HTMLElement)}
+              className={`flex items-center justify-center w-10 h-10 mx-auto rounded-xl transition-all duration-150 ${
+                on ? 'nav-item-active' : 'nav-item-inactive'
+              }`}
+            >
+              <Icon size={18} />
+            </button>
+          )}
           {live && (
             <span
               className={`absolute top-1 right-1 w-2.5 h-2.5 rounded-full ring-2 ring-[#0E2F26] pointer-events-none ${
@@ -377,13 +405,17 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
           onFocus={cancelClose}
           onBlur={scheduleClose}
         >
-          <Link
-            href={flyout.item.href || '/'}
-            onClick={() => setFlyout(null)}
-            className="nav-flyout-title"
-          >
-            {t(flyout.item.label)}
-          </Link>
+          {flyout.item.href ? (
+            <Link
+              href={flyout.item.href}
+              onClick={() => setFlyout(null)}
+              className="nav-flyout-title"
+            >
+              {t(flyout.item.label)}
+            </Link>
+          ) : (
+            <div className="nav-flyout-title">{t(flyout.item.label)}</div>
+          )}
           <div className="space-y-0.5">
             {flyout.item.children!.map((child) => {
               const ChildIcon = child.icon;

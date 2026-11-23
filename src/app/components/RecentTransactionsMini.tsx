@@ -29,7 +29,7 @@ export default function RecentTransactionsMini() {
           <h2 className="text-base font-bold text-foreground">{t('Recent Transactions')}</h2>
           <p className="text-xs text-muted-foreground mt-0.5">{t('Latest 8 posted journal entries')}</p>
         </div>
-        <Link href="/transactions" className="btn-ghost text-xs py-1.5">
+        <Link href="/transactions/journal-entry" className="btn-ghost text-xs py-1.5">
           {t('View All')}
           <ArrowRight size={13} />
         </Link>

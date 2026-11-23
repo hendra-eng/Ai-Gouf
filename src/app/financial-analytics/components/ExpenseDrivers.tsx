@@ -67,7 +67,7 @@ export default function ExpenseDrivers() {
             <div
               key={item?.id}
               className="group cursor-pointer rounded-xl p-3 hover:bg-muted/40 transition-colors"
-              onClick={() => router?.push('/transactions')}
+              onClick={() => router?.push('/transactions/journal-entry')}
             >
               <div className="flex items-center gap-3 mb-1.5">
                 <div className={`w-2 h-2 rounded-sm flex-shrink-0 ${item?.color}`} />

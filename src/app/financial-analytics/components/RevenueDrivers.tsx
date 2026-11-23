@@ -73,7 +73,7 @@ export default function RevenueDrivers() {
             <div
               key={item.id}
               className="group cursor-pointer rounded-xl p-3 hover:bg-muted/40 transition-colors border border-transparent hover:border-border"
-              onClick={() => router?.push('/transactions')}
+              onClick={() => router?.push('/transactions/journal-entry')}
             >
               <div className="flex items-center gap-3 mb-2">
                 <span className="text-sm font-medium text-foreground flex-1 truncate">{item.name}</span>
@@ -94,7 +94,7 @@ export default function RevenueDrivers() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    router?.push('/transactions');
+                    router?.push('/transactions/journal-entry');
                   }}
                   className="text-2xs text-primary opacity-0 group-hover:opacity-100 transition-opacity"
                 >

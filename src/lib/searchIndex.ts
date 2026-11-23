@@ -8,11 +8,9 @@ export interface SearchIndexItem {
 
 export const searchIndex: SearchIndexItem[] = [
   { label: 'Overview', href: '/', group: 'Overview' },
-  { label: 'Financial Statements', href: '/financial-statements', group: 'Financial' },
   { label: 'Profit & Loss', href: '/financial-statements/profit-loss', group: 'Financial' },
   { label: 'Balance Sheet', href: '/financial-statements/balance-sheet', group: 'Financial' },
   { label: 'Cash Flow', href: '/financial-statements/cash-flow', group: 'Financial' },
-  { label: 'Transactions', href: '/transactions', group: 'Financial' },
   { label: 'Accounts Receivable', href: '/accounts-receivable', group: 'Financial' },
   { label: 'Accounts Payable', href: '/accounts-payable', group: 'Financial' },
   { label: 'FX Revaluation', href: '/fx-revaluation', group: 'Financial' },

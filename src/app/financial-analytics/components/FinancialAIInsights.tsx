@@ -134,7 +134,7 @@ export default function FinancialAIInsights() {
                       Analyze
                     </button>
                     <button
-                      onClick={() => router?.push('/transactions')}
+                      onClick={() => router?.push('/transactions/journal-entry')}
                       className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                     >
                       <Icon name="TableCellsIcon" size={12} />

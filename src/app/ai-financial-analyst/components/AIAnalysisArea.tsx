@@ -99,7 +99,7 @@ export default function AIAnalysisArea({ activeAnalysis, isAnalyzing, onNewAnaly
         <span className="text-xs font-semibold text-ai-purple mr-1">Recommended Actions:</span>
         {[
           { label: 'Analyze Further', icon: 'MagnifyingGlassIcon', action: () => toast.info('Opening deeper analysis...') },
-          { label: 'View Transactions', icon: 'CurrencyDollarIcon', action: () => router.push('/transactions') },
+          { label: 'View Transactions', icon: 'CurrencyDollarIcon', action: () => router.push('/transactions/journal-entry') },
           { label: 'View AR Aging', icon: 'ArrowTrendingUpIcon', action: () => router.push('/accounts-receivable') },
           { label: 'View AP Aging', icon: 'ArrowTrendingDownIcon', action: () => router.push('/accounts-payable') },
           { label: 'View Report', icon: 'DocumentChartBarIcon', action: () => router.push('/reports') },

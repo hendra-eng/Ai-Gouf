@@ -22,7 +22,6 @@ const PAGES: Row[] = [
   ['/memori-ai', 'Memori AI', 'Overview'],
 
   // Financial Statements
-  ['/financial-statements', 'Financial Statements', 'Financial'],
   ['/financial-statements/profit-loss', 'Profit & Loss', 'Financial Statements'],
   ['/financial-statements/balance-sheet', 'Balance Sheet', 'Financial Statements'],
   ['/financial-statements/cash-flow', 'Cash Flow Statement', 'Financial Statements'],
@@ -31,7 +30,6 @@ const PAGES: Row[] = [
   ['/financial-statements/mapping', 'Financial Statement Mapping', 'Financial Statements'],
 
   // Transactions
-  ['/transactions', 'Transactions', 'Financial'],
   ['/transactions/source-data', 'Transactions — Source Data', 'Transactions'],
   ['/transactions/sales', 'Sales', 'Transactions'],
   ['/transactions/sales/invoice/new', 'Add Sales Transaction', 'Sales'],

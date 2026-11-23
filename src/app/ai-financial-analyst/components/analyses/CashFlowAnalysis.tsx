@@ -315,7 +315,7 @@ export default function CashFlowAnalysis() {
         </div>
         <div className="space-y-3">
           {[
-            { priority: 'Low', title: 'No recommendations yet', desc: 'Recommendations will appear here once there is enough posted transaction data to analyze cash flow.', action: 'View Transactions', route: '/transactions' },
+            { priority: 'Low', title: 'No recommendations yet', desc: 'Recommendations will appear here once there is enough posted transaction data to analyze cash flow.', action: 'View Transactions', route: '/transactions/journal-entry' },
           ].map((rec) => (
             <div key={`cf-rec-${rec.title}`} className="flex items-start gap-3 p-3 border border-border rounded-lg">
               <span className={`text-2xs px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 mt-0.5 ${

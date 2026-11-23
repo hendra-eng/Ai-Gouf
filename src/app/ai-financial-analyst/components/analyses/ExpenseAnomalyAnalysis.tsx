@@ -209,7 +209,7 @@ export default function ExpenseAnomalyAnalysis() {
 
                   <div className="flex gap-2 mt-3">
                     <button
-                      onClick={() => router.push('/transactions')}
+                      onClick={() => router.push('/transactions/journal-entry')}
                       className="text-xs text-primary hover:underline font-medium"
                     >
                       View Transactions
@@ -248,14 +248,14 @@ export default function ExpenseAnomalyAnalysis() {
                 title: 'Tidak ada tindakan mendesak',
                 desc: 'Seluruh pengeluaran masih berada dalam rentang normal dibanding riwayat masing-masing kategori. Lanjutkan pemantauan rutin.',
                 action: 'View Transactions',
-                route: '/transactions',
+                route: '/transactions/journal-entry',
               }]
             : anomalies.slice(0, 3).map((a) => ({
                 priority: a.risk,
                 title: `Tinjau ${a.account} (${a.vendor})`,
                 desc: `Pengeluaran ${fx(formatRupiah(a.amount, true))} ${a.variance > 0 ? 'melebihi' : 'di bawah'} rata-rata kategori ${a.category} (${fx(formatRupiah(a.expected, true))}) sebesar ${Math.abs(a.variancePct).toFixed(1)}%. ${a.risk === 'High' ? 'Perlu eskalasi & verifikasi segera.' : 'Perlu klarifikasi dari pemilik anggaran/approval.'}`,
                 action: 'View Transactions',
-                route: '/transactions',
+                route: '/transactions/journal-entry',
               }))
           ).map((rec, i) => (
             <div key={`ea-rec-${i}`} className="flex items-start gap-3 p-3 border border-border rounded-lg">

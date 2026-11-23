@@ -45,7 +45,7 @@ export const navGroups: NavGroup[] = [
     label: 'Financial',
     items: [
       {
-        id: 'nav-statements', label: 'Financial Statements', icon: FileText, href: '/financial-statements',
+        id: 'nav-statements', label: 'Financial Statements', icon: FileText,
         children: [
           { id: 'nav-pl', label: 'Profit & Loss', icon: TrendingUp, href: '/financial-statements/profit-loss' },
           { id: 'nav-bs', label: 'Balance Sheet', icon: Scale, href: '/financial-statements/balance-sheet' },
@@ -56,7 +56,7 @@ export const navGroups: NavGroup[] = [
         ],
       },
       {
-        id: 'nav-transactions', label: 'Transactions', icon: ArrowLeftRight, href: '/transactions',
+        id: 'nav-transactions', label: 'Transactions', icon: ArrowLeftRight,
         children: [
           { id: 'nav-tx-sales', label: 'Sales', icon: ShoppingCart, href: '/transactions/sales' },
           { id: 'nav-tx-purchase', label: 'Purchase', icon: ShoppingBag, href: '/transactions/purchase' },
