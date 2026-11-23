@@ -616,7 +616,7 @@ def susun_arus_kas(bb: BukuBesar, laba_rugi: Dict[str, Any]) -> Dict[str, Any]:
                 "outflow": _r(-neto) if neto < 0 else 0.0,
                 "party": baris[0].get("pihak") or utama["_info"]["account_name"],
                 "sumber": baris[0].get("sumber"),
-                "status": "Posted",
+                "status": str(baris[0].get("status") or "posted").strip().capitalize(),
             })
 
     bulanan = []
@@ -816,10 +816,10 @@ def susun_calk(bb: BukuBesar, neraca: Dict[str, Any], laba_rugi: Dict[str, Any],
 
     definisi = [
         ("01", "general_information", "General Information", "All Statements", "Policy Note", None,
-         f"{nama} menyajikan laporan keuangan periode {_label_periode(bb.tahun, n)} yang disusun otomatis dari transaksi yang sudah diposting."),
+         f"{nama} menyajikan laporan keuangan periode {_label_periode(bb.tahun, n)} yang disusun otomatis dari transaksi di Journal Preview (draft, pending, approved, posted)."),
         ("02", "basis_of_preparation", "Basis of Preparation", "All Statements", "Policy Note", None,
          "Disusun dengan basis akrual dan biaya historis, mata uang penyajian Rupiah (IDR). "
-         f"Sumber data: transaksi berstatus Posted dari modul {', '.join(sumber) if sumber else 'Transactions'}; transaksi draft tidak diikutsertakan."),
+         f"Sumber data: transaksi di Journal Preview (draft, pending, approved, posted; rejected dan void dikecualikan) dari modul {', '.join(sumber) if sumber else 'Transactions'}."),
         ("03", "accounting_policies", "Material Accounting Policies", "All Statements", "Policy Note", None,
          "Klasifikasi akun mengikuti digit pertama kode akun (1 Aset, 2 Liabilitas, 3 Ekuitas, 4 Pendapatan, 5-6 & 8-9 Beban, 7 Pendapatan lain). "
          "Pendapatan diakui saat invoice diposting; beban diakui saat terjadi. Laba tahun lalu yang belum ditutup disajikan sebagai saldo laba."),

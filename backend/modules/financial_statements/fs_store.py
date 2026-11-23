@@ -16,6 +16,7 @@ from sqlalchemy import func
 
 import db_client as dbc
 from . import mapped
+from .sumber_jurnal import termasuk_belum_posted
 
 KOLOM_MAPPING = ("fs_section", "fs_line", "equity_component", "cash_flow_category", "cash_flow_line", "note_key")
 
@@ -63,8 +64,11 @@ def peta_akun_klien(client_id: str) -> Dict[str, Dict[str, Any]]:
 
 
 def buat_buku(client_id: str, sampai: Optional[date] = None) -> mapped.Buku:
-    """Buku besar posted klien s.d. `sampai` + peta akun COA ter-mapping."""
-    baris = dbc.ambil_baris_jurnal_posted_transaksi(management_client_id=client_id, sampai_tanggal=sampai)
+    """Buku besar klien s.d. `sampai` + peta akun COA ter-mapping. Sumber jurnal: lihat sumber_jurnal.py
+    (default = semua status Journal Preview, sama dengan General Ledger)."""
+    baris = dbc.ambil_baris_jurnal_posted_transaksi(
+        management_client_id=client_id, sampai_tanggal=sampai, termasuk_belum_posted=termasuk_belum_posted(),
+    )
     return mapped.Buku(baris, peta_akun_klien(client_id))
 
 

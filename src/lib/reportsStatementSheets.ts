@@ -84,7 +84,7 @@ function makeWriter(ws: Worksheet, lay: Layout) {
     blank(): number { return next(); },
     account(ref: TbRowRef): number {
       const row = next(ref.status);
-      if (ref.code) ws.getCell(row, lay.codeCol).value = asCode(ref.code);
+      if (ref.code) ws.getCell(row, lay.codeCol).value = asCode(ref.shownCode || ref.code);
       ws.getCell(row, lay.nameCol).value = { formula: `TB!B${ref.row}` };
       TB_SOURCE_COLS.forEach((tc, i) => {
         const cell = ws.getCell(row, lay.firstValueCol + i);

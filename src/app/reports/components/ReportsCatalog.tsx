@@ -54,7 +54,7 @@ const REPORTS: ReportDef[] = [
   { id: 'profit-loss', tab: 'overview', title: 'Profit & Loss', description: 'Review revenue, cost, and net profit for the selected period.', icon: BarChart3, tone: 'emerald', art: 'line', href: '/financial-statements/profit-loss' },
   { id: 'cash-flow', tab: 'overview', title: 'Cash Flow Statement', description: 'Analyze operating, investing, and financing cash movements.', icon: ArrowUpDown, tone: 'violet', art: 'area', href: '/financial-statements/cash-flow' },
   { id: 'general-ledger', tab: 'overview', title: 'General Ledger', description: 'Inspect all account-level postings and transaction movements.', icon: BookOpen, tone: 'orange', art: 'rows', href: '/reports/general-ledger' },
-  { id: 'journal-report', tab: 'overview', title: 'Journal Report', description: 'Browse journal entries created during the selected period.', icon: FileText, tone: 'teal', art: 'doc', href: '/transactions/journal-entry/posted' },
+  { id: 'journal-report', tab: 'overview', title: 'Journal Report', description: 'Browse journal entries created during the selected period.', icon: FileText, tone: 'teal', art: 'doc', href: '/transactions/journal-entry/preview' },
   { id: 'trial-balance', tab: 'overview', title: 'Trial Balance', description: 'Compare opening balance, movements, and ending balances by account.', icon: Scale, tone: 'rose', art: 'table', href: '/reports/trial-balance' },
     { id: 'adjustment', tab: 'overview', title: 'Adjustment', description: 'Review adjusting journals and their effect on the trial balance.', icon: SlidersHorizontal, tone: 'sky', art: 'adjust', href: '/reports/adjustment' },
 
@@ -456,7 +456,7 @@ export default function ReportsCatalog() {
             disabled={downloading}
             className={btnPrimary}
           >
-            <Download size={14} /> {downloading ? (aiProgress && aiProgress.total > 0 ? `AI filling ${aiProgress.done} / ${aiProgress.total}…` : 'Preparing…') : 'Download Excel'}
+            <Download size={14} /> {downloading ? (aiProgress && aiProgress.total > 0 ? `AI filling ${aiProgress.done} / ${aiProgress.total}…` : 'Preparing…') : 'Financial Statement'}
           </button>
           <button
             onClick={() => downloadCatalogCsv(visibleReports, companyName, period)}

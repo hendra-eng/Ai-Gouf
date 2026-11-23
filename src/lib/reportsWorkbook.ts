@@ -11,7 +11,7 @@ import type { Worksheet } from 'exceljs';
 import { fillCoaSheet, markMissingCategory, FIRST_DATA_ROW as COA_FIRST_DATA_ROW } from './reportsCoaSheet';
 import { fillGlSheet, FIRST_DATA_ROW as GL_FIRST_DATA_ROW } from './reportsGlSheet';
 import { fillAdjSheet } from './reportsAdjSheet';
-import { fetchReportsSourceData, coaSheetRows, glSheetRows, adjSheetRows, type ReportsSourceData } from './reportsData';
+import { fetchReportsSourceData, coaSheetRows, glSheetRows, adjSheetRows, displayCodeFn, type ReportsSourceData } from './reportsData';
 import { addStatusColumn } from './reportsStatus';
 import { describeAiResult, markAiCell, REPORTS_AI_ENABLED, runReportsAiFill, type AiProgress, type ReportsAiResult } from './reportsAiFill';
 import { colLetter, fillTbSheet, relabelTbHeaders, type TbSheetResult } from './reportsTbSheet';
@@ -131,6 +131,12 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
       fillGlSheet(ws, d?.rows ?? [], T, d?.statuses ?? []);
       // Supplier/Customer hasil AI atau pola data (kolom H) diberi latar biru muda.
       for (const idx of d?.autoParty ?? []) markAiCell(ws, GL_FIRST_DATA_ROW + T + idx, 8);
+      // Bank, Payment ID, Order ID, Refund, No Kamar: hanya yang tertulis eksplisit di data transaksi (reportsGlExtract.ts).
+      for (const x of d?.extras ?? []) {
+        const r = GL_FIRST_DATA_ROW + T + x.idx;
+        ws.getCell(r, x.col).value = x.value;
+        markAiCell(ws, r, x.col);
+      }
       if (ctx.aiFilled && d?.autoParty.length) ctx.aiFilled.GL = d.autoParty.length;
     } },
   { name: 'ADJ', source: 'Adjustment', headerRows: [3 + T], lastCol: 16,
@@ -205,7 +211,7 @@ export const REPORT_SHEETS: ReportSheetDef[] = [
       // Judul kolom ber-tahun/bulan (acuan hardcode 2026) mengikuti tahun terpilih.
       relabelTbHeaders(ws, 5 + T, ctx.year);
       // Baris akun + saldo awal + rumus ke GL/ADJ (hanya kalau data aplikasi tersedia; template kosong = header saja).
-      const tbRows = fillTbSheet(ws, ctx.data?.tb, T);
+      const tbRows = fillTbSheet(ws, ctx.data?.tb, T, displayCodeFn(ctx.data?.coa));
       ctx.tbLayout = tbRows;
       // Kolom Notes (kolom ke-80): dugaan penyebab akun yang janggal dari Isi AI, selalu berawalan "Dugaan AI:" dan berlatar biru muda.
       const NOTES_COL = 80;

@@ -44,6 +44,7 @@ from ..api_response import gagal, sukses
 from ..auth.v1 import get_current_user_v1
 from ..logging_config import get_module_logger
 from . import core
+from .sumber_jurnal import termasuk_belum_posted
 
 logger = get_module_logger("financial_statements_v1")
 
@@ -79,7 +80,9 @@ def _hitung(filter_: Dict[str, Optional[str]], tahun: Optional[int], sampai_bula
     tahun = tahun or date.today().year
     try:
         # Transaksi sesudah periode laporan tidak perlu dibaca sama sekali.
-        baris = dbc.ambil_baris_jurnal_posted_transaksi(sampai_tanggal=core.akhir_bulan(tahun, sampai_bulan or 12), **filter_)
+        baris = dbc.ambil_baris_jurnal_posted_transaksi(
+            sampai_tanggal=core.akhir_bulan(tahun, sampai_bulan or 12), termasuk_belum_posted=termasuk_belum_posted(), **filter_,
+        )
     except Exception as e:  # noqa: BLE001
         logger.exception("Gagal membaca transaksi posted untuk laporan keuangan: %s", e)
         return None, gagal(message="Gagal membaca data transaksi.", errors={"code": "DB_ERROR"}, status_code=500)
@@ -131,7 +134,7 @@ def daftar_periode(
     if error is not None:
         return error
     try:
-        baris = dbc.ambil_baris_jurnal_posted_transaksi(**filter_)
+        baris = dbc.ambil_baris_jurnal_posted_transaksi(termasuk_belum_posted=termasuk_belum_posted(), **filter_)
     except Exception as e:  # noqa: BLE001
         logger.exception("Gagal membaca periode laporan keuangan: %s", e)
         return gagal(message="Gagal membaca data transaksi.", errors={"code": "DB_ERROR"}, status_code=500)

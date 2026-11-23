@@ -70,8 +70,10 @@ export const DEBIT_GROUPS = new Set(['ASSET', 'COST OF SALES', 'EXPENSE', 'OTHER
 export interface TbRowRef {
   row: number;
   kind: 'account' | 'profit' | 'prior';
-  /** Kode akun ('' untuk baris bawaan tanpa kode). */
+  /** Kode akun ('' untuk baris bawaan tanpa kode). Kode internal (acc_no): kunci pencarian Category / Saldo RK. */
   code: string;
+  /** Kode yang ditampilkan di sheet (source_acc_no, kalau kosong acc_no). Kosong = pakai `code`. */
+  shownCode?: string;
   name: string;
   /** Kunci kelompok TB (ASSET, LIABILITY, EQUITY, REVENUE, ...). */
   group: string;
@@ -107,7 +109,7 @@ type Side = 'DEBIT' | 'CREDIT';
  * Isi baris tabel TB. `top` = jumlah baris blok judul; baris bantu nomor bulan ada di (4 + top) dan data mulai di (7 + top),
  * sama dengan template yang digeser. Tanpa `tb` (template kosong) tidak ada baris yang ditulis.
  */
-export function fillTbSheet(ws: Worksheet, tb: TrialBalance | null | undefined, top: number): TbSheetResult {
+export function fillTbSheet(ws: Worksheet, tb: TrialBalance | null | undefined, top: number, shownCodeOf: (code: string) => string = c => c): TbSheetResult {
   const monthRow = 4 + top;
   const first = 7 + top;
   if (!tb) return { firstDataRow: first, lastRow: first - 1, statuses: [], refs: [], profitRow: 0 };
@@ -168,7 +170,7 @@ export function fillTbSheet(ws: Worksheet, tb: TrialBalance | null | undefined, 
     const debitSide = side === 'DEBIT';
     const net = (d: string, k: string) => (debitSide ? `${d}${row}-${k}${row}` : `${k}${row}-${d}${row}`);
 
-    ws.getCell(row, COL_CODE).value = asCode(a.account_code);
+    ws.getCell(row, COL_CODE).value = asCode(shownCodeOf(a.account_code));
     ws.getCell(row, COL_NAME).value = a.in_coa
       ? { formula: `IFERROR(_xlfn.XLOOKUP(A${row},COA!A:A,COA!B:B),${q(a.account_name)})` }
       : a.account_name;
@@ -208,7 +210,7 @@ export function fillTbSheet(ws: Worksheet, tb: TrialBalance | null | undefined, 
   /** Baris "Current Year Profit / Loss": saldo = (after ADJ bulan lalu) + laba bulan itu dari baris PROFIT (LOSS). */
   const writeProfitEquity = (row: number, a: TbAccount | null) => {
     if (a) {
-      ws.getCell(row, COL_CODE).value = asCode(a.account_code);
+      ws.getCell(row, COL_CODE).value = asCode(shownCodeOf(a.account_code));
       ws.getCell(row, COL_NAME).value = a.in_coa
         ? { formula: `IFERROR(_xlfn.XLOOKUP(A${row},COA!A:A,COA!B:B),${q(a.account_name)})` }
         : a.account_name;
@@ -245,10 +247,10 @@ export function fillTbSheet(ws: Worksheet, tb: TrialBalance | null | undefined, 
       const row = r++;
       if (allowProfit && !profitPlaced && PROFIT_ACCOUNT_RE.test(a.account_name)) {
         profitPlaced = true;
-        refs.push({ row, kind: 'profit', code: a.account_code, name: a.account_name, group: g.key, status: profitStatus });
+        refs.push({ row, kind: 'profit', code: a.account_code, shownCode: shownCodeOf(a.account_code), name: a.account_name, group: g.key, status: profitStatus });
         writers.push(() => writeProfitEquity(row, a));
       } else {
-        refs.push({ row, kind: 'account', code: a.account_code, name: a.account_name, group: g.key, status: accountStatus(a) });
+        refs.push({ row, kind: 'account', code: a.account_code, shownCode: shownCodeOf(a.account_code), name: a.account_name, group: g.key, status: accountStatus(a) });
         writers.push(() => writeAccount(row, a, g));
       }
     }
