@@ -94,7 +94,7 @@ export default function AIAnalystLayout() {
   return (
     <>
       {/* -m-6 menghilangkan padding bawaan AppLayout (dari root layout.tsx) supaya panel AI full-bleed */}
-      <div className="flex -m-6 h-[calc(100vh-4rem)] overflow-hidden">
+      <div className="flex -m-6 h-[calc(var(--app-vh)_-_4rem)] overflow-hidden">
         {/* AI Conversation Sidebar */}
         <div
           className={`border-r border-border bg-card flex-shrink-0 sidebar-transition ${

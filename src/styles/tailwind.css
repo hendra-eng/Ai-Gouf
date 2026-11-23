@@ -743,3 +743,27 @@
 .text-foreground:is(h1, h2, h3, h4, .font-bold) {
   color: var(--dark);
 }
+/* ===== Skala tampilan bawaan 110% (2026-11-23) =====
+   Seluruh aplikasi tampil seperti browser di-zoom 110%, di device & browser apa pun.
+   Ubah angkanya di --app-zoom (1 = ukuran normal / matikan). Dibungkus @supports supaya browser yang
+   belum mendukung CSS zoom (Firefox < 126) tetap tampil normal tanpa efek samping.
+   Karena 100vh ikut terkalikan zoom, tinggi layar dipakai lewat --app-vh / --app-dvh (sudah dibagi zoom). */
+:root {
+  --app-zoom: 1;
+  --app-vh: 100vh;
+  --app-dvh: 100dvh;
+}
+@supports (zoom: 1) {
+  :root {
+    --app-zoom: 1.1;
+    --app-vh: calc(100vh / var(--app-zoom));
+    --app-dvh: calc(100dvh / var(--app-zoom));
+  }
+  html { zoom: var(--app-zoom); }
+  html .h-screen { height: var(--app-vh); }
+  html .min-h-screen { min-height: var(--app-vh); }
+  @media print {
+    :root { --app-zoom: 1; }
+    html { zoom: 1; }
+  }
+}

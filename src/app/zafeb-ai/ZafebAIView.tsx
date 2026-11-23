@@ -15,7 +15,7 @@ import ZafebAIChat from './ZafebAIChat';
 // area chat persis mengisi sisa layar tanpa scroll ganda.
 export default function ZafebAIView() {
   return (
-    <div className="-mx-4 lg:-mx-6 xl:-mx-8 2xl:-mx-10 -my-6 h-[calc(100vh-4rem)] overflow-hidden">
+    <div className="-mx-4 lg:-mx-6 xl:-mx-8 2xl:-mx-10 -my-6 h-[calc(var(--app-vh)_-_4rem)] overflow-hidden">
       <ZafebAIChat />
     </div>
   );

@@ -603,9 +603,9 @@ export default function ChatWidget() {
         className={[
           'fixed z-[60] flex flex-col overflow-hidden bg-[#080808] text-neutral-100',
           'border border-neutral-700/70 shadow-[0_28px_70px_-14px_rgba(0,0,0,0.6)]',
-          'right-0 bottom-0 w-full h-[100dvh] rounded-none',
+          'right-0 bottom-0 w-full h-[var(--app-dvh)] rounded-none',
           'sm:right-6 sm:bottom-24 sm:rounded-xl',
-          besar ? 'sm:w-[680px] sm:h-[min(820px,calc(100dvh-8rem))]' : 'sm:w-[400px] sm:h-[min(640px,calc(100dvh-8rem))]',
+          besar ? 'sm:w-[680px] sm:h-[min(820px,calc(var(--app-dvh)_-_8rem))]' : 'sm:w-[400px] sm:h-[min(640px,calc(var(--app-dvh)_-_8rem))]',
           'origin-bottom-right transition-[opacity,transform,width,height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]',
           open ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 translate-y-3 pointer-events-none',
         ].join(' ')}

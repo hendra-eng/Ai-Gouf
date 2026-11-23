@@ -76,7 +76,7 @@ export default function AgenticAIView() {
   const [penghuni, setPenghuni] = useState<Record<string, PenghuniInfo>>({}); // AI penghuni yang sedang ada di ruangan terfokus (termasuk tamu)
 
   return (
-    <div className="w-full h-[calc(100vh-4rem)] overflow-hidden relative isolate bg-[radial-gradient(ellipse_at_50%_45%,#12332A_0%,#0A1A14_45%,#020605_100%)]">
+    <div className="w-full h-[calc(var(--app-vh)_-_4rem)] overflow-hidden relative isolate bg-[radial-gradient(ellipse_at_50%_45%,#12332A_0%,#0A1A14_45%,#020605_100%)]">
       <OfficeScene onAgentStatus={onAgentStatus} rapat={rapat} tugas={tugas} onFokusRuang={(n) => { setFokus(n); if (!n) { setAgenDi([]); setPenghuni({}); } }} onAgenDiRuang={setAgenDi} onPenghuni={setPenghuni} />
 
       {fokus && (
