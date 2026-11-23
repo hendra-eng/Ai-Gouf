@@ -261,7 +261,7 @@ export default function Topbar({ onMobileMenuToggle }: TopbarProps) {
         ) : (
           <div className="lg:hidden flex items-center gap-2.5">
             <BrandMark size={32} />
-            <span className="nav-wordmark">zafeb</span>
+            <span className="nav-wordmark"><span className="wm-za">za</span><span className="wm-feb">feb</span></span>
           </div>
         )}
       </div>

@@ -286,7 +286,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
             <div className="flex items-center gap-3 min-w-0">
               <BrandMark size={36} />
               <div className="min-w-0">
-                <p className="nav-wordmark">zafeb</p>
+                <p className="nav-wordmark"><span className="wm-za">za</span><span className="wm-feb">feb</span></p>
                 <p className="nav-tagline">{t('Accounting')}</p>
               </div>
             </div>

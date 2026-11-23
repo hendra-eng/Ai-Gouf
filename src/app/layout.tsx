@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Metadata, Viewport } from 'next';
-import { Plus_Jakarta_Sans, IBM_Plex_Mono, Cormorant_Garamond } from 'next/font/google';
+import { Plus_Jakarta_Sans, IBM_Plex_Mono, Cormorant_Garamond, Outfit } from 'next/font/google';
 import '../styles/tailwind.css';
 import '../styles/index.css';
 import { Toaster } from 'sonner';
@@ -14,6 +14,14 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 // Font serif khusus wordmark logo ZAFEB di Sidebar/Topbar (lihat .nav-wordmark & .nav-tagline di tailwind.css).
+// Font wordmark "zafeb" (huruf kecil geometris: "za" tipis, "feb" tebal) sesuai logo asli.
+const outfit = Outfit({
+  subsets: ['latin'],
+  weight: ['300', '700'],
+  display: 'swap',
+  variable: '--font-outfit',
+});
+
 const cormorant = Cormorant_Garamond({
   subsets: ['latin'],
   weight: ['600', '700'],
@@ -51,7 +59,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="id" data-scroll-behavior="smooth" className={`${plusJakartaSans.variable} ${ibmPlexMono.variable} ${cormorant.variable}`}>
+    <html lang="id" data-scroll-behavior="smooth" className={`${plusJakartaSans.variable} ${ibmPlexMono.variable} ${cormorant.variable} ${outfit.variable}`}>
       <body className={plusJakartaSans.className}>
         <AppLayout>{children}</AppLayout>
         <Toaster
