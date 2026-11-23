@@ -12,12 +12,12 @@ import { formatIDR as formatIDRRingkas } from '../../lib/groupAnalytics';
 
 export type KpiTone = 'slate' | 'amber' | 'green' | 'sky' | 'warn' | 'danger';
 export const KPI_TONE: Record<KpiTone, { strip: string; iconBg: string; iconText: string; bar: string; glow: string; border: string }> = {
-  slate: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
-  amber: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
-  green: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
-  sky: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
-  warn: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
-  danger: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
+  slate: { strip: 'bg-blue-600', iconBg: 'bg-blue-50', iconText: 'text-blue-600', bar: 'bg-blue-600', glow: '', border: 'border-neutral-300' },
+  amber: { strip: 'bg-amber-500', iconBg: 'bg-amber-50', iconText: 'text-amber-600', bar: 'bg-amber-500', glow: '', border: 'border-neutral-300' },
+  green: { strip: 'bg-teal-600', iconBg: 'bg-teal-50', iconText: 'text-teal-600', bar: 'bg-teal-600', glow: '', border: 'border-neutral-300' },
+  sky: { strip: 'bg-sky-500', iconBg: 'bg-sky-50', iconText: 'text-sky-600', bar: 'bg-sky-500', glow: '', border: 'border-neutral-300' },
+  warn: { strip: 'bg-orange-500', iconBg: 'bg-orange-50', iconText: 'text-orange-600', bar: 'bg-orange-500', glow: '', border: 'border-neutral-300' },
+  danger: { strip: 'bg-red-600', iconBg: 'bg-red-50', iconText: 'text-red-600', bar: 'bg-red-600', glow: '', border: 'border-neutral-300' },
 };
 
 export function OverviewKpiTile({ label, value, sub, pct, pctLabel, tone, icon: Icon }: {
@@ -336,7 +336,7 @@ export function TopPartyCard({ parties, total, icon, title, subtitle, shareLabel
           {parties.map((c, i) => {
             const first = i === 0;
             const share = total > 0 ? (c.amount / total) * 100 : 0;
-            const badge = first ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700';
+            const badge = first ? 'bg-blue-600 text-white' : 'bg-neutral-100 text-neutral-700';
             return (
               <div
                 key={`top-party-${c.name}`}
@@ -363,7 +363,7 @@ export function TopPartyCard({ parties, total, icon, title, subtitle, shareLabel
                   {c.count} {countLabel}
                 </p>
                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-                  <div className="h-full rounded-full bg-neutral-800" style={{ width: `${Math.max(3, (c.amount / max) * 100)}%` }} />
+                  <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.max(3, (c.amount / max) * 100)}%` }} />
                 </div>
               </div>
             );

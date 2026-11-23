@@ -119,7 +119,7 @@ export function PurchaseCategoryCard({ data }: { data: { name: string; value: nu
 function ApTile({ label, value }: { label: string; value: string }) {
   return (
     <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm">
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <p className="text-xs font-semibold uppercase tracking-wide text-neutral-600">{label}</p>
       <p className="mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900" title={value}>{value}</p>
     </div>
@@ -152,7 +152,7 @@ export function PurchasePaymentStatusCard({ data, overdueAmount, outstandingAP }
                 </div>
               </div>
               <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-                <div className="h-full rounded-full bg-neutral-800 transition-all" style={{ width: `${Math.max(item.value > 0 ? 3 : 0, pct)}%` }} />
+                <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${Math.max(item.value > 0 ? 3 : 0, pct)}%` }} />
               </div>
             </li>
           );

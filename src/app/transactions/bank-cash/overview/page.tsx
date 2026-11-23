@@ -31,17 +31,17 @@ function OverviewKpiTile({ label, value, sub, pct, pctLabel, icon: Icon }: {
   const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
   return (
     <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <div className="relative flex items-start justify-between gap-2">
         <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
-          <Icon size={16} className="text-neutral-700" />
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 ring-1 ring-blue-100">
+          <Icon size={16} className="text-blue-600" />
         </span>
       </div>
       <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900" title={value}>{value}</p>
       <p className="relative h-4 truncate text-[11px] font-medium text-neutral-500">{sub ?? '\u00A0'}</p>
       <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
+        <div className="h-full rounded-full bg-blue-600" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
       <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{p}% {pctLabel}</p>
     </div>
@@ -104,25 +104,25 @@ export default function CashBankOverviewPage() {
         <p className="mb-3 text-xs font-medium text-neutral-500">Transactions hit the ledger (and settle invoices) only once posted.</p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Link href="/transactions/bank-cash/reconciliation" className={pipeTileCls}>
-            <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
             <p className={pipeLabelCls}>Unmatched</p>
             <p className={pipeNumCls}>{unmatched}</p>
             <p className={pipeSubCls}>Source Data lines</p>
           </Link>
           <Link href="/transactions/bank-cash/journal-preview" className={pipeTileCls}>
-            <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
             <p className={pipeLabelCls}>Draft (awaiting Approve)</p>
             <p className={pipeNumCls}>{pipeline?.draft.count ?? 0}</p>
             <p className={pipeSubCls}>{formatIDR(pipeline?.draft.amount ?? 0, true)}</p>
           </Link>
           <Link href="/transactions/bank-cash/journal-preview" className={pipeTileCls}>
-            <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
             <p className={pipeLabelCls}>Approved (awaiting Post)</p>
             <p className={pipeNumCls}>{pipeline?.approved.count ?? 0}</p>
             <p className={pipeSubCls}>{formatIDR(pipeline?.approved.amount ?? 0, true)}</p>
           </Link>
           <Link href="/transactions/bank-cash/posted" className={pipeTileCls}>
-            <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
             <p className={pipeLabelCls}>Posted</p>
             <p className={pipeNumCls}>{pipeline?.posted.count ?? 0}</p>
             <p className={pipeSubCls}>{formatIDR(pipeline?.posted.amount ?? 0, true)}</p>
@@ -172,20 +172,20 @@ export default function CashBankOverviewPage() {
               <AreaChart data={bulanan} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
                 <defs>
                   <linearGradient id="gradIn" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#059669" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#059669" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#0D9488" stopOpacity={0.30} />
+                    <stop offset="95%" stopColor="#0D9488" stopOpacity={0.02} />
                   </linearGradient>
                   <linearGradient id="gradOut" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#e11d48" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#e11d48" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#EA580C" stopOpacity={0.30} />
+                    <stop offset="95%" stopColor="#EA580C" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#737373' }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={(v) => formatIDRChart(v)} tick={{ fontSize: 10, fill: '#737373' }} axisLine={false} tickLine={false} width={65} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#ececec" />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#8a8a8a' }} axisLine={{ stroke: '#404040', strokeWidth: 1.5 }} tickLine={false} />
+                <YAxis tickFormatter={(v) => formatIDRChart(v)} tick={{ fontSize: 10, fill: '#8a8a8a' }} axisLine={{ stroke: '#404040', strokeWidth: 1.5 }} tickLine={false} width={65} />
                 <Tooltip formatter={(v: number) => formatIDR(v)} />
-                <Area type="monotone" dataKey="masuk" name="Cash In" stroke="#059669" strokeWidth={2.5} fill="url(#gradIn)" />
-                <Area type="monotone" dataKey="keluar" name="Cash Out" stroke="#e11d48" strokeWidth={2.5} fill="url(#gradOut)" />
+                <Area type="monotone" dataKey="masuk" name="Cash In" stroke="#0D9488" strokeWidth={2.5} fill="url(#gradIn)" />
+                <Area type="monotone" dataKey="keluar" name="Cash Out" stroke="#EA580C" strokeWidth={2.5} fill="url(#gradOut)" />
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -216,7 +216,7 @@ export default function CashBankOverviewPage() {
                   </div>
                   <div className="w-full h-1.5 bg-neutral-200 rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full ${a.book_balance < 0 ? 'bg-neutral-500' : 'bg-neutral-800'}`}
+                      className={`h-full rounded-full ${a.book_balance < 0 ? 'bg-[#DC2626]' : 'bg-[#2563EB]'}`}
                       style={{ width: `${Math.min(100, (Math.abs(a.book_balance) / maksSaldo) * 100)}%` }}
                     />
                   </div>

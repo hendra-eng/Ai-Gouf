@@ -59,7 +59,7 @@ function CategoryPill({ label }: { label: string }) {
 // ── Gaya tombol netral -- sama dengan Sales Posted ──
 const ACTION_BTN_BASE = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50';
 const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
-const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700`;
+const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
 const PANEL_ICON_CHIP = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200';
 const NAV_BTN = 'flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card';
 
@@ -76,17 +76,17 @@ function PostedKpiTile({ label, value, sub, pct, pctLabel, icon: Icon, barActive
   const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
   return (
     <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <div className="relative flex items-start justify-between gap-2">
         <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
-          <Icon size={16} className="text-neutral-700" />
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 ring-1 ring-blue-100">
+          <Icon size={16} className="text-blue-600" />
         </span>
       </div>
       <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900" title={value}>{value}</p>
       <p className="relative h-4 truncate text-[11px] font-medium text-neutral-500">{sub ?? ''}</p>
       <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${barActive && p > 0 ? Math.max(p, 3) : 0}%` }} />
+        <div className="h-full rounded-full bg-blue-600" style={{ width: `${barActive && p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
       <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{barActive ? `${p}% ` : ''}{pctLabel}</p>
     </div>
@@ -103,7 +103,7 @@ function PostedPanel({ title, leading, action, children, className = '' }: {
 }) {
   return (
     <div className={`relative flex flex-col overflow-hidden rounded-xl border border-neutral-300 bg-white shadow-sm ${className}`}>
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <div className="flex items-center justify-between gap-3 border-b border-neutral-300 bg-neutral-50 px-4 pb-3 pt-4">
         <div className="flex min-w-0 items-center gap-3">
           {leading}
@@ -468,7 +468,7 @@ export default function PurchasePostedPage() {
                   p === '…' ? (
                     <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
                   ) : (
-                    <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
+                    <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-blue-600 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
                   )
                 )}
                 <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label="Next page" className={NAV_BTN}><ChevronRight size={16} /></button>
@@ -485,7 +485,7 @@ export default function PurchasePostedPage() {
               action={<button onClick={() => setSelectedId(null)} className="p-1 hover:bg-neutral-100 rounded transition-colors"><X size={16} className="text-neutral-500" /></button>}
             >
               <div className="mb-3 flex items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-2.5">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-900 text-[11px] font-bold uppercase tracking-wider text-white">PUR</div>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-[11px] font-bold uppercase tracking-wider text-white">PUR</div>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-neutral-900">{selected.purchaseId}</p>
                   <p className="truncate text-xs font-medium text-neutral-500">{selected.vendor}</p>

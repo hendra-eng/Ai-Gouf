@@ -32,7 +32,7 @@ export function PurchaseTopVendorsCard({ vendors }: { vendors: TopVendor[] }) {
           {vendors.map((v, idx) => {
             const first = idx === 0;
             const pct = Math.max(3, Math.round((v.totalSpend / max) * 100));
-            const badge = first ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700';
+            const badge = first ? 'bg-blue-600 text-white' : 'bg-neutral-100 text-neutral-700';
             return (
               <li key={v.id} className={`${MINI_ROW_CLS} px-3 py-2.5`}>
                 <div className="flex items-center justify-between gap-3">
@@ -50,7 +50,7 @@ export function PurchaseTopVendorsCard({ vendors }: { vendors: TopVendor[] }) {
                   <span className="shrink-0 text-sm font-semibold tabular-nums tracking-tight text-neutral-900">{fmt(v.totalSpend)}</span>
                 </div>
                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-                  <div className="h-full rounded-full bg-neutral-800" style={{ width: `${pct}%` }} />
+                  <div className="h-full rounded-full bg-blue-600" style={{ width: `${pct}%` }} />
                 </div>
               </li>
             );

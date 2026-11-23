@@ -42,12 +42,12 @@ const salesEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 // peringatan (belum diposting, piutang, jatuh tempo).
 type KpiTone = 'slate' | 'amber' | 'green' | 'sky' | 'warn' | 'danger';
 const KPI_TONE: Record<KpiTone, { strip: string; iconBg: string; iconText: string; bar: string; glow: string; border: string }> = {
-  slate: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
-  amber: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
-  green: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
-  sky: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
-  warn: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
-  danger: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
+  slate: { strip: 'bg-blue-600', iconBg: 'bg-blue-50', iconText: 'text-blue-600', bar: 'bg-blue-600', glow: '', border: 'border-neutral-300' },
+  amber: { strip: 'bg-amber-500', iconBg: 'bg-amber-50', iconText: 'text-amber-600', bar: 'bg-amber-500', glow: '', border: 'border-neutral-300' },
+  green: { strip: 'bg-teal-600', iconBg: 'bg-teal-50', iconText: 'text-teal-600', bar: 'bg-teal-600', glow: '', border: 'border-neutral-300' },
+  sky: { strip: 'bg-sky-500', iconBg: 'bg-sky-50', iconText: 'text-sky-600', bar: 'bg-sky-500', glow: '', border: 'border-neutral-300' },
+  warn: { strip: 'bg-orange-500', iconBg: 'bg-orange-50', iconText: 'text-orange-600', bar: 'bg-orange-500', glow: '', border: 'border-neutral-300' },
+  danger: { strip: 'bg-red-600', iconBg: 'bg-red-50', iconText: 'text-red-600', bar: 'bg-red-600', glow: '', border: 'border-neutral-300' },
 };
 
 function OverviewKpiTile({ label, value, sub, pct, pctLabel, tone, icon: Icon }: {
@@ -425,7 +425,7 @@ function TopCustomerCard({ customers, total }: { customers: { name: string; amou
           {customers.map((c, i) => {
             const first = i === 0;
             const share = total > 0 ? (c.amount / total) * 100 : 0;
-            const badge = first ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700';
+            const badge = first ? 'bg-blue-600 text-white' : 'bg-neutral-100 text-neutral-700';
             return (
               <div
                 key={`top-customer-${c.name}`}
@@ -453,7 +453,7 @@ function TopCustomerCard({ customers, total }: { customers: { name: string; amou
                 </p>
                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
                   <div
-                    className="h-full rounded-full bg-neutral-800"
+                    className="h-full rounded-full bg-blue-600"
                     style={{ width: `${Math.max(3, (c.amount / max) * 100)}%` }}
                   />
                 </div>
@@ -992,7 +992,7 @@ export default function SalesOverview() {
         const maxGross = invoices.reduce((m, i) => Math.max(m, num(i.gross_amount)), 0);
         const label = (txt: string) => (
           <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-700">
-            <span className="h-3.5 w-1 rounded-full bg-neutral-800" />{txt}
+            <span className="h-3.5 w-1 rounded-full bg-blue-600" />{txt}
           </p>
         );
         return (
@@ -1350,7 +1350,7 @@ export default function SalesOverview() {
                 p === '…' ? (
                   <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
                 ) : (
-                  <button key={p} onClick={() => setTablePage(p)} aria-current={p === tablePageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === tablePageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
+                  <button key={p} onClick={() => setTablePage(p)} aria-current={p === tablePageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === tablePageSafe ? 'bg-blue-600 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
                 )
               )}
               <button onClick={() => setTablePage(tablePageSafe + 1)} disabled={tablePageSafe >= tableTotalPages} aria-label={t('Halaman berikutnya')} className={NAV_BTN}><ChevronRight size={16} /></button>

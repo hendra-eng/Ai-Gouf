@@ -324,7 +324,7 @@ export default function NewJournalEntryModal({
             onClick={submit}
             type="button"
             disabled={submitting}
-            className="flex-1 py-2 bg-neutral-800 text-white rounded-lg text-xs font-semibold hover:bg-neutral-700 transition-colors disabled:opacity-50"
+            className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
           >
             {submitting ? 'Saving…' : 'Save Journal Entry'}
           </button>

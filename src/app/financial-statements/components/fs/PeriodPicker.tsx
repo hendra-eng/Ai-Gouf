@@ -137,7 +137,7 @@ export default function PeriodPicker({ value, onApply, loading, hideCompare, ext
         type="submit"
         disabled={invalid || loading}
         className={mono
-          ? 'inline-flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-800 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50'
+          ? 'inline-flex items-center gap-2 rounded-lg border border-blue-600 bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50'
           : `inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white ${salesFont ? 'text-xs' : 'text-sm'} font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed`}
       >
         {loading ? <Loader2 size={15} className="animate-spin" /> : <Filter size={15} />} Apply

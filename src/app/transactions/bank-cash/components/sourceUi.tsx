@@ -17,7 +17,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 const ACTION_BTN_BASE =
   'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50';
 export const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
-export const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700`;
+export const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
 
 export const PANEL_ICON_CHIP =
   'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200';
@@ -221,7 +221,7 @@ export function StatusPill({ tone = 'neutral', label, title }: { tone?: PillTone
 export function FileTypeChip({ name, type }: { name?: string | null; type?: string | null }) {
   const ext = (type || (name || '').split('.').pop() || '?').replace('.', '').slice(0, 3).toUpperCase();
   return (
-    <div className="flex h-5 min-w-[28px] items-center justify-center rounded bg-neutral-900 px-1 text-[9px] font-bold uppercase tracking-wider text-white">
+    <div className="flex h-5 min-w-[28px] items-center justify-center rounded bg-blue-600 px-1 text-[9px] font-bold uppercase tracking-wider text-white">
       {ext}
     </div>
   );
@@ -257,17 +257,17 @@ export function SourceKpiTile({ label, count, detail, detailUnit, pct, pctLabel,
   const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
   return (
     <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <div className="relative flex items-start justify-between gap-2">
         <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
-          <Icon size={16} className="text-neutral-700" />
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 ring-1 ring-blue-100">
+          <Icon size={16} className="text-blue-600" />
         </span>
       </div>
       <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{count.toLocaleString('id-ID')}</p>
       <p className="relative h-4 truncate text-[11px] font-medium text-neutral-500">{detail} {detailUnit}</p>
       <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
+        <div className="h-full rounded-full bg-blue-600" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
       <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{p}% {pctLabel}</p>
     </div>
@@ -288,17 +288,17 @@ export function PostedKpiTile({ label, value, sub, pct, pctLabel, icon: Icon }: 
   const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
   return (
     <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <div className="relative flex items-start justify-between gap-2">
         <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
-          <Icon size={16} className="text-neutral-700" />
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 ring-1 ring-blue-100">
+          <Icon size={16} className="text-blue-600" />
         </span>
       </div>
       <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900" title={value}>{value}</p>
       <p className="relative h-4 truncate text-[11px] font-medium text-neutral-500">{sub ?? ''}</p>
       <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
+        <div className="h-full rounded-full bg-blue-600" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
       <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{p}% {pctLabel}</p>
     </div>
@@ -329,7 +329,7 @@ export function SourcePanel({ title, subtitle, leading, action, children, flush 
   );
   return (
     <div className="relative flex flex-col overflow-hidden rounded-xl border border-neutral-300 bg-white shadow-sm">
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <div className={`flex items-center justify-between gap-3 bg-neutral-50 px-4 pb-3 pt-4 ${open ? 'border-b border-neutral-300' : ''}`}>
         {onHeaderClick ? (
           <button type="button" onClick={onHeaderClick} className="min-w-0 flex-1">{heading}</button>
@@ -401,7 +401,7 @@ export function TablePagination({ total, page, pageSize, onPage, onPageSize, uni
               key={p}
               onClick={() => onPage(p)}
               aria-current={p === safe ? 'page' : undefined}
-              className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === safe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}
+              className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === safe ? 'bg-blue-600 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}
             >
               {p}
             </button>
@@ -441,7 +441,7 @@ export function ModalShell({ title, subtitle, icon, onClose, closeDisabled, maxW
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/50 p-4 backdrop-blur-[1px]">
       <div className={`relative flex max-h-[94vh] w-full ${maxWidth} flex-col overflow-hidden rounded-xl border border-neutral-300 bg-white shadow-xl`}>
-        <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+        <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
         <div className="flex items-start justify-between gap-4 border-b border-neutral-300 bg-neutral-50 px-5 pb-3 pt-4">
           <div className="flex min-w-0 items-start gap-3">
             {icon && <span className={PANEL_ICON_CHIP}>{icon}</span>}

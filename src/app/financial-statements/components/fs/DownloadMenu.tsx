@@ -55,7 +55,7 @@ export default function DownloadMenu({ build, disabled, extra, variant = 'defaul
         onClick={() => setOpen(o => !o)}
         disabled={disabled || busy}
         className={mono
-          ? 'inline-flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-800 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50'
+          ? 'inline-flex items-center gap-2 rounded-lg border border-blue-600 bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50'
           : `inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white ${fontCls ?? 'text-sm font-medium'} hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed`}
       >
         {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Download <ChevronDown size={15} />

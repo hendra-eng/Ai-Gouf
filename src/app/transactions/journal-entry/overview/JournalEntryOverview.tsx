@@ -23,8 +23,16 @@ import {
   pctOf, fmtPct, allocatePcts, pctLabel, initialsOf,
 } from './jeOverviewUi';
 
-// Palet donut sama dengan "Sales per Branch" di Sales Overview.
-const DONUT_COLORS = ['#171717', '#404040', '#737373', '#a3a3a3', '#d4d4d4', '#e5e5e5'];
+// Palet donut status sama dengan Purchase Status di halaman Purchase.
+const STATUS_COLORS: Record<string, string> = {
+  Posted: '#0D9488',
+  Approved: '#2563EB',
+  'Pending Review': '#D97706',
+  Exception: '#EA580C',
+  Rejected: '#DC2626',
+  Draft: '#64748B',
+};
+const DONUT_FALLBACK = ['#7C3AED', '#0891B2', '#94A3B8'];
 
 const STATUS_LABEL: Record<string, string> = {
   posted: 'Posted',
@@ -53,7 +61,7 @@ function StatusDonutCard({ items, total }: { items: { name: string; value: numbe
   const [live, setLive] = useState<DonutLivePreview[] | null>(null);
 
   const segs = useMemo(
-    () => items.map((it, i) => ({ name: it.name, value: it.value, color: DONUT_COLORS[i % DONUT_COLORS.length] })),
+    () => items.map((it, i) => ({ name: it.name, value: it.value, color: STATUS_COLORS[it.name] ?? DONUT_FALLBACK[i % DONUT_FALLBACK.length] })),
     [items]
   );
   useEffect(() => { setActive(null); }, [segs.length]);
@@ -131,7 +139,7 @@ function SourceDistributionCard({ sources, total }: { sources: { name: string; a
           {sources.map((c, i) => {
             const first = i === 0;
             const share = total > 0 ? (c.amount / total) * 100 : 0;
-            const badge = first ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700';
+            const badge = first ? 'bg-blue-600 text-white' : 'bg-neutral-100 text-neutral-700';
             return (
               <div
                 key={`source-${c.name}`}
@@ -159,7 +167,7 @@ function SourceDistributionCard({ sources, total }: { sources: { name: string; a
                 </p>
                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
                   <div
-                    className="h-full rounded-full bg-neutral-800"
+                    className="h-full rounded-full bg-blue-600"
                     style={{ width: `${Math.max(3, (c.amount / max) * 100)}%` }}
                   />
                 </div>
@@ -217,7 +225,7 @@ function ExceptionBreakdownCard({ items, totalEntries }: { items: { type: string
                   {it.count === 1 ? 'entry' : 'entries'} · of {fmtInt(totalEntries)} total
                 </p>
                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-                  <div className="h-full rounded-full bg-neutral-800" style={{ width: `${Math.max(3, share)}%` }} />
+                  <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.max(3, share)}%` }} />
                 </div>
               </div>
             );
@@ -501,7 +509,7 @@ export default function JournalEntryOverview() {
                 p === '…' ? (
                   <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
                 ) : (
-                  <button key={p} onClick={() => setTablePage(p)} aria-current={p === tablePageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === tablePageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
+                  <button key={p} onClick={() => setTablePage(p)} aria-current={p === tablePageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === tablePageSafe ? 'bg-blue-600 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
                 )
               )}
               <button onClick={() => setTablePage(tablePageSafe + 1)} disabled={tablePageSafe >= tableTotalPages} aria-label="Next page" className={NAV_BTN}><ChevronRight size={16} /></button>

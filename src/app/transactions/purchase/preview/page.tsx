@@ -113,7 +113,7 @@ const STEPS = [
 // ── Gaya kontrol -- sama dengan Sales Journal Preview ──
 const BTN_BASE = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50';
 const BTN_SECONDARY = `${BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
-const BTN_PRIMARY = `${BTN_BASE} border border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700`;
+const BTN_PRIMARY = `${BTN_BASE} border border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
 
 const iconBadge = (node: React.ReactNode) => (
   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-neutral-50 text-neutral-600 ring-1 ring-neutral-200">{node}</span>
@@ -155,7 +155,7 @@ function JournalKpiTile({ label, value, pct, pctLabel, icon: Icon }: {
   const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
   return (
     <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <div className="relative flex items-start justify-between gap-2">
         <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-700" title={label}>{label}</p>
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-neutral-50">
@@ -164,7 +164,7 @@ function JournalKpiTile({ label, value, pct, pctLabel, icon: Icon }: {
       </div>
       <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900" title={value}>{value}</p>
       <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
+        <div className="h-full rounded-full bg-blue-600" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
       <p className="relative mt-1 truncate text-[11px] font-semibold text-neutral-700">{p}% {pctLabel}</p>
     </div>

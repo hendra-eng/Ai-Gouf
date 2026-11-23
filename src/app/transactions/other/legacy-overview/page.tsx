@@ -250,7 +250,7 @@ export default function OtherTransactionsPage() {
     const isDraggingThis = otherDragPreview?.index === index;
     return (
       <g key={`other-pt-${index}`}>
-        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 3} fill="#64748b" stroke="#fff" strokeWidth={1.5} />
+        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 3} fill="#2563EB" stroke="#fff" strokeWidth={1.5} />
         <circle
           cx={cx}
           cy={cy}
@@ -329,8 +329,8 @@ export default function OtherTransactionsPage() {
                 <AreaChart data={otherDisplayTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="gradOtherMain" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#64748b" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#64748b" stopOpacity={0} />
+                      <stop offset="5%" stopColor="#2563EB" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -350,7 +350,7 @@ export default function OtherTransactionsPage() {
                     type="monotone"
                     dataKey="total"
                     name="Other"
-                    stroke="#64748b"
+                    stroke="#2563EB"
                     strokeWidth={2.5}
                     fill="url(#gradOtherMain)"
                     dot={renderOtherCalibrationDot as any}

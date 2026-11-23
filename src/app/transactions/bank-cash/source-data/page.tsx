@@ -488,7 +488,7 @@ export default function BankFeedPage() {
                     onClick={() => { setStatusFilter(s); setPage(1); }}
                     className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
                       statusFilter === s
-                        ? 'bg-neutral-800 text-white shadow-sm'
+                        ? 'bg-blue-600 text-white shadow-sm'
                         : s === 'review' ? 'text-red-700 hover:text-red-800' : 'text-neutral-500 hover:text-neutral-900'
                     }`}
                   >

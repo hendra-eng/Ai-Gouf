@@ -49,7 +49,7 @@ const isBalanced = (r: JeUiEntry) => Math.abs(r.totalDebit - r.totalCredit) < 0.
 // Gaya tombol netral -- sama dengan ACTION_BTN_* di Sales > Posted.
 const ACTION_BTN_BASE = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50';
 const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
-const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700`;
+const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
 const NAV_BTN = 'flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card';
 
 // Pill bergaris + titik berwarna -- sama dengan Pill di Sales > Posted.
@@ -393,7 +393,7 @@ export default function JournalEntryPostedPage() {
                     <label className="text-[11px] font-medium text-neutral-500">To</label>
                     <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                   </div>
-                  <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full rounded-[6px] bg-neutral-800 py-2 text-xs font-semibold text-white transition-colors hover:bg-neutral-700">
+                  <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full rounded-[6px] bg-blue-600 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700">
                     Apply
                   </button>
                 </div>
@@ -549,7 +549,7 @@ export default function JournalEntryPostedPage() {
                   p === '…' ? (
                     <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
                   ) : (
-                    <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
+                    <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-blue-600 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
                   )
                 )}
                 <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label="Next page" className={NAV_BTN}><ChevronRight size={16} /></button>
@@ -581,7 +581,7 @@ export default function JournalEntryPostedPage() {
                 action={<button onClick={() => setSelectedId(null)} aria-label="Close" className="p-1 hover:bg-neutral-100 rounded transition-colors"><X size={16} className="text-neutral-500" /></button>}
               >
                 <div className="mb-3 flex items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-2.5">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-900 text-[11px] font-bold uppercase tracking-wider text-white">JE</div>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-[11px] font-bold uppercase tracking-wider text-white">JE</div>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-neutral-900">{selected.jeNumber}</p>
                     <p className="truncate text-xs font-medium text-neutral-500">{selected.description || selected.sourceType}</p>
@@ -595,7 +595,7 @@ export default function JournalEntryPostedPage() {
                 </div>
                 <div className="mt-3">
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-                    <div className="h-full rounded-full bg-neutral-800" style={{ width: `${matchPct > 0 ? Math.max(matchPct, 3) : 0}%` }} />
+                    <div className="h-full rounded-full bg-blue-600" style={{ width: `${matchPct > 0 ? Math.max(matchPct, 3) : 0}%` }} />
                   </div>
                   <p className="mt-1 text-[11px] font-medium text-neutral-600">{matchPct}% {isBalanced(selected) ? 'balanced' : 'credit matches debit'}</p>
                 </div>

@@ -338,7 +338,7 @@ export default function CashBankExceptions() {
                 </div>
                 <button
                   onClick={() => { setCurrentPage(1); setShowDatePicker(false); }}
-                  className="w-full rounded-lg border border-neutral-800 bg-neutral-800 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700"
+                  className="w-full rounded-lg border border-blue-600 bg-blue-600 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
                 >
                   {t('Apply')}
                 </button>

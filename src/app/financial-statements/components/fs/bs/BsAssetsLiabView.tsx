@@ -20,7 +20,7 @@ const BASES: { id: Basis; label: string }[] = [
   { id: 'previous_month', label: 'Previous month end' },
 ];
 
-const DONUT = ['#171717', '#404040', '#737373', '#A3A3A3', '#D4D4D4', '#E5E5E5'];
+const DONUT = ['#2563EB', '#0D9488', '#F59E0B', '#7C3AED', '#0EA5E9', '#CBD5E1'];
 const CUR = 0, CMP = 1, YEARS = 2; // index 2..5 = 4 akhir tahun sebelumnya
 
 export default function BsAssetsLiabView({ clientId, companyName, printedBy }: ViewProps) {
@@ -139,7 +139,7 @@ function Body({ m, cmpLbl, asOf }: { m: Merged; cmpLbl: string; asOf: string }) 
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#737373' }} tickLine={false} axisLine={false} />
                   <Tooltip cursor={{ fill: '#F5F5F5' }} content={<ChartTooltip fmt={v => `IDR ${fmtAmount(v)}`} />} />
                   <Bar dataKey="value" name="Total Assets" radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={false}>
-                    {trend.map((d, i) => <Cell key={i} fill={d.last ? BS_COLORS.assets : '#D4D4D4'} />)}
+                    {trend.map((d, i) => <Cell key={i} fill={d.last ? BS_COLORS.assets : BS_COLORS.muted} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -179,7 +179,7 @@ function SideCard({ title, icon, tone, m, sections, total }: {
           );
         })}
       </div>
-      <div className="mt-4 flex items-center justify-between rounded-lg bg-neutral-900 px-4 py-3">
+      <div className="mt-4 flex items-center justify-between rounded-lg bg-blue-700 px-4 py-3">
         <span className="text-xs font-bold text-white">{total.label}</span>
         <span className="text-xs font-bold tabular-nums text-white">{fmtAmount(total.v)}</span>
       </div>

@@ -341,11 +341,11 @@ function CfCrosshair({ wrapRef, plotLeft, plotTop, winFrom, yMin, yMax, maxIdx, 
   return (
     <div className="pointer-events-none absolute inset-0" aria-hidden="true">
       <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0 }}>
-        <line x1={xPx} y1={plotTop} x2={xPx} y2={plotBottom} stroke="#A3A3A3" strokeWidth={1} strokeDasharray="4 3" />
+        <line x1={xPx} y1={plotTop} x2={xPx} y2={plotBottom} stroke="#60A5FA" strokeWidth={1} strokeDasharray="4 3" />
         <line x1={plotLeft} y1={pos.y} x2={plotRight} y2={pos.y} stroke="#A3A3A3" strokeWidth={1} strokeDasharray="4 3" />
       </svg>
-      <div className={CF_CHIP} style={{ background: '#262626', right: pos.w - plotLeft + 4, top: pos.y - 10 }}>{cfRp(price)}</div>
-      <div className={CF_CHIP} style={{ background: '#262626', left: dateCenter, top: plotBottom + 4, transform: 'translateX(-50%)' }}>{dateText}</div>
+      <div className={CF_CHIP} style={{ background: '#1D4ED8', right: pos.w - plotLeft + 4, top: pos.y - 10 }}>{cfRp(price)}</div>
+      <div className={CF_CHIP} style={{ background: '#1D4ED8', left: dateCenter, top: plotBottom + 4, transform: 'translateX(-50%)' }}>{dateText}</div>
     </div>
   );
 }
@@ -791,7 +791,7 @@ function CfTable({ m, method, labels, totalLabel, range, showCmp, setShowCmp, cm
             <>
               <label className="flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-neutral-600">
                 <button type="button" role="switch" aria-checked={showCmp} onClick={() => setShowCmp(!showCmp)}
-                  className={`relative h-5 w-9 rounded-full transition-colors ${showCmp ? 'bg-neutral-900' : 'bg-neutral-300'}`}>
+                  className={`relative h-5 w-9 rounded-full transition-colors ${showCmp ? 'bg-blue-600' : 'bg-neutral-300'}`}>
                   <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${showCmp ? 'left-[18px]' : 'left-0.5'}`} />
                 </button>
                 Show Comparison

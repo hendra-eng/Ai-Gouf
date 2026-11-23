@@ -182,7 +182,7 @@ function MonthlyTable({ m, n, sel, onPick, millions, setMillions }: {
         <label className="flex items-center gap-2 text-xs text-neutral-500 cursor-pointer select-none">
           Show amount in millions
           <button type="button" role="switch" aria-checked={millions} onClick={() => setMillions(!millions)}
-            className={`relative w-9 h-5 rounded-full transition-colors ${millions ? 'bg-neutral-900' : 'bg-neutral-300'}`}>
+            className={`relative w-9 h-5 rounded-full transition-colors ${millions ? 'bg-blue-600' : 'bg-neutral-300'}`}>
             <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${millions ? 'left-[18px]' : 'left-0.5'}`} />
           </button>
         </label>
@@ -193,7 +193,7 @@ function MonthlyTable({ m, n, sel, onPick, millions, setMillions }: {
             <tr className={thRowCls}>
               <th className={`${thCls} text-left`}>Account Item</th>
               {idx.map(i => (
-                <th key={i} onClick={() => onPick(i)} className={`${thCls} text-right cursor-pointer ${i === sel ? 'bg-neutral-900 text-white' : 'hover:text-neutral-700'}`}>
+                <th key={i} onClick={() => onPick(i)} className={`${thCls} text-right cursor-pointer ${i === sel ? 'bg-blue-600 text-white' : 'hover:text-neutral-700'}`}>
                   {monthLabel(m.dates[i])}
                 </th>
               ))}

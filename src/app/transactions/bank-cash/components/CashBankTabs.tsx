@@ -113,7 +113,7 @@ export default function CashBankTabs() {
         <div className="flex items-center justify-end pb-2 lg:pb-0">
           <button
             onClick={() => setFormBaru(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
           >
             <Plus size={13} /> New Transaction
           </button>

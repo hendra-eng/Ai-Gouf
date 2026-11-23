@@ -451,7 +451,7 @@ function KeyInsights({ m }: { m: Merged }) {
   const movers = topMovers(m, ASSET_SECTIONS, PREV, CUR, 2).filter(x => Math.sign(x.delta) === Math.sign(dA));
   if (Math.abs(dA) >= 0.5) {
     items.push({
-      color: dA >= 0 ? 'bg-neutral-900' : 'bg-red-600',
+      color: dA >= 0 ? 'bg-blue-600' : 'bg-red-600',
       text: `Total assets ${dA >= 0 ? 'increased' : 'decreased'} by ${pA === null ? '' : `${Math.abs(pA).toFixed(1)}% `}(IDR ${fmtCompact(Math.abs(dA), 1)}) from last month${movers.length ? `, mainly due to ${movers.map(x => x.label.toLowerCase()).join(' and ')}` : ''}.`,
     });
   } else {
@@ -460,7 +460,7 @@ function KeyInsights({ m }: { m: Merged }) {
   const wc = m.workingCapital;
   const pW = pctChange(wc[CUR], wc[PREV]);
   items.push({
-    color: wc[CUR] >= wc[PREV] ? 'bg-neutral-900' : 'bg-neutral-500',
+    color: wc[CUR] >= wc[PREV] ? 'bg-teal-600' : 'bg-amber-500',
     text: `Working capital ${wc[CUR] >= wc[PREV] ? 'improved' : 'declined'}${pW === null ? '' : ` by ${Math.abs(pW).toFixed(1)}%`} to IDR ${fmtCompact(wc[CUR])}${m.currentRatio[CUR] !== null ? ` (current ratio ${m.currentRatio[CUR]!.toFixed(2)})` : ''}.`,
   });
   const dY = m.assets[CUR] - m.assets[LY];

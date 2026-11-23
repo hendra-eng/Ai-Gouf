@@ -58,7 +58,7 @@ function OverrideEditor({ row, onSave, onCancel }: { row: NoteRow; onSave: (v: n
         <input value={reason} onChange={e => setReason(e.target.value)} className={fieldCls} placeholder="e.g. Audit adjustment not yet journaled" />
       </Field>
       <button type="button" disabled={!valid || busy} onClick={async () => { setBusy(true); try { await onSave(num, reason.trim()); } finally { setBusy(false); } }}
-        className="px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50">
+        className="px-3 py-2 rounded-lg border border-blue-600 bg-blue-600 text-white shadow-sm transition-colors hover:bg-blue-700 text-xs font-semibold disabled:opacity-50">
         {busy ? <Loader2 size={14} className="animate-spin" /> : 'Save override'}
       </button>
       <button type="button" onClick={onCancel} className="px-3 py-2 rounded-lg text-xs font-medium border border-neutral-300 bg-white text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">Cancel</button>
@@ -107,7 +107,7 @@ function NoteCard({ note, d, clientId, onChanged }: { note: FsNote; d: FsNotes; 
             <div className="flex items-center gap-2">
               <input value={title} onChange={e => setTitle(e.target.value)} className={`${fieldCls} max-w-md`} />
               <button type="button" disabled={!title.trim() || busy} onClick={() => run(async () => { await updateNote(clientId, note.id, { title: title.trim() }); setRenaming(false); }, 'Title updated')}
-                className="px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50">Save</button>
+                className="px-3 py-2 rounded-lg border border-blue-600 bg-blue-600 text-white shadow-sm transition-colors hover:bg-blue-700 text-xs font-semibold disabled:opacity-50">Save</button>
               <button type="button" onClick={() => { setRenaming(false); setTitle(note.title); }} className="p-2 text-neutral-500"><X size={14} /></button>
             </div>
           ) : (
@@ -115,8 +115,8 @@ function NoteCard({ note, d, clientId, onChanged }: { note: FsNote; d: FsNotes; 
           )}
           <div className="flex flex-wrap items-center gap-1.5 mt-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200 rounded px-1.5 py-0.5">{STATEMENT_LABEL[note.statement] ?? note.statement}</span>
-            {note.is_custom && <span className="text-[10px] font-semibold uppercase tracking-wide bg-neutral-800 text-white rounded px-1.5 py-0.5">Custom</span>}
-            <span className={`text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 ${note.status === 'final' ? 'bg-neutral-800 text-white' : 'bg-neutral-100 text-neutral-600 ring-1 ring-neutral-300'}`}>{note.status}</span>
+            {note.is_custom && <span className="text-[10px] font-semibold uppercase tracking-wide bg-violet-600 text-white rounded px-1.5 py-0.5">Custom</span>}
+            <span className={`text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 ${note.status === 'final' ? 'bg-emerald-600 text-white' : 'bg-neutral-100 text-neutral-600 ring-1 ring-neutral-300'}`}>{note.status}</span>
             {note.has_override && <span className="text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 rounded px-1.5 py-0.5">Overridden</span>}
           </div>
         </div>
@@ -153,7 +153,7 @@ function NoteCard({ note, d, clientId, onChanged }: { note: FsNote; d: FsNotes; 
                 <option value="period">Save for this period only (as at {fmtDate(d.as_of)})</option>
                 <option value="client">Save as client standard text (all periods)</option>
               </Select>
-              <button type="button" disabled={busy} onClick={saveNarrative} className="px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50">
+              <button type="button" disabled={busy} onClick={saveNarrative} className="px-3 py-2 rounded-lg border border-blue-600 bg-blue-600 text-white shadow-sm transition-colors hover:bg-blue-700 text-xs font-semibold disabled:opacity-50">
                 {busy ? <Loader2 size={14} className="animate-spin" /> : 'Save narrative'}
               </button>
               <button type="button" onClick={() => { setEditing(false); setText(note.narrative_raw); }} className="px-3 py-2 rounded-lg text-xs font-medium border border-neutral-300 bg-white text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">Cancel</button>
@@ -334,7 +334,7 @@ function ManageNotes({ d, clientId, onChanged }: { d: FsNotes; clientId: string;
           </Field>
         )}
         <button type="button" disabled={busy || !title.trim() || (type === 'account' && !key.trim())} onClick={add}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50">
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-600 bg-blue-600 text-white shadow-sm transition-colors hover:bg-blue-700 text-xs font-semibold disabled:opacity-50">
           <Plus size={15} /> Add note
         </button>
       </div>
@@ -373,7 +373,7 @@ export default function NotesClient() {
       <button type="button" onClick={async () => { const { downloadNotesPdf } = await import('./notesPdf'); downloadNotesPdf(data, user?.nama || user?.username); }} className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium border border-neutral-300 bg-white text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
         <FileText size={14} className="text-neutral-500" /> PDF
       </button>
-      <a href={notesDocxUrl(activeClientId, period)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold">
+      <a href={notesDocxUrl(activeClientId, period)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-600 bg-blue-600 text-white shadow-sm transition-colors hover:bg-blue-700 text-xs font-semibold">
         <Download size={14} /> Word (.docx)
       </a>
     </div>
@@ -398,7 +398,7 @@ export default function NotesClient() {
                       <span className="text-neutral-500 tabular-nums w-5">{n.no}.</span>
                       <span className="truncate flex-1">{n.title}</span>
                       {n.has_override && <AlertTriangle size={12} className="text-amber-500" />}
-                      <span className={`w-2 h-2 rounded-full ${n.status === 'final' ? 'bg-neutral-800' : 'border border-neutral-400 bg-white'}`} title={n.status} />
+                      <span className={`w-2 h-2 rounded-full ${n.status === 'final' ? 'bg-emerald-600' : 'border border-neutral-400 bg-white'}`} title={n.status} />
                     </a>
                   ))}
                 </nav>

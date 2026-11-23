@@ -23,7 +23,7 @@ const PILL = 'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 t
 const INPUT = 'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-900 focus:border-neutral-700 focus:outline-none';
 const FIELD_LABEL = 'mb-0.5 block text-[11px] font-medium text-neutral-600';
 const BTN = 'rounded-md border border-neutral-300 px-2.5 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
-const BTN_PRIMARY = 'rounded-md bg-neutral-800 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-neutral-700 disabled:opacity-50';
+const BTN_PRIMARY = 'rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:opacity-50';
 
 interface Props {
   /** Naik setiap kali halaman minta form aturan dibuka dari baris terpilih (tombol "Rule" di baris mutasi). */
@@ -337,7 +337,7 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
 
   return (
     <div ref={kartuRef} className={`${CARD} !pt-4`}>
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Wand2 size={14} className="text-neutral-700" />

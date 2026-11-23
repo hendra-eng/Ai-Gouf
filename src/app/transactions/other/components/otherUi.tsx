@@ -254,7 +254,7 @@ function DrawerIsi({ clientId, tx, canPost, onClose }: { clientId: string; tx: O
   };
   const tombol = (label: string, action: BulkAction, utama = false) => (
     <button type="button" disabled={!!busy} onClick={() => jalan(label, () => runBulk(clientId, action, [tx.id]))}
-      className={utama ? `${btnSmall} border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700` : btnSmall}>
+      className={utama ? `${btnSmall} border-blue-600 bg-blue-600 text-white hover:bg-blue-700` : btnSmall}>
       {busy === label && <Loader2 size={12} className="animate-spin" />} {label}
     </button>
   );

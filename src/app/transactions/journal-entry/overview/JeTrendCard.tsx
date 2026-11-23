@@ -28,7 +28,7 @@ const CHART_HEIGHT = 220;
 const PLOT_TOP = 5;
 const TIME_ZOOM_PX = 220;
 const AXIS_BORDER = '#404040';
-const LINE_COLOR = '#171717';
+const LINE_COLOR = '#2563EB'; // biru, sama dengan chart Purchase
 const easeOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
 interface DragPreview { index: number; value: number }

@@ -17,7 +17,7 @@ import { fmtLongDate, plTemplateReport, todayLong } from '../statementTemplate';
 // pendapatan (donut) & trend laba bersih 5 tahun.
 
 type Span = 'year' | 'ytd';
-const DONUT = ['#171717', '#525252', '#737373', '#A3A3A3', '#D4D4D4', '#E5E5E5'];
+const DONUT = ['#2563EB', '#0D9488', '#F59E0B', '#7C3AED', '#0EA5E9', '#CBD5E1'];
 const CUR = 0, LY = 1, YEARS = 2; // index 2..5 = 4 tahun penuh sebelumnya (y-4..y-1)
 
 export default function PlGrossNetView({ clientId, segment, printedBy, filters }: ViewProps) {
@@ -180,7 +180,7 @@ function Body({ m, lyLbl, year }: { m: PlMerged; lyLbl: string; year: number }) 
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#737373' }} tickLine={false} axisLine={false} />
                   <Tooltip cursor={{ fill: '#F5F5F5' }} content={<ChartTooltip fmt={v => `IDR ${fmtAmount(v)}`} />} />
                   <Bar dataKey="value" name="Net Profit" radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={false}>
-                    {trend.map((d, i) => <Cell key={i} fill={d.value < 0 ? '#A3A3A3' : d.last ? PL_COLORS.brand : '#D4D4D4'} />)}
+                    {trend.map((d, i) => <Cell key={i} fill={d.value < 0 ? '#F87171' : d.last ? PL_COLORS.brand : PL_COLORS.muted} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>

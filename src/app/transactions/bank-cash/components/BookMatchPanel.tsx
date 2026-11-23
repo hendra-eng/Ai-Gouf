@@ -105,7 +105,7 @@ export default function BookMatchPanel({ clientId, mutationId, nominal, busy, on
                   </span>
                   <button type="button" onClick={() => link(r)} disabled={busy || !r.exact_amount}
                     title={r.exact_amount ? 'Reconcile the bank line with this transaction' : 'The amount must equal the bank line'}
-                    className="flex shrink-0 items-center gap-1 rounded-md bg-neutral-800 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40">
+                    className="flex shrink-0 items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
                     {busy ? <Loader2 size={11} className="animate-spin" /> : <Link2 size={11} />} Reconcile
                   </button>
                 </li>

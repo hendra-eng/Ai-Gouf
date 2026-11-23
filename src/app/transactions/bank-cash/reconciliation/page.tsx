@@ -106,7 +106,7 @@ function AdjustmentPanel({ settings, ringkasan, akun, onSave }: {
 
   return (
     <div className={`${SUM_CARD} !pt-4`}>
-      <span className={`absolute inset-x-0 top-0 h-0.5 ${akunBelum && settings.enabled ? 'bg-amber-500' : 'bg-neutral-800'}`} />
+      <span className={`absolute inset-x-0 top-0 h-0.5 ${akunBelum && settings.enabled ? 'bg-amber-500' : 'bg-blue-600'}`} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Scale size={14} className="text-neutral-700" />
@@ -158,7 +158,7 @@ function AdjustmentPanel({ settings, ringkasan, akun, onSave }: {
           </div>
           <div className="ml-auto flex gap-2">
             <button onClick={() => setEdit(false)} disabled={saving} className="rounded-md border border-neutral-300 px-2.5 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50">Cancel</button>
-            <button onClick={simpan} disabled={saving} className="rounded-md bg-neutral-800 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-neutral-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
+            <button onClick={simpan} disabled={saving} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
           </div>
         </div>
       ) : (
@@ -220,19 +220,19 @@ function ReconciliationSummary({ accounts }: { accounts: BcOverviewAccount[] }) 
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className={SUM_CARD}>
-          <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+          <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
           <div className={SUM_HEAD}><p className={SUM_LABEL}>Balance per Bank</p></div>
           <p className={SUM_VALUE}>{formatIDR(totalBank)}</p>
           <p className={SUM_SUB}>Latest bank statement balance in Source Data</p>
         </div>
         <div className={SUM_CARD}>
-          <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+          <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
           <div className={SUM_HEAD}><p className={SUM_LABEL}>Balance per Books</p></div>
           <p className={SUM_VALUE}>{formatIDR(totalBuku)}</p>
           <p className={SUM_SUB}>Bank account balance in the ledger (posted transactions)</p>
         </div>
         <div className={SUM_CARD}>
-          <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+          <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
           <div className={SUM_HEAD}>
             <p className={SUM_LABEL}>Difference</p>
             <span className={`${PILL} shrink-0 ${balance ? 'border-emerald-300 bg-emerald-100 text-emerald-800' : 'border-amber-300 bg-amber-100 text-amber-900'}`}>
@@ -766,7 +766,7 @@ export default function ReconciliationPage() {
             <button
               onClick={handleAuto}
               disabled={autoRunning || applying || loading || unmatchedMutations.length === 0}
-              className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               title="Automatically match certain lines (exact amount + invoice number/party name, no competing candidate) and record lines that fit an Auto rule (e.g. bank admin fee). Lines with an invoice difference are never auto-matched. The rest is logged in Exceptions."
             >
               <Zap size={13} />
@@ -901,7 +901,7 @@ export default function ReconciliationPage() {
                           <button
                             onClick={(e) => { e.stopPropagation(); handleMatch(m.id, auto); }}
                             disabled={isBusy}
-                            className="flex shrink-0 items-center gap-1 rounded-md bg-neutral-800 px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-neutral-700 disabled:opacity-50"
+                            className="flex shrink-0 items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
                           >
                             <Link2 size={11} /> Match
                           </button>
@@ -919,7 +919,7 @@ export default function ReconciliationPage() {
                               <button
                                 onClick={(e) => { e.stopPropagation(); handlePasangkan(m.id, menunggu.transaction_id); }}
                                 disabled={isBusy}
-                                className="flex shrink-0 items-center gap-1 rounded-md bg-neutral-800 px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-neutral-700 disabled:opacity-50"
+                                className="flex shrink-0 items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
                                 title="Pair this line with the transfer already recorded from the other account (no new journal)"
                               >
                                 <Link2 size={11} /> Pair
@@ -987,7 +987,7 @@ export default function ReconciliationPage() {
                             <button
                               onClick={() => handleMatch(m.id, adjCand, { category: adjKategori }, adjInfo.amount)}
                               disabled={isBusy || !adjReady}
-                              className="flex shrink-0 items-center gap-1 rounded-md bg-neutral-800 px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="flex shrink-0 items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                               title={adjReady ? 'Match and book the difference as an adjustment' : 'Set the adjustment account in Settings first'}
                             >
                               <Link2 size={11} /> Match + adjustment
@@ -1077,7 +1077,7 @@ export default function ReconciliationPage() {
                     key={k}
                     onClick={() => setSisiInvoice(k)}
                     className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
-                      sisiInvoice === k ? 'bg-neutral-800 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900'
+                      sisiInvoice === k ? 'bg-blue-600 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900'
                     }`}
                   >
                     {label}

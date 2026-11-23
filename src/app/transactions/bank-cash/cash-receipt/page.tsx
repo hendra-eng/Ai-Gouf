@@ -74,7 +74,7 @@ export default function CashReceiptPage() {
 
   const kpiLabel = (txt: string) => (
     <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-700">
-      <span className="h-3.5 w-1 rounded-full bg-neutral-800" />{txt}
+      <span className="h-3.5 w-1 rounded-full bg-blue-600" />{txt}
     </p>
   );
 
@@ -274,7 +274,7 @@ export default function CashReceiptPage() {
               p === '…' ? (
                 <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
               ) : (
-                <button key={p} onClick={() => setPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
+                <button key={p} onClick={() => setPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-blue-600 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
               )
             )}
             <button onClick={() => setPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label={t('Next page')} className={NAV_BTN}><ChevronRight size={16} /></button>

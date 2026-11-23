@@ -326,7 +326,7 @@ export default function StatementReviewModal({ file, bankCoaId, bankLabel, initi
                   <button
                     key={f}
                     onClick={() => setFilter(f)}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold ${filter === f ? 'bg-neutral-800 text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-900'}`}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold ${filter === f ? 'bg-blue-600 text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-900'}`}
                   >
                     {f === 'all' ? 'All lines' : `Not verified (${v.rows_low + v.rows_medium})`}
                   </button>

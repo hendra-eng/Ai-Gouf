@@ -50,7 +50,7 @@ interface Props {
 
 const CHIP = 'absolute rounded px-1.5 py-0.5 text-[11px] font-medium leading-4 text-white whitespace-nowrap shadow-sm';
 const CHIP_BG = '#262626'; // hijau sidebar (--nav)
-const LINE = '#a3a3a3';
+const LINE = '#60A5FA';
 const DATE_CHIP_HALF = 80; // setengah lebar perkiraan label tanggal, supaya tidak keluar dari grafik
 
 export default function SalesChartCrosshair({

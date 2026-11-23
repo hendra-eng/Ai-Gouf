@@ -200,7 +200,7 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
       <button
         onClick={kirim}
         disabled={busy}
-        className="w-full rounded-lg border border-neutral-800 bg-neutral-800 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+        className="w-full rounded-lg border border-blue-600 bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? 'Saving…' : 'Create DRAFT journal'}
       </button>

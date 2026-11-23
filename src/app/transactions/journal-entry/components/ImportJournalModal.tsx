@@ -378,7 +378,7 @@ export default function ImportJournalModal({
                 onClick={runImport}
                 type="button"
                 disabled={importing || balancedGroups.length === 0}
-                className="flex-1 py-2 bg-neutral-800 text-white rounded-lg text-xs font-semibold hover:bg-neutral-700 transition-colors disabled:opacity-50"
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
                 {importing ? 'Importing…' : `Import ${balancedGroups.length} Journal Entries`}
               </button>
@@ -418,7 +418,7 @@ export default function ImportJournalModal({
                 </tbody>
               </table>
             </div>
-            <button onClick={onClose} type="button" className="w-full py-2 bg-neutral-800 text-white rounded-lg text-xs font-semibold hover:bg-neutral-700 transition-colors">Done</button>
+            <button onClick={onClose} type="button" className="w-full py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors">Done</button>
           </div>
         )}
       </div>

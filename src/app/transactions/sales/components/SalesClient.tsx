@@ -30,7 +30,7 @@ const tabBarCls = 'flex flex-col gap-2 border-b border-neutral-300 lg:flex-row l
 const tabListCls = '-mb-px flex gap-1 overflow-x-auto';
 const tabCls = (active: boolean) =>
   `group flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm tracking-tight transition-colors ${active ? 'border-neutral-900 font-semibold text-neutral-900' : 'border-transparent font-medium text-neutral-500 hover:border-neutral-300 hover:text-neutral-900'}`;
-const tabBadgeCls = 'inline-flex min-w-[18px] items-center justify-center rounded-full bg-neutral-800 px-1.5 py-px text-[10px] font-semibold text-white';
+const tabBadgeCls = 'inline-flex min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-semibold text-white';
 
 export default function SalesClient() {
   const { t } = useLanguage();
@@ -97,7 +97,7 @@ export default function SalesClient() {
           <div className={`${salesFont.className} flex items-center justify-end pb-2 lg:pb-0`}>
             <Link
               href="/transactions/sales/invoice/new"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
             >
               <Plus size={13} /> {t('Tambah Transaksi')}
             </Link>

@@ -32,7 +32,7 @@ const tabs: Tab[] = [
 const elegantTabBarCls = 'flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between';
 const elegantTabCls = (active: boolean) =>
   `group flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3.5 py-3 text-sm tracking-tight transition-colors ${active ? 'border-neutral-900 font-semibold text-neutral-900' : 'border-transparent font-medium text-neutral-500 hover:border-neutral-300 hover:text-neutral-900'}`;
-const elegantTabBadgeCls = 'inline-flex min-w-[18px] items-center justify-center rounded-full bg-neutral-800 px-1.5 py-px text-[10px] font-semibold text-white';
+const elegantTabBadgeCls = 'inline-flex min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-semibold text-white';
 
 /** `actions` (opsional) = tombol aksi di baris tab sebelah kanan. Bila diisi, header & bar tab
  *  memakai tata letak yang sama dengan halaman Sales (judul + rentang tanggal, tab + aksi satu baris). */

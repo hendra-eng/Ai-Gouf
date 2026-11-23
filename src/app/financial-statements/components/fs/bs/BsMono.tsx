@@ -94,7 +94,7 @@ export function Segmented<T extends string>({ value, onChange, options }: { valu
     <div className="inline-flex rounded-lg border border-neutral-300 bg-white p-0.5 text-xs font-semibold">
       {options.map(([k, label]) => (
         <button key={k} type="button" onClick={() => onChange(k)}
-          className={`rounded-md px-3 py-1.5 transition-colors ${value === k ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}>
+          className={`rounded-md px-3 py-1.5 transition-colors ${value === k ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}>
           {label}
         </button>
       ))}
@@ -134,6 +134,14 @@ export function BsToolbar({ filters, loading, exportReady, buildExport }: {
   );
 }
 
+const TONE_STYLE: Record<Tone, { bar: string; chip: string; icon: string }> = {
+  brand:  { bar: 'bg-blue-600',    chip: 'bg-blue-50 ring-blue-100',       icon: 'text-blue-600' },
+  rose:   { bar: 'bg-amber-500',   chip: 'bg-amber-50 ring-amber-100',     icon: 'text-amber-600' },
+  violet: { bar: 'bg-teal-600',    chip: 'bg-teal-50 ring-teal-100',       icon: 'text-teal-600' },
+  amber:  { bar: 'bg-amber-500',   chip: 'bg-amber-50 ring-amber-100',     icon: 'text-amber-600' },
+  sky:    { bar: 'bg-sky-500',     chip: 'bg-sky-50 ring-sky-100',         icon: 'text-sky-600' },
+};
+
 // ── Panel, KPI, badge ────────────────────────────────────────────────
 
 export function Panel({ title, icon: Icon, right, children, className = '', bodyClass = 'p-5' }: {
@@ -149,7 +157,7 @@ export function Panel({ title, icon: Icon, right, children, className = '', body
     <section className={`card-elevated-md rounded-xl ${className}`}>
       {title && (
         <header className="flex items-center gap-3 px-5 pt-4 pb-1">
-          {Icon && <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Icon size={18} /></span>}
+          {Icon && <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 ring-1 ring-blue-100"><Icon size={18} /></span>}
           <h2 className="text-sm font-semibold text-neutral-900">{title}</h2>
           {right && <div className="ml-auto flex items-center gap-2">{right}</div>}
         </header>
@@ -172,7 +180,7 @@ export function Delta({ pct, abs, upIsGood = true, suffix, className = '' }: {
   const flat = Math.abs(val) < 0.05;
   const up = val > 0;
   const good = flat ? null : up === upIsGood;
-  const color = good === null ? 'text-neutral-500' : good ? 'text-neutral-900' : 'text-red-700';
+  const color = good === null ? 'text-neutral-500' : good ? 'text-emerald-700' : 'text-red-700';
   const Icon = flat ? Minus : up ? ArrowUpRight : ArrowDownRight;
   const text = pct !== undefined && pct !== null
     ? `${up ? '+' : ''}${pct.toFixed(1)}%`
@@ -185,7 +193,7 @@ export function Delta({ pct, abs, upIsGood = true, suffix, className = '' }: {
   );
 }
 
-export function KpiCard({ label, value, icon: Icon, delta }: {
+export function KpiCard({ label, value, icon: Icon, delta, tone = 'brand' }: {
   label: string;
   value: React.ReactNode;
   icon: React.ElementType;
@@ -194,11 +202,11 @@ export function KpiCard({ label, value, icon: Icon, delta }: {
 }) {
   return (
     <div className="relative min-w-0 overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className={`absolute inset-x-0 top-0 h-0.5 ${TONE_STYLE[tone].bar}`} />
       <div className="flex items-start justify-between gap-2">
         <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
-          <Icon size={16} className="text-neutral-700" />
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 ${TONE_STYLE[tone].chip}`}>
+          <Icon size={16} className={TONE_STYLE[tone].icon} />
         </span>
       </div>
       <p className="mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{value}</p>
@@ -243,7 +251,7 @@ export function ChartTooltip({ active, payload, label, fmt }: {
 }
 
 /** Kartu insight (tampilan Trend). */
-export function InsightCard({ icon: Icon, title, value, sub, badge }: {
+export function InsightCard({ icon: Icon, title, value, sub, badge, tone = 'brand' }: {
   icon: React.ElementType;
   tone?: Tone;
   title: string;
@@ -253,7 +261,7 @@ export function InsightCard({ icon: Icon, title, value, sub, badge }: {
 }) {
   return (
     <div className="flex items-start gap-3 rounded-[10px] border border-neutral-300 bg-white p-3.5 transition-colors duration-200 hover:border-neutral-500 hover:bg-neutral-50">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Icon size={18} /></span>
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ${TONE_STYLE[tone].chip} ${TONE_STYLE[tone].icon}`}><Icon size={18} /></span>
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{title}</p>
         <p className="text-sm font-semibold tabular-nums text-neutral-900">{value}</p>

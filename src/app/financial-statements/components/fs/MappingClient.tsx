@@ -22,7 +22,7 @@ import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 // override disimpan di management_client_fs_mappings.
 
 const SOURCE: Record<MappedAccount['mapping_source'], { label: string; cls: string }> = {
-  client: { label: 'Client', cls: 'bg-neutral-800 text-white' },
+  client: { label: 'Client', cls: 'bg-blue-600 text-white' },
   default: { label: 'Default', cls: 'bg-neutral-200 text-neutral-700' },
   none: { label: 'Unmapped', cls: 'bg-amber-50 text-amber-700' },
 };
@@ -95,7 +95,7 @@ function Editor({ a, m, clientId, onDone }: { a: MappedAccount; m: FsMapping; cl
         )}
       </div>
       <div className="flex items-center gap-2">
-        <button type="button" disabled={busy} onClick={save} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50">
+        <button type="button" disabled={busy} onClick={save} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-600 bg-blue-600 text-white shadow-sm transition-colors hover:bg-blue-700 text-xs font-semibold disabled:opacity-50">
           {busy ? <Loader2 size={14} className="animate-spin" /> : 'Save mapping'}
         </button>
         {a.saved && (
@@ -195,7 +195,7 @@ export default function MappingClient() {
                   <button type="button" disabled={!data || applying} onClick={() => applyDefaults(true)} className="px-3 py-2 rounded-lg border border-neutral-300 bg-white text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 text-xs font-medium disabled:opacity-50" title="Re-apply default rules to every account, replacing saved cash flow / equity / note values">
                     Re-apply &amp; overwrite
                   </button>
-                  <button type="button" disabled={!data || applying} onClick={() => applyDefaults(false)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-800 bg-neutral-800 text-white shadow-sm transition-colors hover:bg-neutral-700 text-xs font-semibold disabled:opacity-50">
+                  <button type="button" disabled={!data || applying} onClick={() => applyDefaults(false)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-600 bg-blue-600 text-white shadow-sm transition-colors hover:bg-blue-700 text-xs font-semibold disabled:opacity-50">
                     {applying ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} Apply defaults
                   </button>
                 </div>

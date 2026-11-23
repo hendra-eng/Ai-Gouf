@@ -34,7 +34,7 @@ export function PctCell({ cur, prev, upIsGood = true, className = '' }: { cur: n
   if (p === null || Math.abs(p) < 0.05) return <td className={`px-3 py-1.5 text-right text-xs tabular-nums text-neutral-500 ${className}`}>{p === null ? '–' : '0.0%'}</td>;
   const good = (p > 0) === upIsGood;
   return (
-    <td className={`px-3 py-1.5 text-right text-xs tabular-nums whitespace-nowrap ${good ? 'text-neutral-900' : 'text-red-700'} ${className}`}>
+    <td className={`px-3 py-1.5 text-right text-xs tabular-nums whitespace-nowrap ${good ? 'text-emerald-700' : 'text-red-700'} ${className}`}>
       {p > 0 ? '▲' : '▼'} {Math.abs(p).toFixed(1)}%
     </td>
   );
@@ -274,7 +274,7 @@ export function NumberedInsights({ items }: { items: string[] }) {
     <ol className="space-y-3">
       {items.map((t, i) => (
         <li key={i} className="flex gap-3 text-sm font-medium leading-snug text-neutral-800">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-[11px] font-semibold text-white">{i + 1}</span>
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white">{i + 1}</span>
           <span>{t}</span>
         </li>
       ))}
@@ -343,17 +343,17 @@ export function PlKpiTile({ label, value, sub, pct, pctLabel, icon: Icon }: {
   const bar = Math.min(100, Math.max(0, Math.round(raw)));
   return (
     <div className="relative min-w-0 overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <div className="relative flex items-start justify-between gap-2">
         <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
-          <Icon size={16} className="text-neutral-700" />
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 ring-1 ring-blue-100">
+          <Icon size={16} className="text-blue-600" />
         </span>
       </div>
       <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900" title={typeof value === 'string' ? value : undefined}>{value}</p>
       <div className="relative flex h-4 items-center overflow-hidden whitespace-nowrap">{sub ?? '\u00A0'}</div>
       <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${bar > 0 ? Math.max(bar, 3) : 0}%` }} />
+        <div className="h-full rounded-full bg-blue-600" style={{ width: `${bar > 0 ? Math.max(bar, 3) : 0}%` }} />
       </div>
       <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{pct === null ? '–' : `${Math.round(raw)}%`} {pctLabel}</p>
     </div>

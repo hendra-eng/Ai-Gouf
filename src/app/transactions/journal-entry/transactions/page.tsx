@@ -184,7 +184,7 @@ export default function JournalEntryTransactionPage() {
             </button>
             <button
               onClick={() => setShowNewModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
             >
               <Plus size={14} /> New Journal Entry
             </button>
@@ -358,7 +358,7 @@ export default function JournalEntryTransactionPage() {
                   { key: 'detail', label: 'Detail' },
                   { key: 'lines', label: 'Journal Lines' },
                 ] as const).map(dt => (
-                  <button key={dt.key} onClick={() => setDrawerTab(dt.key)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === dt.key ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}>{dt.label}</button>
+                  <button key={dt.key} onClick={() => setDrawerTab(dt.key)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === dt.key ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}>{dt.label}</button>
                 ))}
               </div>
 

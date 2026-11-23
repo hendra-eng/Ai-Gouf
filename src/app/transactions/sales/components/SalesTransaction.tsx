@@ -280,17 +280,17 @@ function SalesKpiTile({ label, count, amount, pct, pctLabel, icon: Icon }: {
   const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
   return (
     <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <div className="relative flex items-start justify-between gap-2">
         <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
-          <Icon size={16} className="text-neutral-700" />
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 ring-1 ring-blue-100">
+          <Icon size={16} className="text-blue-600" />
         </span>
       </div>
       <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{count.toLocaleString('id-ID')}</p>
       <p className="relative h-4 truncate text-[11px] font-medium text-neutral-500">{amount}</p>
       <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
+        <div className="h-full rounded-full bg-blue-600" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
       <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{p}% {pctLabel}</p>
     </div>
@@ -605,7 +605,7 @@ export default function SalesTransaction() {
                   <label className="text-[11px] font-medium text-neutral-500">{t('Sampai')}</label>
                   <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                 </div>
-                <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full rounded-[6px] bg-neutral-800 py-2 text-xs font-semibold text-white transition-colors hover:bg-neutral-700">
+                <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full rounded-[6px] bg-blue-600 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700">
                   {t('Terapkan')}
                 </button>
               </div>
@@ -705,7 +705,7 @@ export default function SalesTransaction() {
                   Clear selection
                 </button>
                 <button onClick={postSelected} disabled={bulkPosting || bisaDipostSelected.length === 0}
-                  className="flex items-center gap-1.5 rounded-lg bg-neutral-800 px-3 py-1.5 font-semibold text-white transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
                   {bulkPosting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
                   {bulkPosting ? 'Posting...' : `Post selected (${bisaDipostSelected.length})`}
                 </button>
@@ -827,7 +827,7 @@ export default function SalesTransaction() {
                 p === '…' ? (
                   <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
                 ) : (
-                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
+                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-blue-600 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
                 )
               )}
               <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label={t('Halaman berikutnya')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronRight size={16} /></button>
@@ -838,7 +838,7 @@ export default function SalesTransaction() {
         {/* Detail Drawer */}
         {selectedTrx && (
           <div className="relative w-80 flex-shrink-0 self-start sticky top-4 space-y-3 overflow-hidden rounded-xl border border-neutral-300 bg-white p-4 pt-5 shadow-sm">
-            <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-neutral-900">{selectedTrx.id}</span>
@@ -857,7 +857,7 @@ export default function SalesTransaction() {
                   { key: 'jurnal', label: 'Jurnal' },
                   { key: 'riwayat', label: 'Riwayat' },
                 ].map(dt => (
-                  <button key={dt.key} onClick={() => setDrawerTab(dt.key)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === dt.key ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}>{t(dt.label)}</button>
+                  <button key={dt.key} onClick={() => setDrawerTab(dt.key)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === dt.key ? 'bg-blue-600 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}>{t(dt.label)}</button>
                 ))}
               </div>
             )}
@@ -927,7 +927,7 @@ export default function SalesTransaction() {
                 </div>
                 <div className="flex gap-2 pt-1">
                   <button onClick={() => setIsEditing(false)} className={`flex-1 py-1.5 ${BTN_SECONDARY}`}>{t('Batal')}</button>
-                  <button onClick={saveEdit} disabled={saving} className="flex-1 py-1.5 bg-neutral-800 text-white rounded-lg text-xs font-semibold hover:bg-neutral-700 transition-colors disabled:opacity-50">{saving ? t('Menyimpan...') : t('Simpan')}</button>
+                  <button onClick={saveEdit} disabled={saving} className="flex-1 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50">{saving ? t('Menyimpan...') : t('Simpan')}</button>
                 </div>
               </div>
             )}
@@ -954,7 +954,7 @@ export default function SalesTransaction() {
                   <button
                     onClick={() => postTrx(selectedTrx.uuid, selectedTrx.id)}
                     disabled={selectedTrx.status === 'Posted'}
-                    className="flex-1 py-1.5 bg-neutral-800 text-white rounded-lg text-xs font-semibold hover:bg-neutral-700 transition-colors text-center disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex-1 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors text-center disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {t('Post')}
                   </button>

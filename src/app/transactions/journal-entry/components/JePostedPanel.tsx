@@ -13,7 +13,7 @@ export default function JePostedPanel({ title, leading, action, children, classN
 }) {
   return (
     <div className={`relative flex flex-col overflow-hidden rounded-xl border border-neutral-300 bg-white shadow-sm ${className}`}>
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <div className="flex items-center justify-between gap-3 border-b border-neutral-300 bg-neutral-50 px-4 pb-3 pt-4">
         <div className="flex min-w-0 items-center gap-3">
           {leading}

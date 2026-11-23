@@ -35,12 +35,12 @@ const tabBarCls = 'flex flex-col gap-2 border-b border-neutral-300 lg:flex-row l
 const tabListCls = '-mb-px flex gap-1 overflow-x-auto';
 const tabCls = (active: boolean) =>
   `group flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm tracking-tight transition-colors ${active ? 'border-neutral-900 font-semibold text-neutral-900' : 'border-transparent font-medium text-neutral-500 hover:border-neutral-300 hover:text-neutral-900'}`;
-const tabBadgeCls = 'inline-flex min-w-[18px] items-center justify-center rounded-full bg-neutral-800 px-1.5 py-px text-[10px] font-semibold text-white';
+const tabBadgeCls = 'inline-flex min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-semibold text-white';
 
 // Tombol aksi di baris tab -- sama dengan tombol di Sales > Source Data (kecil, monokrom).
 const ACTION_BTN_BASE = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50';
 const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
-const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700`;
+const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutGrid },
@@ -297,7 +297,7 @@ function Filters({ q, setQ, type, setType, status, setStatus, statuses }: {
 // ============================================================
 
 // Komponen elegan monokrom (disamakan dengan panel/KPI di Sales) untuk tab Overview.
-const SHADES = ['#171717', '#404040', '#525252', '#737373', '#a3a3a3', '#c4c4c4', '#d4d4d4'];
+const SHADES = ['#2563EB', '#0D9488', '#F59E0B', '#7C3AED', '#0EA5E9', '#EA580C', '#CBD5E1'];
 
 function EPanel({ title, subtitle, action, className = '', children }: {
   title: React.ReactNode; subtitle?: React.ReactNode; action?: React.ReactNode; className?: string; children: React.ReactNode;
@@ -325,14 +325,14 @@ function EKpiTile({ label, value, pct, note, icon: Icon, loading, onClick, activ
   const cls = `relative block w-full overflow-hidden rounded-[10px] border bg-white p-4 pt-5 text-left shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700 ${active ? 'border-neutral-700 ring-1 ring-neutral-700' : 'border-neutral-300'} ${interactive ? 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-700' : ''}`;
   const body = (
     <>
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
       <div className="flex items-start justify-between gap-2">
         <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-700" title={label}>{label}</p>
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${active ? 'bg-neutral-900' : 'bg-neutral-50'}`}><Icon size={16} className={active ? 'text-white' : 'text-neutral-600'} /></span>
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${active ? 'bg-blue-600' : 'bg-blue-50'}`}><Icon size={16} className={active ? 'text-white' : 'text-blue-600'} /></span>
       </div>
       {loading ? <div className="mt-2 h-6 w-24 animate-pulse rounded bg-neutral-100" /> : <p className="mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{value}</p>}
       <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
-        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
+        <div className="h-full rounded-full bg-blue-600" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
       <p className="mt-1 truncate text-[11px] font-semibold text-neutral-700">{note}</p>
     </>
@@ -387,7 +387,7 @@ function OverviewTab({ clientId, meta, open, onTemplates }: Ctx & { onTemplates:
           {PIPELINE.map(([t, st], i) => (
             <React.Fragment key={t}>
               <div className="flex flex-1 items-start gap-3">
-                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${i === 0 ? 'border-neutral-800 bg-neutral-800 text-white' : 'border-neutral-300 bg-white text-neutral-700'}`}>{i + 1}</span>
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${i === 0 ? 'border-blue-600 bg-blue-600 text-white' : 'border-neutral-300 bg-white text-neutral-700'}`}>{i + 1}</span>
                 <div><p className="text-sm font-semibold tracking-tight text-neutral-900">{t}</p><p className="text-xs font-medium text-neutral-600">{st}</p></div>
               </div>
               {i < PIPELINE.length - 1 && <ArrowRight size={16} className="hidden shrink-0 text-neutral-400 lg:block" />}
@@ -432,8 +432,8 @@ function OverviewTab({ clientId, meta, open, onTemplates }: Ctx & { onTemplates:
                     <YAxis yAxisId="rp" orientation="right" tickFormatter={v => rupiahShort(Number(v))} tick={{ fontSize: 10, fill: '#525252' }} axisLine={false} tickLine={false} width={64} />
                     <Tooltip formatter={(v: number, n: string) => (n === 'Total Amount (Rp)' ? rupiah(v) : v)} labelFormatter={m => fmtMonth(String(m))} contentStyle={{ borderRadius: 8, border: '1px solid #D4D4D4', fontSize: 12 }} />
                     <Legend wrapperStyle={{ fontSize: 11, color: '#404040' }} />
-                    <Bar yAxisId="n" dataKey="count" name="Number of Transactions" fill="#D4D4D4" radius={[4, 4, 0, 0]} />
-                    <Line yAxisId="rp" type="monotone" dataKey="amount" name="Total Amount (Rp)" stroke="#171717" strokeWidth={2} dot={false} activeDot={false} />
+                    <Bar yAxisId="n" dataKey="count" name="Number of Transactions" fill="#93C5FD" radius={[4, 4, 0, 0]} />
+                    <Line yAxisId="rp" type="monotone" dataKey="amount" name="Total Amount (Rp)" stroke="#2563EB" strokeWidth={2} dot={false} activeDot={false} />
                   </ComposedChart>
                 </ResponsiveContainer>
               )}
@@ -658,7 +658,7 @@ function PreviewTab({ txs, loading, open }: Ctx) {
             const err = t.issues.find(i => i.level === 'error');
             return (
               <article key={t.id} className="relative flex flex-col overflow-hidden rounded-[10px] border border-neutral-300 bg-white shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
-                <span className={`absolute inset-x-0 top-0 h-0.5 ${ok ? 'bg-neutral-800' : 'bg-neutral-400'}`} />
+                <span className={`absolute inset-x-0 top-0 h-0.5 ${ok ? 'bg-teal-600' : 'bg-amber-500'}`} />
                 <header className="flex items-start justify-between gap-3 px-4 pb-3 pt-5">
                   <button type="button" onClick={() => open(t.id)} className="flex min-w-0 items-center gap-3 text-left">
                     <MonoTypeIcon type={t.type_key} size="md" />
@@ -669,7 +669,7 @@ function PreviewTab({ txs, loading, open }: Ctx) {
                   </button>
                   <span className="flex shrink-0 items-center gap-1.5">
                     <StatusPill s={t.status} />
-                    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${ok ? 'border border-neutral-300 bg-neutral-100 text-neutral-800' : 'border border-neutral-900 bg-neutral-900 text-white'}`}>
+                    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${ok ? 'border border-emerald-200 bg-emerald-50 text-emerald-700' : 'border border-red-200 bg-red-50 text-red-700'}`}>
                       {ok ? <Check size={11} strokeWidth={2.5} /> : <AlertTriangle size={11} />}{ok ? 'Balanced' : 'Not balanced'}
                     </span>
                   </span>

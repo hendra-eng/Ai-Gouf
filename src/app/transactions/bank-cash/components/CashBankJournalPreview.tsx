@@ -255,7 +255,7 @@ export default function CashBankJournalPreview() {
                   <button
                     key={s}
                     onClick={() => { setStatusFilter(s); setPage(1); }}
-                    className={`flex-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${statusFilter === s ? 'bg-neutral-800 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900'}`}
+                    className={`flex-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${statusFilter === s ? 'bg-blue-600 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900'}`}
                   >
                     {s === 'all' ? `All (${transactions.length})` : `${TX_STATUS_LABEL[s]} (${transactions.filter((t) => t.status === s).length})`}
                   </button>
@@ -343,7 +343,7 @@ export default function CashBankJournalPreview() {
         {/* Kanan: detail */}
         <div className="min-w-0 flex-1 space-y-4">
           <div className="relative flex flex-wrap items-start justify-between gap-3 overflow-hidden rounded-xl border border-neutral-300 bg-white p-5 pt-6 shadow-sm">
-            <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
             <div>
               <div className="flex items-center gap-2.5">
                 <h2 className="text-lg font-semibold tracking-tight tabular-nums text-neutral-900">{selected.tx_number}</h2>
