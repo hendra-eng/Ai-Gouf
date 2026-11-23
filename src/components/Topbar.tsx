@@ -232,7 +232,7 @@ export default function Topbar({ onMobileMenuToggle }: TopbarProps) {
   const hasUrgent = alerts.some((r) => r.badge.severity === 'negative');
 
   return (
-    <header className="nav-topbar h-16 border-b border-[rgba(201,178,124,0.38)] flex items-center px-4 lg:px-6 gap-3 flex-shrink-0 z-30">
+    <header className="nav-topbar h-16 border-b border-[rgba(255,255,255,0.38)] flex items-center px-4 lg:px-6 gap-3 flex-shrink-0 z-30">
       {/* Mobile menu */}
       <button
         onClick={onMobileMenuToggle}
@@ -443,7 +443,7 @@ export default function Topbar({ onMobileMenuToggle }: TopbarProps) {
             aria-expanded={openMenu === 'user'}
             className="nav-user flex items-center gap-2.5 pl-1.5 pr-2 py-1.5"
           >
-            <div className="w-9 h-9 rounded-full bg-white/10 ring-1 ring-[rgba(201,178,124,0.6)] flex items-center justify-center">
+            <div className="w-9 h-9 rounded-full bg-white/10 ring-1 ring-[rgba(255,255,255,0.6)] flex items-center justify-center">
               <span className="text-xs font-bold text-white">{userInitials(displayName)}</span>
             </div>
             <div className="hidden xl:block text-left">

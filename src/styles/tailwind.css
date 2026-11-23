@@ -27,7 +27,7 @@
   --dark-foreground: #FFFFFF;
   --nav: #0E2F26;
   --nav-rgb: 14 47 38;
-  --nav-accent: #C9B27C; /* champagne: aksen hemat untuk logo, label grup & garis halus */
+  --nav-accent: #FFFFFF; /* putih (sebelumnya champagne #C9B27C): aksen hemat untuk logo, label grup & garis halus */
   --secondary: #F1F5F9;
   --secondary-foreground: #334155;
   --accent: #7C3AED;
@@ -527,7 +527,7 @@
   }
   /* ===== Sidebar & Topbar "elegant" (2026-11-23) =====
      Latar hijau gelap bergradasi halus, item aktif berpendar hijau highlight,
-     aksen champagne (--nav-accent) dipakai hemat. Ubah --nav-accent di :root
+     aksen putih (--nav-accent, sebelumnya champagne) dipakai hemat. Ubah --nav-accent di :root
      untuk mengganti nuansa. */
   .nav-surface {
     background:
@@ -562,11 +562,11 @@
     padding: 0 12px; margin-bottom: 6px;
     font-size: 11px; font-weight: 600;
     letter-spacing: 0.18em; text-transform: uppercase;
-    color: rgba(201,178,124,0.92);
+    color: rgba(255,255,255,0.92);
   }
   .nav-group-label::after {
     content: ''; flex: 1; height: 1px;
-    background: linear-gradient(90deg, rgba(201,178,124,0.28), transparent);
+    background: linear-gradient(90deg, rgba(255,255,255,0.28), transparent);
   }
 
   .nav-item-active {
@@ -622,7 +622,7 @@
     position: absolute;
     left: 0; right: 0; bottom: -1px; height: 1px;
     pointer-events: none;
-    background: linear-gradient(90deg, rgba(201,178,124,0.14) 0%, rgba(201,178,124,0.38) 100%);
+    background: linear-gradient(90deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.38) 100%);
   }
 
   /* Tombol ikon di Topbar (search, notifikasi): kotak datar, setinggi chip. */
@@ -698,8 +698,8 @@
   .nav-flyout-title {
     display: block; padding: 8px 10px; margin-bottom: 4px;
     font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
-    color: rgba(201,178,124,0.95);
-    border-bottom: 1px solid rgba(201,178,124,0.22);
+    color: rgba(255,255,255,0.95);
+    border-bottom: 1px solid rgba(255,255,255,0.22);
     border-radius: 8px 8px 0 0;
     transition: color 150ms;
   }
