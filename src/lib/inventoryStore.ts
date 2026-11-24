@@ -72,14 +72,22 @@ export interface StockDoc {
   item_code?: string | null; item_name?: string | null; lines?: DocLine[]; journal?: InvJournal;
 }
 
+/** Item pada Top 10 (nilai penutupan bulan lalu) + pembanding nilai stok penutupan sebulan sebelumnya (change_pct null = tidak ada data pembanding). */
+export interface TopItem extends Item { value_prev_month: number; change_pct: number | null }
+
 export interface InvOverview {
   as_of: string;
   kpi: { total_items: number; total_value: number; low_stock: number; out_of_stock: number; warehouses: number; categories: number };
   trend: { month: string; value: number; qty: number }[];
   by_category: { category: string; value: number; qty: number; items: number }[];
-  top_items: Item[];
+  top_items: TopItem[];
+  top_month_date: string;   // penutupan bulan lalu: sumber ranking & nilai Top 10
+  prev_month_date: string;  // penutupan 2 bulan lalu: pembanding warna
   low_stock_items: Item[];
 }
+
+export interface InvTrendMonth { month: string; value: number | null; stock_in: number | null; stock_out: number | null }
+export interface InvTrendYear { year: number; as_of: string; months: InvTrendMonth[] }
 
 export interface SourceDoc {
   id: string; number: string; date: string; party: string | null; total: number; open_qty: number;
@@ -131,6 +139,8 @@ export const deleteItem = (clientId: string, id: string) => api.send<{ id: strin
 export const importItems = (clientId: string, rows: Record<string, unknown>[], updateExisting: boolean) =>
   api.send<{ created: number; updated: number; skipped: number; categories_created: string[] }>('POST', '/items/import', { client_id: clientId, rows, update_existing: updateExisting });
 
+export const fetchInvTrendYear = (clientId: string, year: number, asOf: string, s?: AbortSignal) =>
+  api.get<InvTrendYear>('/trend', { ...c(clientId), year, as_of: asOf }, s);
 export const fetchInvOverview = (clientId: string, asOf: string, s?: AbortSignal) => api.get<InvOverview>('/overview', { ...c(clientId), as_of: asOf }, s);
 export const fetchMovements = (clientId: string, f: { date_from?: string; date_to?: string; item_id?: string; warehouse_id?: string; type?: string }, s?: AbortSignal) =>
   api.get<{ movements: Movement[]; totals: { qty_in: number; qty_out: number; value_in: number; value_out: number } }>('/movements', { ...c(clientId), ...f }, s);

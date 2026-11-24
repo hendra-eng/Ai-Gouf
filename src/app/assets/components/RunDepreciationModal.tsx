@@ -10,6 +10,7 @@ import { rupiah } from '@/lib/receivablesPayablesStore';
 import { createRun, fetchDepreciation, METHOD_LABEL, previewDepreciation, type DepPreview } from '@/lib/fixedAssetsStore';
 import { btnOutline, btnPrimary, inputCls } from '@/components/arap/arapUi';
 import { FormField, Modal } from '@/components/shared/moduleUi';
+import { faTableCls, faRow, tableHeadRow, thCls, tdCls } from './FaTable';
 
 export default function RunDepreciationModal({ clientId, asOf, onClose }: { clientId: string; asOf: string; onClose: () => void }) {
   const [bulan, setBulan] = useState('');
@@ -65,20 +66,20 @@ export default function RunDepreciationModal({ clientId, asOf, onClose }: { clie
             <span>{preview.lines.length} asset(s) eligible</span><b>{rupiah(preview.total)}</b>
           </div>
           {preview.lines.length > 0 && (
-            <div className="max-h-72 overflow-y-auto rounded-xl border border-border">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-slate-50"><tr className="text-left text-muted-foreground">
-                  <th className="px-3 py-2">Asset</th><th className="px-3 py-2">Method</th><th className="px-3 py-2 text-right">Cost</th>
-                  <th className="px-3 py-2 text-right">Accum. Before</th><th className="px-3 py-2 text-right">Depreciation</th>
+            <div className="max-h-72 overflow-auto rounded-xl border border-border">
+              <table className={faTableCls}>
+                <thead className="sticky top-0 z-10"><tr className={tableHeadRow}>
+                  <th className={thCls}>Asset</th><th className={thCls}>Method</th><th className={`${thCls} text-right`}>Cost</th>
+                  <th className={`${thCls} text-right`}>Accum. Before</th><th className={`${thCls} text-right`}>Depreciation</th>
                 </tr></thead>
-                <tbody className="divide-y divide-border">
+                <tbody>
                   {preview.lines.map(l => (
-                    <tr key={l.asset_id}>
-                      <td className="px-3 py-1.5"><b>{l.asset_code}</b> · {l.name}<span className="block text-[10px] text-muted-foreground">Dr {l.expense_account} / Cr {l.accum_account}</span></td>
-                      <td className="px-3 py-1.5">{METHOD_LABEL[l.method]}</td>
-                      <td className="px-3 py-1.5 text-right">{rupiah(l.cost)}</td>
-                      <td className="px-3 py-1.5 text-right">{rupiah(l.accumulated_before)}</td>
-                      <td className="px-3 py-1.5 text-right font-semibold">{rupiah(l.amount)}</td>
+                    <tr key={l.asset_id} className={faRow}>
+                      <td className={tdCls}><b>{l.asset_code}</b> · {l.name}<span className="block text-[10px] text-neutral-500">Dr {l.expense_account} / Cr {l.accum_account}</span></td>
+                      <td className={tdCls}>{METHOD_LABEL[l.method]}</td>
+                      <td className={`${tdCls} text-right`}>{rupiah(l.cost)}</td>
+                      <td className={`${tdCls} text-right`}>{rupiah(l.accumulated_before)}</td>
+                      <td className={`${tdCls} text-right font-semibold`}>{rupiah(l.amount)}</td>
                     </tr>
                   ))}
                 </tbody>

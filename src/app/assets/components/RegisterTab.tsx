@@ -5,14 +5,17 @@
 
 import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { BarChart3, Building2, ChevronDown, Clock, Coins, Download, MoreHorizontal, Search, Wrench } from 'lucide-react';
+import { BarChart3, ChevronDown, Clock, Coins, Download, MoreHorizontal, Search, Wrench } from 'lucide-react';
 import { fmtDate, rupiah } from '@/lib/receivablesPayablesStore';
 import {
   deleteAsset, fetchRegister, METHOD_LABEL, STATUS_LABEL, STATUS_STYLE, useFaData, type DisplayStatus, type FixedAsset, type Register,
 } from '@/lib/fixedAssetsStore';
 import { downloadTable, type ExportColumn, type ExportFormat } from '@/lib/tableExport';
-import { btnOutline, EmptyRow, inputCls, Menu, MenuItem, NumberPager, SortTh, sortRows, useSort } from '@/components/arap/arapUi';
-import { Delta, KpiGrid, Pill, tdCls } from '@/components/shared/moduleUi';
+import { Menu, MenuItem, sortRows, useSort } from '@/components/arap/arapUi';
+import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
+import { Delta } from '@/components/shared/moduleUi';
+import { FaKpiGrid } from './FaKpi';
+import { faTableCls, faRowClickable, tableHeadRow, thCls, tdCls, FaCard, FaPill, FaEmptyRow, FaSortTh, FaPager, faBtn } from './FaTable';
 import type { FaActions } from './FixedAssetsWorkspace';
 
 type SortKey = 'asset_code' | 'name' | 'acquisition_date' | 'cost' | 'accumulated_depreciation' | 'net_book_value';
@@ -81,70 +84,67 @@ export default function RegisterTab({ clientId, clientName, asOf, actions }: { c
   return (
     <div className="space-y-5">
       {reg.error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{reg.error}</div>}
-      <KpiGrid loading={reg.loading && !reg.data} cards={[
-        { label: 'Total Assets', value: rupiah(k?.current.total_cost), icon: Coins, tone: 'green',
+      <FaKpiGrid loading={reg.loading && !reg.data} cards={[
+        { label: 'Total Assets', value: rupiah(k?.current.total_cost), icon: Coins, tone: 'emerald',
           delta: <Delta now={k?.current.total_cost} prev={k?.previous.total_cost} suffix="vs. previous year" /> },
-        { label: 'Active Assets', value: rupiah(k?.current.active_cost), icon: BarChart3, tone: 'green',
+        { label: 'Active Assets', value: rupiah(k?.current.active_cost), icon: BarChart3, tone: 'teal',
           delta: <Delta now={k?.current.active_cost} prev={k?.previous.active_cost} suffix="vs. previous year" /> },
-        { label: 'Under Construction', value: rupiah(k?.current.under_construction), icon: Wrench, tone: 'blue',
+        { label: 'Under Construction', value: rupiah(k?.current.under_construction), icon: Wrench, tone: 'amber',
           delta: <Delta now={k?.current.under_construction} prev={k?.previous.under_construction} suffix="vs. previous year" /> },
-        { label: 'Assets Near End of Useful Life', value: rupiah(k?.current.near_end), icon: Clock, tone: 'amber',
+        { label: 'Assets Near End of Useful Life', value: rupiah(k?.current.near_end), icon: Clock, tone: 'rose',
           delta: <Delta now={k?.current.near_end} prev={k?.previous.near_end} goodWhenDown suffix="vs. previous year" /> },
       ]} />
 
-      <section className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex items-start gap-3 px-5 pb-3 pt-5">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600"><Building2 size={20} /></span>
+      <FaCard>
+        {/* Header + filter bar -- sama dengan Purchase Source Record List: dropdown di kiri, kolom cari (400px) di kanan */}
+        <div className="flex flex-col gap-3 border-b border-border px-0 py-3">
           <div>
-            <h2 className="text-lg font-bold text-foreground">Asset Register</h2>
-            <p className="text-xs text-muted-foreground">View and manage all fixed assets in your organization.</p>
+            <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">Asset Register</h3>
+            <p className="mt-0.5 text-sm text-neutral-500">View and manage all fixed assets in your organization.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterSelect variant="elegant" value={kategori} onChange={v => { setKategori(v); setPage(0); }}
+              options={[{ value: '', label: 'All Categories' }, ...opsiKategori.map(x => ({ value: x, label: x }))]} />
+            <FilterSelect variant="elegant" value={lokasi} onChange={v => { setLokasi(v); setPage(0); }}
+              options={[{ value: '', label: 'All Locations' }, ...opsiLokasi.map(x => ({ value: x, label: x }))]} />
+            <FilterSelect variant="elegant" value={status} onChange={v => { setStatus(v as DisplayStatus | ''); setPage(0); }}
+              options={[{ value: '', label: 'All Status' }, ...(Object.keys(STATUS_LABEL) as DisplayStatus[]).map(s => ({ value: s, label: STATUS_LABEL[s] }))]} />
+            <div className="relative ml-auto w-full sm:w-[400px]">
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+              <input value={cari} onChange={e => { setCari(e.target.value); setPage(0); }} placeholder="Search assets by code, name, or keyword..."
+                className="w-full rounded-lg border border-neutral-300 bg-card py-1.5 pl-9 pr-3 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
+            </div>
+            <Menu width="w-48" button={open => (
+              <button type="button" className={faBtn}><Download size={13} /> Export <ChevronDown size={14} className={open ? 'rotate-180' : ''} /></button>
+            )}>
+              {close => <>
+                <MenuItem onClick={() => { close(); ekspor('xlsx'); }}>Excel (.xlsx)</MenuItem>
+                <MenuItem onClick={() => { close(); ekspor('csv'); }}>CSV</MenuItem>
+                <MenuItem onClick={() => { close(); ekspor('pdf'); }}>PDF</MenuItem>
+              </>}
+            </Menu>
           </div>
         </div>
-        <div className="flex flex-col gap-2 px-5 pb-3 lg:flex-row lg:items-center">
-          <div className="relative flex-1">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input value={cari} onChange={e => { setCari(e.target.value); setPage(0); }} placeholder="Search assets by code, name, or keyword..." className={`${inputCls} pl-9`} />
-          </div>
-          <select value={kategori} onChange={e => { setKategori(e.target.value); setPage(0); }} className={`${inputCls} lg:w-48`}>
-            <option value="">All Categories</option>{opsiKategori.map(x => <option key={x}>{x}</option>)}
-          </select>
-          <select value={lokasi} onChange={e => { setLokasi(e.target.value); setPage(0); }} className={`${inputCls} lg:w-44`}>
-            <option value="">All Locations</option>{opsiLokasi.map(x => <option key={x}>{x}</option>)}
-          </select>
-          <select value={status} onChange={e => { setStatus(e.target.value as DisplayStatus | ''); setPage(0); }} className={`${inputCls} lg:w-48`}>
-            <option value="">All Status</option>
-            {(Object.keys(STATUS_LABEL) as DisplayStatus[]).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-          </select>
-          <Menu width="w-48" button={open => (
-            <button type="button" className={btnOutline}><Download size={15} /> Export <ChevronDown size={14} className={open ? 'rotate-180' : ''} /></button>
-          )}>
-            {close => <>
-              <MenuItem onClick={() => { close(); ekspor('xlsx'); }}>Excel (.xlsx)</MenuItem>
-              <MenuItem onClick={() => { close(); ekspor('csv'); }}>CSV</MenuItem>
-              <MenuItem onClick={() => { close(); ekspor('pdf'); }}>PDF</MenuItem>
-            </>}
-          </Menu>
-        </div>
-        <div className="overflow-x-auto px-2">
-          <table className="w-full min-w-[1100px] text-sm">
-            <thead><tr className="bg-slate-50 text-xs text-muted-foreground">
-              <SortTh label="Asset Code" k="asset_code" sort={sort} onSort={onSort} />
-              <SortTh label="Asset Name" k="name" sort={sort} onSort={onSort} />
-              <th className="px-3 py-2.5 text-left font-medium">Category</th>
-              <SortTh label="Acquisition Date" k="acquisition_date" sort={sort} onSort={onSort} />
-              <SortTh label="Cost" k="cost" sort={sort} onSort={onSort} align="right" />
-              <SortTh label="Accumulated Depreciation" k="accumulated_depreciation" sort={sort} onSort={onSort} align="right" />
-              <SortTh label="Net Book Value" k="net_book_value" sort={sort} onSort={onSort} align="right" />
-              <th className="px-3 py-2.5 text-left font-medium">Location</th>
-              <th className="px-3 py-2.5 text-left font-medium">Custodian</th>
-              <th className="px-3 py-2.5 text-left font-medium">Status</th>
-              <th className="w-10" />
+        <div className="overflow-x-auto scrollbar-thin">
+          <table className={`${faTableCls} min-w-[1100px]`}>
+            <thead><tr className={tableHeadRow}>
+              <FaSortTh label="Asset Code" k="asset_code" sort={sort} onSort={onSort} />
+              <FaSortTh label="Asset Name" k="name" sort={sort} onSort={onSort} />
+              <th className={thCls}>Category</th>
+              <FaSortTh label="Acquisition Date" k="acquisition_date" sort={sort} onSort={onSort} />
+              <FaSortTh label="Cost" k="cost" sort={sort} onSort={onSort} align="right" iconFirst />
+              <FaSortTh label="Accumulated Depreciation" k="accumulated_depreciation" sort={sort} onSort={onSort} align="right" iconFirst />
+              <FaSortTh label="Net Book Value" k="net_book_value" sort={sort} onSort={onSort} align="right" iconFirst />
+              <th className={thCls}>Location</th>
+              <th className={thCls}>Custodian</th>
+              <th className={thCls}>Status</th>
+              <th className={`${thCls} w-10`} />
             </tr></thead>
-            <tbody className="divide-y divide-border">
+            <tbody>
               {(reg.loading && !reg.data) || !tampil.length ? (
-                <EmptyRow cols={11} loading={reg.loading && !reg.data} text={aset.length ? 'No assets match the filters.' : 'No fixed assets yet. Click "Add Asset" to register one.'} />
+                <FaEmptyRow cols={11} loading={reg.loading && !reg.data} text={aset.length ? 'No assets match the filters.' : 'No fixed assets yet. Click "Add Asset" to register one.'} />
               ) : tampil.map(a => (
-                <tr key={a.id} className="cursor-pointer hover:bg-slate-50/60" onClick={() => actions.openAsset(a.id)}>
+                <tr key={a.id} className={faRowClickable} onClick={() => actions.openAsset(a.id)}>
                   <td className={`${tdCls} font-medium`}>{a.asset_code}</td>
                   <td className={tdCls}>
                     {a.name}
@@ -157,9 +157,9 @@ export default function RegisterTab({ clientId, clientName, asOf, actions }: { c
                   <td className={`${tdCls} text-right font-medium`}>{rupiah(a.net_book_value)}</td>
                   <td className={tdCls}>{a.location ?? '—'}</td>
                   <td className={tdCls}>{a.custodian ?? '—'}</td>
-                  <td className={tdCls}><Pill label={STATUS_LABEL[a.display_status]} style={STATUS_STYLE[a.display_status]} /></td>
+                  <td className={tdCls}><FaPill label={STATUS_LABEL[a.display_status]} style={STATUS_STYLE[a.display_status]} /></td>
                   <td className={tdCls} onClick={e => e.stopPropagation()}>
-                    <Menu width="w-44" button={() => <button type="button" className="rounded-md p-1 text-muted-foreground hover:bg-slate-100" aria-label="Actions"><MoreHorizontal size={16} /></button>}>
+                    <Menu width="w-44" button={() => <button type="button" className="rounded p-1 text-neutral-600 transition-colors hover:bg-neutral-300" aria-label="Actions"><MoreHorizontal size={13} /></button>}>
                       {close => <>
                         <MenuItem onClick={() => { close(); actions.openAsset(a.id); }}>View details</MenuItem>
                         <MenuItem onClick={() => { close(); actions.editAsset(a); }} disabled={a.status === 'disposed'}>Edit</MenuItem>
@@ -173,8 +173,8 @@ export default function RegisterTab({ clientId, clientName, asOf, actions }: { c
             </tbody>
           </table>
         </div>
-        <NumberPager page={page} pageSize={pageSize} total={baris.length} onPage={setPage} onPageSize={n => { setPageSize(n); setPage(0); }} noun="assets" />
-      </section>
+        <FaPager page={page} pageSize={pageSize} total={baris.length} onPage={setPage} onPageSize={n => { setPageSize(n); setPage(0); }} noun="assets" />
+      </FaCard>
     </div>
   );
 }

@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { fetchInvCategories, fetchWarehouses, saveItem, useInvData, type InvCategory, type Item, type ItemInput, type Warehouse } from '@/lib/inventoryStore';
-import { btnOutline, btnPrimary, Drawer, inputCls } from '@/components/arap/arapUi';
+import { Drawer } from '@/components/arap/arapUi';
+import { btnOutline, btnPrimary, inputCls } from './invUi';
 import { FormField } from '@/components/shared/moduleUi';
 
 const SATUAN = ['Pcs', 'Unit', 'Kg', 'Gram', 'Liter', 'Box', 'Pack', 'Carton', 'Sack', 'Ream', 'Roll', 'Meter', 'Set', 'Bottle', 'Can'];
@@ -52,7 +53,7 @@ export default function ItemFormDrawer({ clientId, item, onClose, onSetup }: { c
           <select value={f.status} onChange={e => set('status', e.target.value as 'active' | 'inactive')} className={inputCls}><option value="active">Active</option><option value="inactive">Inactive</option></select>
         </FormField>
         <FormField label="Item Name" required className="col-span-2"><input value={f.name} onChange={e => set('name', e.target.value)} className={inputCls} maxLength={255} /></FormField>
-        <FormField label="Category" hint={<button type="button" onClick={onSetup} className="font-medium text-[#0F7D4E] hover:underline">Manage categories</button>}>
+        <FormField label="Category" hint={<button type="button" onClick={onSetup} className="font-medium text-blue-600 hover:underline">Manage categories</button>}>
           <select value={f.category_id} onChange={e => set('category_id', e.target.value)} className={inputCls}>
             <option value="">No category</option>{kat.data.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>

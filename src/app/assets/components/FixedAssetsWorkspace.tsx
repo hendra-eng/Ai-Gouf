@@ -15,7 +15,9 @@ import { useActiveClient } from '@/lib/activeClient';
 import { todayIso } from '@/lib/receivablesPayablesStore';
 import { FIXED_ASSETS_EVENT, type Disposal, type FixedAsset } from '@/lib/fixedAssetsStore';
 import { btnPrimary, Menu, MenuItem } from '@/components/arap/arapUi';
-import { tabBarCls, tabCls, tabListCls } from '@/components/shared/moduleUi';
+import { elegantTabBarCls, elegantTabCls, elegantTabNavCls } from '@/components/shared/moduleUi';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
+import PageHeading from '@/components/shared/PageHeading';
 import type { ExportFormat } from '@/lib/tableExport';
 import OverviewTab from './OverviewTab';
 import RegisterTab from './RegisterTab';
@@ -94,14 +96,14 @@ function FixedAssetsWorkspace() {
   const tombol = (() => {
     const panah = (open: boolean) => <ChevronDown size={15} className={open ? 'rotate-180 transition' : 'transition'} />;
     const split = (utama: React.ReactNode, menu: (close: () => void) => React.ReactNode) => (
-      <div className="flex items-stretch overflow-hidden rounded-xl shadow-sm">
+      <div className="flex items-stretch rounded-xl shadow-sm [&>div>div:first-child]:h-full">
         {utama}
         <Menu width="w-60" button={open => (
-          <button type="button" disabled={!kid} className="flex h-full items-center border-l border-white/25 bg-[#0F7D4E] px-3 text-white hover:bg-[#0c6a42] disabled:opacity-50">{panah(open)}</button>
+          <button type="button" disabled={!kid} className="flex h-full items-center rounded-r-xl border-l border-white/25 bg-[#0F7D4E] px-3 text-white hover:bg-[#0c6a42] disabled:opacity-50">{panah(open)}</button>
         )}>{menu}</Menu>
       </div>
     );
-    const utamaCls = `${btnPrimary} rounded-none shadow-none`;
+    const utamaCls = `${btnPrimary} rounded-l-xl rounded-r-none shadow-none`;
     if (tab === 'depreciation') {
       return split(<button type="button" disabled={!kid} onClick={actions.runDepreciation} className={utamaCls}><Play size={15} /> Run Depreciation</button>,
         close => <>
@@ -135,48 +137,49 @@ function FixedAssetsWorkspace() {
       </>);
   })();
 
+  const tanggal = (
+    <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
+          <CalendarDays size={14} /> As of
+          <input type="date" value={asOf} max="2999-12-31" onChange={e => e.target.value && setAsOf(e.target.value)}
+            className="bg-transparent text-xs font-medium text-foreground focus:outline-none" />
+        </label>
+        {asOf !== todayIso() && <button type="button" onClick={() => setAsOf(todayIso())} className="text-xs font-medium text-[#0F7D4E] hover:underline">Today</button>}
+        <button type="button" onClick={refresh} title="Refresh" className="rounded-lg p-2 text-muted-foreground hover:bg-slate-100 hover:text-foreground">
+          <RefreshCcw size={15} />
+        </button>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-background pb-16">
-      <div className="mx-auto max-w-screen-2xl space-y-5 px-4 py-6 sm:px-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Fixed Assets</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Manage and monitor your fixed assets, depreciation, and asset lifecycle.</p>
-          </div>
-          {tombol}
-        </div>
+      <div className="mx-auto max-w-screen-2xl space-y-5 px-6 py-5 lg:px-8 xl:px-10">
+        <PageHeading
+          title="Fixed Assets"
+          description="Manage and monitor your fixed assets, depreciation, and asset lifecycle."
+          actions={<div className="flex flex-wrap items-center justify-end gap-3">{tanggal}{tombol}</div>}
+        />
 
         {!kid && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Select a client first (Switch Company in the top bar).</div>}
 
-        <div className={tabBarCls}>
-          <nav className={tabListCls}>
+        <div className={elegantTabBarCls}>
+          <nav className={`${salesFont.className} ${elegantTabNavCls}`}>
             {TABS.map(t => {
               const aktif = tab === t.id;
               const Ikon = t.icon;
               return (
                 <button key={t.id} type="button" onClick={() => goTab(t.id)}
-                  className={tabCls(aktif)}>
-                  <Ikon size={16} /> {t.label}
+                  className={elegantTabCls(aktif)}>
+                  <Ikon size={16} strokeWidth={aktif ? 2 : 1.5} /> {t.label}
                 </button>
               );
             })}
           </nav>
-          <div className="flex items-center gap-2 pb-2 lg:pb-0">
-            <label className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
-              <CalendarDays size={14} /> As of
-              <input type="date" value={asOf} max="2999-12-31" onChange={e => e.target.value && setAsOf(e.target.value)}
-                className="bg-transparent text-xs font-medium text-foreground focus:outline-none" />
-            </label>
-            {asOf !== todayIso() && <button type="button" onClick={() => setAsOf(todayIso())} className="text-xs font-medium text-[#0F7D4E] hover:underline">Today</button>}
-            <button type="button" onClick={refresh} title="Refresh" className="rounded-lg p-2 text-muted-foreground hover:bg-slate-100 hover:text-foreground">
-              <RefreshCcw size={15} />
-            </button>
-          </div>
         </div>
 
         {kid && tab === 'overview' && <OverviewTab clientId={kid} asOf={asOf} actions={actions} />}
         {kid && tab === 'register' && <RegisterTab clientId={kid} clientName={activeClientName ?? ''} asOf={asOf} actions={actions} />}
-        {kid && tab === 'draft' && <DraftTab clientId={kid} actions={actions} />}
+        {kid && tab === 'draft' && <DraftTab clientId={kid} clientName={activeClientName ?? ''} actions={actions} />}
         {kid && tab === 'depreciation' && <DepreciationTab clientId={kid} asOf={asOf} actions={actions} />}
         {kid && tab === 'disposal' && <DisposalTab clientId={kid} asOf={asOf} actions={actions} />}
         {kid && tab === 'reports' && <ReportsTab clientId={kid} clientName={activeClientName ?? ''} asOf={asOf} exportSignal={reportExport} />}

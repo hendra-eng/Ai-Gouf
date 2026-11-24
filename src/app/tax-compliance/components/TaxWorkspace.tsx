@@ -16,6 +16,7 @@ import { todayIso } from '@/lib/receivablesPayablesStore';
 import { syncTax, type Range } from '@/lib/taxComplianceStore';
 import { btnOutline, btnPrimary } from '@/components/arap/arapUi';
 import { tabCls, tabNavCls } from '@/components/shared/moduleUi';
+import PageHeading from '@/components/shared/PageHeading';
 import OverviewTab from './OverviewTab';
 import LedgerTab from './LedgerTab';
 import PphTab from './PphTab';
@@ -94,27 +95,23 @@ function TaxWorkspace() {
 
   return (
     <div className="min-h-screen bg-background pb-16">
-      <div className="mx-auto max-w-screen-2xl space-y-5 px-4 py-6 sm:px-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Tax Compliance</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {tab === 'reports' ? 'Generate and download tax reports for monitoring, filing, and reconciliation.' : 'Monitor tax base, tax liabilities, payments, filings, and reconciliation from posted transactions.'}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
-              <CalendarDays size={14} /> Period
-              <input type="month" value={dari} onChange={e => e.target.value && setDari(e.target.value)} className="bg-transparent text-xs font-medium text-foreground focus:outline-none" />
-              –
-              <input type="month" value={sampai} min={dari} onChange={e => e.target.value && setSampai(e.target.value)} className="bg-transparent text-xs font-medium text-foreground focus:outline-none" />
-            </label>
-            <button type="button" onClick={() => setSettings(true)} disabled={!kid} className={btnOutline}><Settings2 size={15} /> Tax Accounts</button>
-            <button type="button" onClick={() => sync(false)} disabled={!kid || syncing} className={btnPrimary}>
-              {syncing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCcw size={15} />} Sync Transactions
-            </button>
-          </div>
-        </div>
+      <div className="mx-auto max-w-screen-2xl space-y-5 px-6 py-5 lg:px-8 xl:px-10">
+        <PageHeading
+          title="Tax Compliance"
+          description={tab === 'reports' ? 'Generate and download tax reports for monitoring, filing, and reconciliation.' : 'Monitor tax base, tax liabilities, payments, filings, and reconciliation from posted transactions.'}
+          actions={<>
+          <label className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+            <CalendarDays size={14} /> Period
+            <input type="month" value={dari} onChange={e => e.target.value && setDari(e.target.value)} className="bg-transparent text-xs font-medium text-foreground focus:outline-none" />
+            –
+            <input type="month" value={sampai} min={dari} onChange={e => e.target.value && setSampai(e.target.value)} className="bg-transparent text-xs font-medium text-foreground focus:outline-none" />
+          </label>
+          <button type="button" onClick={() => setSettings(true)} disabled={!kid} className={btnOutline}><Settings2 size={15} /> Tax Accounts</button>
+          <button type="button" onClick={() => sync(false)} disabled={!kid || syncing} className={btnPrimary}>
+            {syncing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCcw size={15} />} Sync Transactions
+          </button>
+          </>}
+        />
 
         {!kid && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Select a client first (Switch Company in the top bar).</div>}
 

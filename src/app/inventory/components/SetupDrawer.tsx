@@ -10,7 +10,8 @@ import {
   deleteInvCategory, deleteWarehouse, fetchInvAccounts, fetchInvCategories, fetchWarehouses, saveInvCategory, saveWarehouse, seedInvCategories, useInvData,
   type CoaAccount, type InvCategory, type Warehouse,
 } from '@/lib/inventoryStore';
-import { btnOutline, btnPrimary, btnSmall, Drawer, inputCls } from '@/components/arap/arapUi';
+import { Drawer } from '@/components/arap/arapUi';
+import { btnOutline, btnPrimary, btnSmall, inputCls } from './invUi';
 import { AccountSelect, FormField, isPnlAccount } from '@/components/shared/moduleUi';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 

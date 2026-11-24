@@ -7,14 +7,17 @@
 import React, { useCallback, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
-  ArrowLeftRight, CalendarDays, ChevronDown, FileBarChart, LayoutDashboard, ListChecks, PackagePlus, RefreshCcw, Settings2, SlidersHorizontal,
-  TrendingUp, Warehouse as WarehouseIcon,
+  ArrowLeftRight, ChevronDown, FileBarChart, LayoutDashboard, ListChecks, PackagePlus, Plus, Settings2, SlidersHorizontal,
+  TrendingUp,
 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
-import { fmtDate, todayIso } from '@/lib/receivablesPayablesStore';
-import { DOC_TYPE_LABEL, INVENTORY_EVENT, type DocType, type Item, type StockDoc } from '@/lib/inventoryStore';
-import { btnOutline, btnPrimary, Menu, MenuItem } from '@/components/arap/arapUi';
-import { tabBarCls, tabCls, tabListCls } from '@/components/shared/moduleUi';
+import { todayIso } from '@/lib/receivablesPayablesStore';
+import { DOC_TYPE_LABEL, type DocType, type Item, type StockDoc } from '@/lib/inventoryStore';
+import { Menu, MenuItem } from '@/components/arap/arapUi';
+import { btnOutline, btnPrimary, InvDatePeriod } from './invUi';
+import { elegantTabBarCls, elegantTabCls, elegantTabNavCls } from '@/components/shared/moduleUi';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
+import PageHeading from '@/components/shared/PageHeading';
 import OverviewTab from './OverviewTab';
 import ItemListTab from './ItemListTab';
 import MovementTab from './MovementTab';
@@ -80,56 +83,57 @@ function InventoryWorkspace() {
     setup: () => setSetupOpen(true),
     goTab,
   };
-  const label = TABS.find(t => t.id === tab)?.label ?? 'Overview';
 
   return (
     <div className="min-h-screen bg-background pb-16">
-      <div className="mx-auto max-w-screen-2xl space-y-5 px-4 py-6 sm:px-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-[#0F7D4E]"><WarehouseIcon size={24} /></span>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Inventory</h1>
-              <p className="text-sm text-muted-foreground">{label}</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={actions.setup} disabled={!kid} className={btnOutline}><Settings2 size={15} /> Warehouses &amp; Categories</button>
-            <Menu width="w-56" button={open => (
-              <button type="button" disabled={!kid} className={btnPrimary}><PackagePlus size={15} /> New Document <ChevronDown size={14} className={open ? 'rotate-180' : ''} /></button>
-            )}>
-              {close => (Object.keys(DOC_TYPE_LABEL) as DocType[]).map(t => (
-                <MenuItem key={t} onClick={() => { close(); actions.newDocument(t); }}>{DOC_TYPE_LABEL[t]}</MenuItem>
-              ))}
-            </Menu>
-          </div>
-        </div>
+      <div className="mx-auto max-w-screen-2xl space-y-5 px-6 py-5 lg:px-8 xl:px-10">
+        <PageHeading
+          title="Inventory"
+          description="Manage items, warehouses, stock movements, adjustments, transfers, and inventory reports."
+          actions={<>
+            <InvDatePeriod single label="As of" to={asOf} onTo={v => v && setAsOf(v)} />
+            <button type="button" onClick={actions.setup} disabled={!kid} className={btnOutline}><Settings2 size={14} /> Warehouses &amp; Categories</button>
+            {tab === 'adjustments' || tab === 'transfer' ? (
+              // Tab Adjustments / Transfer: tombol Create menggantikan New Document di posisi yang sama.
+              <button type="button" disabled={!kid} onClick={() => actions.newDocument(tab === 'transfer' ? 'transfer' : 'adjustment')} className={btnPrimary}>
+                <Plus size={14} /> Create {tab === 'transfer' ? 'Transfer' : 'Adjustment'}
+              </button>
+            ) : tab === 'movement' ? (
+              // Tab Stock Movement: Record Stock menggantikan New Document di posisi yang sama.
+              <Menu elegant width="w-56" button={open => (
+                <button type="button" disabled={!kid} className={btnPrimary}><Plus size={14} /> Record Stock <ChevronDown size={14} className={open ? 'rotate-180' : ''} /></button>
+              )}>
+                {close => (['receipt', 'issue', 'opening'] as DocType[]).map(t => (
+                  <MenuItem strong key={t} onClick={() => { close(); actions.newDocument(t); }}>{DOC_TYPE_LABEL[t]}</MenuItem>
+                ))}
+              </Menu>
+            ) : (
+              <Menu elegant width="w-56" button={open => (
+                <button type="button" disabled={!kid} className={btnPrimary}><PackagePlus size={14} /> New Document <ChevronDown size={14} className={open ? 'rotate-180' : ''} /></button>
+              )}>
+                {close => (Object.keys(DOC_TYPE_LABEL) as DocType[]).map(t => (
+                  <MenuItem strong key={t} onClick={() => { close(); actions.newDocument(t); }}>{DOC_TYPE_LABEL[t]}</MenuItem>
+                ))}
+              </Menu>
+            )}
+          </>}
+        />
 
-        {!kid && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Select a client first (Switch Company in the top bar).</div>}
+        {!kid && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Select a client first (Switch Company in the top bar).</div>}
 
-        <div className={tabBarCls}>
-          <nav className={tabListCls}>
+        <div className={elegantTabBarCls}>
+          <nav className={`${salesFont.className} ${elegantTabNavCls}`}>
             {TABS.map(t => {
               const aktif = tab === t.id;
               const Ikon = t.icon;
               return (
                 <button key={t.id} type="button" onClick={() => goTab(t.id)}
-                  className={tabCls(aktif)}>
-                  <Ikon size={16} /> {t.label}
+                  className={elegantTabCls(aktif)}>
+                  <Ikon size={16} strokeWidth={aktif ? 2 : 1.5} /> {t.label}
                 </button>
               );
             })}
           </nav>
-          <div className="flex items-center gap-2 pb-2 lg:pb-0">
-            <label className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground" title={`Per ${fmtDate(asOf)}`}>
-              <CalendarDays size={14} /> Per
-              <input type="date" value={asOf} max="2999-12-31" onChange={e => e.target.value && setAsOf(e.target.value)}
-                className="bg-transparent text-xs font-medium text-foreground focus:outline-none" />
-            </label>
-            <button type="button" onClick={() => window.dispatchEvent(new Event(INVENTORY_EVENT))} title="Refresh" className="rounded-lg p-2 text-muted-foreground hover:bg-slate-100 hover:text-foreground">
-              <RefreshCcw size={15} />
-            </button>
-          </div>
         </div>
 
         {kid && tab === 'overview' && <OverviewTab clientId={kid} asOf={asOf} actions={actions} />}

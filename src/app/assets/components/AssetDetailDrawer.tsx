@@ -13,6 +13,7 @@ import {
 } from '@/lib/fixedAssetsStore';
 import { btnOutline, btnPrimary, btnSmall, Drawer, Field, inputCls } from '@/components/arap/arapUi';
 import { AccountSelect, FormField, Modal, Pill, ReasonDialog } from '@/components/shared/moduleUi';
+import { faTableCls, faRow, tableHeadRow, thCls, tdCls } from './FaTable';
 import type { FaActions } from './FixedAssetsWorkspace';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
@@ -94,17 +95,19 @@ export default function AssetDetailDrawer({ clientId, assetId, asOf, actions, on
         {a.schedule.length > 0 && (
           <div>
             <h4 className="mb-2 text-sm font-semibold text-foreground">Projected Depreciation <span className="font-normal text-muted-foreground">({a.schedule.length} months remaining)</span></h4>
-            <table className="w-full text-xs">
-              <thead><tr className="border-b border-border text-left text-muted-foreground">
-                <th className="py-1.5">Period</th><th className="py-1.5 text-right">Depreciation</th><th className="py-1.5 text-right">Accumulated</th><th className="py-1.5 text-right">Book Value</th>
+            <div className="overflow-x-auto scrollbar-thin">
+            <table className={faTableCls}>
+              <thead><tr className={tableHeadRow}>
+                <th className={thCls}>Period</th><th className={`${thCls} text-right`}>Depreciation</th><th className={`${thCls} text-right`}>Accumulated</th><th className={`${thCls} text-right`}>Book Value</th>
               </tr></thead>
-              <tbody className="divide-y divide-border">
+              <tbody>
                 {(semuaJadwal ? a.schedule : a.schedule.slice(0, 12)).map(s => (
-                  <tr key={s.period}><td className="py-1.5">{fmtMonth(s.period.slice(0, 7))}</td><td className="py-1.5 text-right">{rupiah(s.depreciation)}</td>
-                    <td className="py-1.5 text-right">{rupiah(s.accumulated)}</td><td className="py-1.5 text-right">{rupiah(s.nbv)}</td></tr>
+                  <tr key={s.period} className={faRow}><td className={tdCls}>{fmtMonth(s.period.slice(0, 7))}</td><td className={`${tdCls} text-right`}>{rupiah(s.depreciation)}</td>
+                    <td className={`${tdCls} text-right`}>{rupiah(s.accumulated)}</td><td className={`${tdCls} text-right`}>{rupiah(s.nbv)}</td></tr>
                 ))}
               </tbody>
             </table>
+            </div>
             {a.schedule.length > 12 && (
               <button type="button" onClick={() => setSemuaJadwal(x => !x)} className="mt-1 text-xs font-medium text-[#0F7D4E] hover:underline">
                 {semuaJadwal ? 'Show less' : `Show all ${a.schedule.length} months`}

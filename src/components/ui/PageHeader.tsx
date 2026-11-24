@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Icon from '@/components/ui/AppIcon';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
 
 interface FilterOption {
   key: string;
@@ -25,9 +26,11 @@ interface PageHeaderProps {
   onRefresh?: () => void;
   /** Dipanggil saat toggle Actual/Budget/Previous Year berubah. */
   onViewChange?: (view: (typeof viewOptions)[number]) => void;
+  /** true = judul & deskripsi memakai gaya yang sama dengan PageHeading (Inter, semibold, neutral) seperti FX Transfers / Fixed Assets. */
+  moduleHeading?: boolean;
 }
 
-export default function PageHeader({ title, subtitle, period, periodOptions, filters = [], actions, onExport, onRefresh, onViewChange }: PageHeaderProps) {
+export default function PageHeader({ title, subtitle, period, periodOptions, filters = [], actions, onExport, onRefresh, onViewChange, moduleHeading = false }: PageHeaderProps) {
   const router = useRouter();
   const [selectedPeriod, setSelectedPeriod] = useState(period);
   const [filterValues, setFilterValues] = useState<Record<string, string>>(
@@ -64,9 +67,9 @@ export default function PageHeader({ title, subtitle, period, periodOptions, fil
   return (
     <div className="mb-6">
       <div className="flex items-start justify-between gap-4 mb-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">{title}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>
+        <div className={moduleHeading ? salesFont.className : undefined}>
+          <h1 className={moduleHeading ? 'text-2xl font-semibold tracking-tight text-neutral-900' : 'text-2xl font-bold text-foreground tracking-tight'}>{title}</h1>
+          <p className={moduleHeading ? 'mt-1 text-sm font-medium text-neutral-500' : 'text-sm text-muted-foreground mt-0.5'}>{subtitle}</p>
           <div className="flex items-center gap-2 mt-1.5">
             <span className="text-[11px] font-semibold text-primary bg-blue-50 px-2 py-0.5 rounded">{selectedPeriod}</span>
             <span className="text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded">YTD</span>

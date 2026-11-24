@@ -156,8 +156,10 @@ export function NumberPager({ page, pageSize, total, onPage, onPageSize, noun = 
 }
 
 /** Menu dropdown sederhana (tutup saat klik di luar). */
-export function Menu({ button, children, align = 'right', width = 'w-56' }: {
+export function Menu({ button, children, align = 'right', width = 'w-56', elegant = false }: {
   button: (open: boolean) => React.ReactNode; children: (close: () => void) => React.ReactNode; align?: 'left' | 'right'; width?: string;
+  /** Panel dropdown gaya Purchase/Sales (border abu, sudut kecil, shadow-xl). */
+  elegant?: boolean;
 }) {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [open, setOpen] = useState(false);
@@ -172,7 +174,7 @@ export function Menu({ button, children, align = 'right', width = 'w-56' }: {
     <div className="relative" ref={ref}>
       <div onClick={() => setOpen(o => !o)}>{button(open)}</div>
       {open && (
-        <div className={`absolute z-30 mt-1 ${align === 'right' ? 'right-0' : 'left-0'} ${width} rounded-xl border border-border bg-card p-1 shadow-lg`}>
+        <div className={`absolute z-30 mt-1 ${align === 'right' ? 'right-0' : 'left-0'} ${width} ${elegant ? 'rounded-[6px] border border-neutral-300 bg-white py-1 shadow-xl' : 'rounded-xl border border-border bg-card p-1 shadow-lg'}`}>
           {children(() => setOpen(false))}
         </div>
       )}

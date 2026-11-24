@@ -183,6 +183,17 @@ export interface Overview {
   category_count: number;
 }
 
+// Tren bulanan 1 tahun kalender untuk chart Overview & Depreciation (null = bulan setelah as_of).
+export interface TrendMonth {
+  month: string;
+  cost: number | null;
+  accumulated: number | null;
+  nbv: number | null;
+  depreciation: number | null;
+  additions: number | null;
+}
+export interface TrendYear { year: number; as_of: string; months: TrendMonth[] }
+
 export interface Register { as_of: string; kpi: RegisterKpi; assets: FixedAsset[]; next_code: string }
 
 export interface AssetDetail extends FixedAsset {
@@ -270,7 +281,8 @@ export interface ReportsSummary {
   nbv_by_category: CategoryValue[];
   options: { branches: string[]; locations: string[]; categories: { id: string; name: string }[] };
   recent: { id: string; report_type: ReportType; period_from: string | null; period_to: string | null; format: 'pdf' | 'xlsx' | 'csv';
-    row_count: number | null; created_at: string; created_by_name: string | null }[];
+    row_count: number | null; created_at: string; created_by_name: string | null;
+    filters?: { branch?: string | null; category_id?: string | null; location?: string | null } | null }[];
 }
 
 // Data laporan: bentuknya beda-beda per jenis.
@@ -355,6 +367,8 @@ export const seedCategoriesFromCoa = (clientId: string) =>
 
 export const fetchOverview = (clientId: string, asOf: string, months = 12, signal?: AbortSignal) =>
   api.get<Overview>('/overview', { ...c(clientId), as_of: asOf, months }, signal);
+export const fetchTrendYear = (clientId: string, year: number, asOf: string, signal?: AbortSignal) =>
+  api.get<TrendYear>('/trend', { ...c(clientId), year, as_of: asOf }, signal);
 export const fetchRegister = (clientId: string, asOf: string, signal?: AbortSignal) =>
   api.get<Register>('/assets', { ...c(clientId), as_of: asOf }, signal);
 export const fetchDrafts = (clientId: string, signal?: AbortSignal) =>
@@ -442,7 +456,7 @@ export const DISPOSAL_METHOD_LABEL: Record<DisposalMethod, string> = {
   sold: 'Sold', scrapped: 'Scrapped', lost: 'Lost', transferred: 'Transferred', donated: 'Donated',
 };
 export const DISPOSAL_METHOD_COLOR: Record<DisposalMethod, string> = {
-  sold: '#0F7D4E', scrapped: '#14B8A6', lost: '#5EEAD4', transferred: '#CBD5E1', donated: '#94A3B8',
+  sold: '#0D9488', scrapped: '#D97706', lost: '#DC2626', transferred: '#2563EB', donated: '#64748B',
 };
 
 /** Kolom "Approval Status" & "Posting Status" di tabel Disposal Transactions. */
@@ -467,12 +481,12 @@ export const JOURNAL_TYPE_STYLE: Record<JournalType, string> = {
 };
 
 export const REPORT_META: Record<ReportType, { title: string; description: string }> = {
-  asset_register: { title: 'Asset Register Report', description: 'Complete list of fixed assets with details including acquisition cost, location, and status.' },
-  depreciation_schedule: { title: 'Depreciation Schedule', description: 'Detailed depreciation schedule by asset including monthly and yearly depreciation.' },
-  asset_movement: { title: 'Asset Movement Report', description: 'Track asset additions, adjustments, and disposals within a selected period.' },
-  disposal: { title: 'Disposal Report', description: 'List of disposed assets with disposal date, method, and proceeds (if any).' },
-  nbv_summary: { title: 'Net Book Value Summary', description: 'Net book value analysis by category, location, or branch.' },
-  near_end_of_life: { title: 'Assets Near End of Useful Life', description: 'Assets that are approaching the end of their useful life.' },
+  asset_register: { title: 'Asset Register Report', description: 'Full list of fixed assets: cost, location, and status.' },
+  depreciation_schedule: { title: 'Depreciation Schedule', description: 'Monthly and yearly depreciation by asset.' },
+  asset_movement: { title: 'Asset Movement Report', description: 'Asset additions, adjustments, and disposals.' },
+  disposal: { title: 'Disposal Report', description: 'Disposed assets: date, method, and proceeds.' },
+  nbv_summary: { title: 'Net Book Value Summary', description: 'Book value by category, location, or branch.' },
+  near_end_of_life: { title: 'Assets Near End of Useful Life', description: 'Assets nearing the end of useful life.' },
 };
 
 export const lifeLabel = (months: number | null | undefined) => {

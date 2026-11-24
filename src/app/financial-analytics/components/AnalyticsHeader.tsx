@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
 import { useAnalyticsData } from '../lib/useAnalyticsData';
 
 const COMPARISON_PERIODS = ['Previous Month', 'Budget'];
@@ -32,16 +33,16 @@ export default function AnalyticsHeader() {
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div>
+      <div className={salesFont.className}>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Financial Analytics</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Financial Analytics</h1>
           {isSampleData && (
             <span className="text-2xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
               Sample data
             </span>
           )}
         </div>
-        <p className="text-sm text-muted-foreground mt-0.5">
+        <p className="mt-1 text-sm font-medium text-neutral-500">
           {loading ? 'Loading…' : `${companyName} · ${periodLabel}`}
         </p>
       </div>

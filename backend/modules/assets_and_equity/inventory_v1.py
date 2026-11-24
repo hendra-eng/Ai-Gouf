@@ -658,6 +658,23 @@ def import_item(payload: ImportItemRequest, current_user: Dict[str, Any] = Depen
 # OVERVIEW
 # ============================================================
 
+def _top_item_mom(rows: List[Dict[str, Any]], s_prev: Dict[str, Saldo]) -> List[Dict[str, Any]]:
+    """10 item nilai stok terbesar pada penutupan bulan lalu (rows) + nilai penutupan sebulan sebelumnya (s_prev) & persentase perubahannya.
+    change_pct = None bila pada penutupan pembanding item belum punya nilai stok (item baru / tidak ada data pembanding)."""
+    hasil = []
+    for r in sorted((r for r in rows if r["value"] > 0), key=lambda r: -r["value"])[:10]:
+        sp = s_prev.get(r["id"])
+        awal = _f(_uang(sp.nilai)) if sp is not None and sp.qty else 0.0
+        hasil.append({**r, "value_prev_month": awal,
+                      "change_pct": round((r["value"] - awal) / awal * 100, 2) if awal > 0 else None})
+    return hasil
+
+
+def _akhir_bulan_lalu(d: date) -> date:
+    """Hari terakhir bulan sebelum bulan dari tanggal d (pembanding: nilai stok penutupan bulan lalu)."""
+    return d.replace(day=1) - timedelta(days=1)
+
+
 @router.get("/overview", summary="Overview: KPI, tren nilai & qty, per kategori, top item, stok menipis")
 def overview(client_id: UUID = Query(...), as_of: Optional[date] = Query(None), _u: Dict[str, Any] = Depends(get_current_user_v1)):
     kid = str(client_id)
@@ -667,8 +684,15 @@ def overview(client_id: UUID = Query(...), as_of: Optional[date] = Query(None), 
         kat, gudang, items = _konteks(session, kid)
         mvs = _muat_mv(session, kid, per)
         s_item, s_wh = _saldo(mvs)
+        # Top 10 diambil dari penutupan BULAN LALU (mis. sekarang Juli -> 30 Juni); warna = perubahan vs penutupan 2 bulan lalu (30 Mei).
+        # Otomatis berganti tiap tanggal 1 karena "bulan lalu" dihitung dari tanggal As of.
+        akhir_top = _akhir_bulan_lalu(per)
+        prev = _akhir_bulan_lalu(akhir_top)
+        s_top, s_top_wh = _saldo(mvs, akhir_top)
+        s_prev, _ = _saldo(mvs, prev)
         aktif = [i for i in items if i.status == "active"]
         rows = [_item_dict(i, kat, gudang, s_item.get(i.id), s_wh) for i in items]
+        rows_top = [_item_dict(i, kat, gudang, s_top.get(i.id), s_top_wh) for i in items]
         per_kat: Dict[str, Dict[str, Any]] = {}
         for r in rows:
             if r["value"] <= 0:
@@ -694,9 +718,40 @@ def overview(client_id: UUID = Query(...), as_of: Optional[date] = Query(None), 
             },
             "trend": tren,
             "by_category": sorted(per_kat.values(), key=lambda g: -g["value"]),
-            "top_items": sorted((r for r in rows if r["value"] > 0), key=lambda r: -r["value"])[:5],
+            "top_items": _top_item_mom(rows_top, s_prev),
+            "top_month_date": akhir_top,
+            "prev_month_date": prev,
             "low_stock_items": [r for r in rows if r["stock_status"] in ("low_stock", "out_of_stock")][:20],
         }
+    return _respon(aksi)
+
+
+@router.get("/trend", summary="Tren bulanan 1 tahun kalender (nilai stok akhir bulan, stok masuk, stok keluar) untuk chart Overview")
+def tren_tahunan(client_id: UUID = Query(...), year: int = Query(..., ge=2000, le=2100), as_of: Optional[date] = Query(None),
+                 _u: Dict[str, Any] = Depends(get_current_user_v1)):
+    """12 titik bulan (Jan..Des) untuk `year`. Nilai stok dihitung per akhir bulan, dibatasi `as_of`;
+    bulan yang dimulai SETELAH as_of berisi null (tidak digambar). Transfer antar gudang tidak dihitung
+    sebagai stok masuk/keluar (nilai bersihnya nol)."""
+    kid = str(client_id)
+    per = as_of or date.today()
+
+    def aksi(session):
+        mvs = _muat_mv(session, kid, min(per, date(year, 12, 31)))
+        bulan = []
+        for m in range(1, 13):
+            awal = date(year, m, 1)
+            baris: Dict[str, Any] = {"month": awal.strftime("%Y-%m")}
+            if awal > per:
+                baris.update({"value": None, "stock_in": None, "stock_out": None})
+                bulan.append(baris)
+                continue
+            akhir = min(_akhir_bulan(awal), per)
+            s, _ = _saldo(mvs, akhir)
+            baris["value"] = _f(sum((x.nilai for x in s.values()), NOL))
+            baris["stock_in"] = _f(sum((x.vin for x in mvs if awal <= x.tanggal <= akhir and x.jenis != "transfer"), NOL))
+            baris["stock_out"] = _f(sum((x.vout for x in mvs if awal <= x.tanggal <= akhir and x.jenis != "transfer"), NOL))
+            bulan.append(baris)
+        return {"year": year, "as_of": per, "months": bulan}
     return _respon(aksi)
 
 

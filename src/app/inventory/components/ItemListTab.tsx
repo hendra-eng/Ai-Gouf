@@ -6,15 +6,17 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
-import { ChevronDown, Download, Eye, Loader2, MoreHorizontal, Pencil, Plus, Search, Upload } from 'lucide-react';
+import { ChevronDown, Download, Eye, Loader2, MoreHorizontal, Pencil, Plus, Upload } from 'lucide-react';
 import { fmtDate, rupiah } from '@/lib/receivablesPayablesStore';
 import {
   deleteItem, fetchItems, fetchWarehouses, importItems, qty, STOCK_STATUS_LABEL, STOCK_STATUS_STYLE, useInvData, type Item, type StockStatus, type Warehouse,
 } from '@/lib/inventoryStore';
 import { downloadTable, type ExportColumn, type ExportFormat } from '@/lib/tableExport';
-import { btnOutline, btnPrimary, btnSmall, EmptyRow, inputCls, Menu, MenuItem, NumberPager } from '@/components/arap/arapUi';
-import { Modal, Pill, tdCls } from '@/components/shared/moduleUi';
+import { Menu, MenuItem } from '@/components/arap/arapUi';
+import { btnOutline, btnPrimary, btnSmall, InvSearch, InvSelect, showingText } from './invUi';
+import { Modal } from '@/components/shared/moduleUi';
 import type { InvActions } from './InventoryWorkspace';
+import { faTableCls, faRow, tableHeadRow, thCls, tdCls, FaCard, FaPill, FaEmptyRow, FaPager } from './InvTable';
 
 const KOLOM: ExportColumn<Item>[] = [
   { header: 'Item Code', value: i => i.code }, { header: 'Item Name', value: i => i.name }, { header: 'Category', value: i => i.category },
@@ -59,70 +61,66 @@ export default function ItemListTab({ clientId, clientName, asOf, actions }: { c
   };
 
   return (
-    <section className="rounded-2xl border border-border bg-card shadow-sm">
-      <div className="grid grid-cols-1 gap-3 p-4 lg:grid-cols-12 lg:items-end">
-        <div className="relative lg:col-span-3">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input value={cari} onChange={e => { setCari(e.target.value); setPage(0); }} placeholder="Search item code, name, barcode..." className={`${inputCls} pl-9`} />
+    <FaCard
+      title="Item List"
+      subtitle={showingText(page, pageSize, baris.length, items.length, 'items')}
+      action={<>
+        <button type="button" onClick={reset} className={btnOutline}>Reset</button>
+        <button type="button" onClick={() => setImportOpen(true)} className={btnOutline}><Upload size={14} /> Import</button>
+        <Menu elegant width="w-40" button={open => <button type="button" className={btnOutline}><Download size={14} /> Export <ChevronDown size={13} className={open ? 'rotate-180' : ''} /></button>}>
+          {close => <>
+            <MenuItem strong onClick={() => { close(); ekspor('xlsx'); }}>Excel</MenuItem>
+            <MenuItem strong onClick={() => { close(); ekspor('csv'); }}>CSV</MenuItem>
+            <MenuItem strong onClick={() => { close(); ekspor('pdf'); }}>PDF</MenuItem>
+          </>}
+        </Menu>
+        <button type="button" onClick={actions.addItem} className={btnPrimary}><Plus size={14} /> Add Item</button>
+      </>}
+      toolbar={
+        <div className="flex flex-wrap items-center gap-2">
+          <InvSelect value={kategori} onChange={v => { setKategori(v); setPage(0); }} allLabel="All Categories"
+            options={opsiKategori.map(k => ({ value: k, label: k }))} />
+          <InvSelect value={status} onChange={v => { setStatus(v as '' | StockStatus); setPage(0); }} allLabel="All Status"
+            options={(Object.keys(STOCK_STATUS_LABEL) as StockStatus[]).map(s => ({ value: s, label: STOCK_STATUS_LABEL[s] }))} />
+          <InvSelect value={lokasi} onChange={v => { setLokasi(v); setPage(0); }} allLabel="All Locations"
+            options={gudang.data.map(w => ({ value: w.id, label: w.name }))} />
+          <InvSearch value={cari} onChange={v => { setCari(v); setPage(0); }} placeholder="Search item code, name, barcode..." className="ml-auto w-full sm:w-[400px]" />
         </div>
-        <label className="lg:col-span-2"><span className="mb-1 block text-xs font-medium">Category</span>
-          <select value={kategori} onChange={e => { setKategori(e.target.value); setPage(0); }} className={inputCls}>
-            <option value="">All</option>{opsiKategori.map(k => <option key={k}>{k}</option>)}
-          </select></label>
-        <label className="lg:col-span-2"><span className="mb-1 block text-xs font-medium">Status</span>
-          <select value={status} onChange={e => { setStatus(e.target.value as StockStatus | ''); setPage(0); }} className={inputCls}>
-            <option value="">All</option>{(Object.keys(STOCK_STATUS_LABEL) as StockStatus[]).map(s => <option key={s} value={s}>{STOCK_STATUS_LABEL[s]}</option>)}
-          </select></label>
-        <label className="lg:col-span-2"><span className="mb-1 block text-xs font-medium">Location</span>
-          <select value={lokasi} onChange={e => { setLokasi(e.target.value); setPage(0); }} className={inputCls}>
-            <option value="">All</option>{gudang.data.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </select></label>
-        <div className="flex flex-wrap gap-2 lg:col-span-3 lg:justify-end">
-          <button type="button" onClick={reset} className={btnOutline}>Reset</button>
-          <button type="button" onClick={() => setImportOpen(true)} className={btnOutline}><Upload size={15} /> Import</button>
-          <Menu width="w-40" button={open => <button type="button" className={btnOutline}><Download size={15} /> Export <ChevronDown size={13} className={open ? 'rotate-180' : ''} /></button>}>
-            {close => <>
-              <MenuItem onClick={() => { close(); ekspor('xlsx'); }}>Excel</MenuItem>
-              <MenuItem onClick={() => { close(); ekspor('csv'); }}>CSV</MenuItem>
-              <MenuItem onClick={() => { close(); ekspor('pdf'); }}>PDF</MenuItem>
-            </>}
-          </Menu>
-          <button type="button" onClick={actions.addItem} className={btnPrimary}><Plus size={15} /> Add Item</button>
-        </div>
-      </div>
-      {data.error && <p className="mx-4 mb-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{data.error}</p>}
-      <div className="overflow-x-auto px-2">
-        <table className="w-full min-w-[1000px] text-sm">
-          <thead><tr className="bg-slate-50 text-xs text-muted-foreground">
-            {['No.', 'Item Code', 'Item Name', 'Category', 'Unit'].map(h => <th key={h} className="px-3 py-2.5 text-left font-medium">{h}</th>)}
-            {['Current Stock', 'Avg. Cost (Rp)', 'Stock Value (Rp)'].map(h => <th key={h} className="px-3 py-2.5 text-right font-medium">{h}</th>)}
-            <th className="px-3 py-2.5 text-left font-medium">Status</th><th className="px-3 py-2.5 text-center font-medium">Action</th>
+      }
+    >
+      {data.error && <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{data.error}</p>}
+      <div className="overflow-x-auto scrollbar-thin">
+        <table className={`${faTableCls} min-w-[1000px]`}>
+          <thead><tr className={tableHeadRow}>
+            {['No.', 'Item Code', 'Item Name', 'Category', 'Unit'].map(h => <th key={h} className={thCls}>{h}</th>)}
+            {['Current Stock', 'Avg. Cost (Rp)', 'Stock Value (Rp)'].map(h => <th key={h} className={`${thCls} text-right`}>{h}</th>)}
+            <th className={thCls}>Status</th><th className={`${thCls} text-center`}>Action</th>
           </tr></thead>
-          <tbody className="divide-y divide-border">
+          <tbody>
             {(data.loading && !data.data) || !baris.length ? (
-              <EmptyRow cols={10} loading={data.loading && !data.data} text={items.length ? 'No items match the filters.' : 'No items yet. Add items or import them from Excel/CSV.'} />
+              <FaEmptyRow cols={10} loading={data.loading && !data.data} text={items.length ? 'No items match the filters.' : 'No items yet. Add items or import them from Excel/CSV.'} />
             ) : baris.slice(page * pageSize, (page + 1) * pageSize).map((i, n) => (
-              <tr key={i.id} className="hover:bg-slate-50/60">
+              <tr key={i.id} className={faRow}>
                 <td className={tdCls}>{page * pageSize + n + 1}</td>
-                <td className={`${tdCls} font-medium`}>{i.code}</td>
+                <td className={`${tdCls} font-medium text-blue-700`}>{i.code}</td>
                 <td className={tdCls}>{i.name}</td>
                 <td className={tdCls}>{i.category ?? '—'}</td>
                 <td className={tdCls}>{i.unit}</td>
                 <td className={`${tdCls} text-right`}>{qty(i.qty)}</td>
                 <td className={`${tdCls} text-right`}>{rupiah(i.avg_cost).replace('Rp ', '')}</td>
                 <td className={`${tdCls} text-right`}>{rupiah(i.value).replace('Rp ', '')}</td>
-                <td className={tdCls}><Pill label={STOCK_STATUS_LABEL[i.stock_status]} style={STOCK_STATUS_STYLE[i.stock_status]} /></td>
+                <td className={tdCls}><FaPill label={STOCK_STATUS_LABEL[i.stock_status]} style={STOCK_STATUS_STYLE[i.stock_status]} /></td>
                 <td className={tdCls}>
                   <div className="flex items-center justify-center gap-1">
-                    <button type="button" onClick={() => actions.openItem(i.id)} className="rounded-md p-1.5 text-muted-foreground hover:bg-slate-100" aria-label="View"><Eye size={15} /></button>
-                    <button type="button" onClick={() => actions.editItem(i)} className="rounded-md p-1.5 text-muted-foreground hover:bg-slate-100" aria-label="Edit"><Pencil size={15} /></button>
-                    <Menu width="w-48" button={() => <button type="button" className="rounded-md p-1.5 text-muted-foreground hover:bg-slate-100" aria-label="More"><MoreHorizontal size={15} /></button>}>
+                    <button type="button" onClick={() => actions.openItem(i.id)} className="rounded p-1.5 text-neutral-600 transition-colors hover:bg-neutral-300" aria-label="View"><Eye size={15} /></button>
+                    <button type="button" onClick={() => actions.editItem(i)} className="rounded p-1.5 text-neutral-600 transition-colors hover:bg-neutral-300" aria-label="Edit"><Pencil size={15} /></button>
+                    <Menu elegant width="w-48" button={() => <button type="button" className="rounded p-1.5 text-neutral-600 transition-colors hover:bg-neutral-300" aria-label="More"><MoreHorizontal size={15} /></button>}>
                       {close => <>
-                        <MenuItem onClick={() => { close(); actions.newDocument('receipt', { itemId: i.id }); }}>Goods Receipt</MenuItem>
-                        <MenuItem onClick={() => { close(); actions.newDocument('issue', { itemId: i.id }); }}>Goods Issue</MenuItem>
-                        <MenuItem onClick={() => { close(); actions.newDocument('adjustment', { itemId: i.id }); }}>Adjust Stock</MenuItem>
-                        <MenuItem onClick={() => { close(); actions.newDocument('transfer', { itemId: i.id }); }}>Transfer</MenuItem>
-                        <MenuItem danger onClick={() => { close(); hapus(i); }}>Delete</MenuItem>
+                        <MenuItem strong onClick={() => { close(); actions.newDocument('receipt', { itemId: i.id }); }}>Goods Receipt</MenuItem>
+                        <MenuItem strong onClick={() => { close(); actions.newDocument('issue', { itemId: i.id }); }}>Goods Issue</MenuItem>
+                        <MenuItem strong onClick={() => { close(); actions.newDocument('adjustment', { itemId: i.id }); }}>Adjust Stock</MenuItem>
+                        <MenuItem strong onClick={() => { close(); actions.newDocument('transfer', { itemId: i.id }); }}>Transfer</MenuItem>
+                        <MenuItem strong danger onClick={() => { close(); hapus(i); }}>Delete</MenuItem>
                       </>}
                     </Menu>
                   </div>
@@ -132,9 +130,9 @@ export default function ItemListTab({ clientId, clientName, asOf, actions }: { c
           </tbody>
         </table>
       </div>
-      <NumberPager page={page} pageSize={pageSize} total={baris.length} onPage={setPage} onPageSize={n => { setPageSize(n); setPage(0); }} noun="items" />
+      <FaPager page={page} pageSize={pageSize} total={baris.length} onPage={setPage} onPageSize={n => { setPageSize(n); setPage(0); }} noun="items" />
       {importOpen && <ImportModal clientId={clientId} onClose={() => setImportOpen(false)} />}
-    </section>
+    </FaCard>
   );
 }
 
@@ -207,12 +205,12 @@ function ImportModal({ clientId, onClose }: { clientId: string; onClose: () => v
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={update} onChange={e => setUpdate(e.target.checked)} /> Update items whose code already exists</label>
       {rows.length > 0 && (
         <div className="max-h-60 overflow-auto rounded-xl border border-border">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-slate-50"><tr>{['Code', 'Name', 'Category', 'Unit', 'Min'].map(h => <th key={h} className="px-2 py-1.5 text-left">{h}</th>)}</tr></thead>
-            <tbody className="divide-y divide-border">
+          <table className={faTableCls}>
+            <thead className="sticky top-0"><tr className={tableHeadRow}>{['Code', 'Name', 'Category', 'Unit', 'Min'].map(h => <th key={h} className={thCls}>{h}</th>)}</tr></thead>
+            <tbody>
               {rows.slice(0, 50).map((r, i) => (
-                <tr key={i}><td className="px-2 py-1">{String(r.code ?? '(auto)')}</td><td className="px-2 py-1">{String(r.name)}</td>
-                  <td className="px-2 py-1">{String(r.category ?? '')}</td><td className="px-2 py-1">{String(r.unit ?? '')}</td><td className="px-2 py-1">{String(r.min_stock ?? '')}</td></tr>
+                <tr key={i} className={faRow}><td className={tdCls}>{String(r.code ?? '(auto)')}</td><td className={tdCls}>{String(r.name)}</td>
+                  <td className={tdCls}>{String(r.category ?? '')}</td><td className={tdCls}>{String(r.unit ?? '')}</td><td className={tdCls}>{String(r.min_stock ?? '')}</td></tr>
               ))}
             </tbody>
           </table>

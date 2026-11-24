@@ -7,7 +7,8 @@ import { fmtDate, fmtDateTime, rupiah } from '@/lib/receivablesPayablesStore';
 import {
   deleteDocument, DOC_STATUS_LABEL, DOC_STATUS_STYLE, DOC_TYPE_LABEL, fetchDocument, postDocument, qty, REASON_LABEL, useInvData, voidDocument, type StockDoc,
 } from '@/lib/inventoryStore';
-import { btnSmall, Drawer, Field } from '@/components/arap/arapUi';
+import { Drawer, Field } from '@/components/arap/arapUi';
+import { btnPrimary, btnSmall } from './invUi';
 import { JournalLines, Pill, ReasonDialog } from '@/components/shared/moduleUi';
 import type { InvActions } from './InventoryWorkspace';
 
@@ -28,7 +29,7 @@ export default function DocumentDrawer({ clientId, docId, actions, onClose }: { 
         {x.status === 'draft' && <button type="button" className={`${btnSmall} text-rose-600`} disabled={!!busy} onClick={() => window.confirm(`Delete draft ${x.doc_no}?`) && jalan('del', () => deleteDocument(clientId, x.id), true)}>Delete</button>}
         {x.status === 'draft' && <button type="button" className={btnSmall} onClick={() => actions.editDocument(x)}>Edit</button>}
         {x.status === 'draft' && (
-          <button type="button" disabled={!!busy} onClick={() => jalan('post', () => postDocument(clientId, x.id))} className={`${btnSmall} border-transparent bg-[#0F7D4E] text-white hover:bg-[#0c6a42]`}>
+          <button type="button" disabled={!!busy} onClick={() => jalan('post', () => postDocument(clientId, x.id))} className={btnPrimary}>
             {busy === 'post' && <Loader2 size={12} className="animate-spin" />} Post
           </button>
         )}

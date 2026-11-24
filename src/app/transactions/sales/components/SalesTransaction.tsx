@@ -583,72 +583,12 @@ export default function SalesTransaction() {
         })()}
       </div>
 
-      {/* Filters */}
-      <div className="card relative px-0 pb-0 pt-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
-            <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}>
-              <Calendar size={12} className="text-neutral-500" />
-              <span className="text-neutral-500">{t('Periode Tanggal')}</span>
-              <span className="font-medium text-neutral-900">
-                {dateStart ? formatTanggalSingkat(dateStart) : t('Semua')}
-                {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
-              </span>
-            </button>
-            {showDatePicker && (
-              <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-neutral-300 bg-white p-3 shadow-xl">
-                <div>
-                  <label className="text-[11px] font-medium text-neutral-500">{t('Dari')}</label>
-                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-medium text-neutral-500">{t('Sampai')}</label>
-                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
-                </div>
-                <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full rounded-[6px] bg-blue-600 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700">
-                  {t('Terapkan')}
-                </button>
-              </div>
-            )}
-          </div>
-
-          <FilterSelect
-            value={customerFilter}
-            onChange={v => { setCustomerFilter(v); setCurrentPage(1); }}
-            options={[{ value: 'all', label: t('Semua Customer') }, ...CUSTOMERS.map(c => ({ value: c, label: c }))]}
-          />
-
-          <FilterSelect
-            value={branchFilter}
-            onChange={v => { setBranchFilter(v); setCurrentPage(1); }}
-            options={[{ value: 'all', label: t('All Branches') }, ...BRANCHES.map(b => ({ value: b, label: b }))]}
-          />
-
-          <FilterSelect
-            value={taxStatusFilter}
-            onChange={v => { setTaxStatusFilter(v); setCurrentPage(1); }}
-            options={[{ value: 'all', label: t('Semua Status (Pajak)') }, ...TAX_STATUSES.map(s => ({ value: s, label: t(s) }))]}
-          />
-
-          <FilterSelect
-            value={postingStatusFilter}
-            onChange={v => { setPostingStatusFilter(v); setCurrentPage(1); }}
-            options={[{ value: 'all', label: t('Semua Status (Posting)') }, ...POSTING_STATUSES.map(s => ({ value: s, label: t(s) }))]}
-          />
-
-          <FilterSelect
-            value={projectFilter}
-            onChange={v => { setProjectFilter(v); setCurrentPage(1); }}
-            options={[{ value: 'all', label: t('Semua Project') }, ...PROJECTS.map(p => ({ value: p, label: p }))]}
-          />
-
-        </div>
-      </div>
-
       {/* Table + Drawer */}
       <div className="flex gap-4 !mt-1">
         <div className={`card flex-1 min-w-0 transition-all ${selectedTrx ? 'xl:w-auto' : 'w-full'}`}>
-          <div className="flex flex-wrap items-end justify-between gap-3 px-0 pb-3 pt-1 border-b border-border">
+          {/* Header + filter bar -- sama dengan Purchase Source Record List: dropdown di kiri, kolom cari (400px) di kanan */}
+          <div className="flex flex-col gap-3 px-0 py-3 border-b border-border">
+            <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">{t('Daftar Transaksi Penjualan')}</h3>
               <p className="text-sm text-neutral-500 mt-0.5">
@@ -659,7 +599,6 @@ export default function SalesTransaction() {
                   : `${t('Menampilkan')} ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} ${t('dari')} ${filtered.length} ${t('transaksi')}`}
               </p>
             </div>
-            <div className="ml-auto flex w-full flex-col items-end gap-1.5 sm:w-auto">
               <div className="flex items-center justify-end gap-2">
               <button onClick={resetFilters} className="text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:underline">{t('Reset')}</button>
 
@@ -681,7 +620,64 @@ export default function SalesTransaction() {
                 )}
               </div>
               </div>
-              <div className="relative w-full sm:w-[400px]">
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}>
+                  <Calendar size={12} className="text-neutral-500" />
+                  <span className="text-neutral-500">{t('Periode Tanggal')}</span>
+                  <span className="font-medium text-neutral-900">
+                    {dateStart ? formatTanggalSingkat(dateStart) : t('Semua')}
+                    {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
+                  </span>
+                </button>
+                {showDatePicker && (
+                  <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-neutral-300 bg-white p-3 shadow-xl">
+                    <div>
+                      <label className="text-[11px] font-medium text-neutral-500">{t('Dari')}</label>
+                      <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-medium text-neutral-500">{t('Sampai')}</label>
+                      <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
+                    </div>
+                    <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full rounded-[6px] bg-blue-600 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700">
+                      {t('Terapkan')}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <FilterSelect
+                value={customerFilter}
+                onChange={v => { setCustomerFilter(v); setCurrentPage(1); }}
+                options={[{ value: 'all', label: t('Semua Customer') }, ...CUSTOMERS.map(c => ({ value: c, label: c }))]}
+              />
+
+              <FilterSelect
+                value={branchFilter}
+                onChange={v => { setBranchFilter(v); setCurrentPage(1); }}
+                options={[{ value: 'all', label: t('All Branches') }, ...BRANCHES.map(b => ({ value: b, label: b }))]}
+              />
+
+              <FilterSelect
+                value={taxStatusFilter}
+                onChange={v => { setTaxStatusFilter(v); setCurrentPage(1); }}
+                options={[{ value: 'all', label: t('Semua Status (Pajak)') }, ...TAX_STATUSES.map(s => ({ value: s, label: t(s) }))]}
+              />
+
+              <FilterSelect
+                value={postingStatusFilter}
+                onChange={v => { setPostingStatusFilter(v); setCurrentPage(1); }}
+                options={[{ value: 'all', label: t('Semua Status (Posting)') }, ...POSTING_STATUSES.map(s => ({ value: s, label: t(s) }))]}
+              />
+
+              <FilterSelect
+                value={projectFilter}
+                onChange={v => { setProjectFilter(v); setCurrentPage(1); }}
+                options={[{ value: 'all', label: t('Semua Project') }, ...PROJECTS.map(p => ({ value: p, label: p }))]}
+              />
+              <div className="relative ml-auto w-full sm:w-[400px]">
                 <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
                 <input
                   type="text"

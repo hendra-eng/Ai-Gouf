@@ -136,7 +136,7 @@ export default function AIAnalystLayout() {
 
         {/* Analysis area */}
         <div className="flex-1 flex overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto px-6 pb-6 pt-11 lg:px-8 xl:px-10">
             <AIAnalysisArea
               activeAnalysis={activeAnalysis}
               isAnalyzing={isAnalyzing}

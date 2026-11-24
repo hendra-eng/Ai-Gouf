@@ -3,24 +3,46 @@
 // Tab Overview (Template UI/Fix Assets/5.jpeg): 4 KPI, tren nilai buku,
 // komposisi per kategori (donut), dan aset yang mendekati akhir umur ekonomis.
 
-import React, { useState } from 'react';
-import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import React, { useMemo } from 'react';
 import { AlertTriangle, Coins, Layers, MoreHorizontal, PieChart as PieIcon, Plus, TrendingUp } from 'lucide-react';
-import { fmtDate, fmtMonth, rupiah, rupiahShort } from '@/lib/receivablesPayablesStore';
+import { fmtDate, rupiah, rupiahShort } from '@/lib/receivablesPayablesStore';
 import { fetchOverview, lifeLabel, useFaData, type Overview } from '@/lib/fixedAssetsStore';
-import { Card, EmptyRow } from '@/components/arap/arapUi';
-import { Delta, KpiGrid, tableHeadRow, tdCls, thCls } from '@/components/shared/moduleUi';
+import { Card } from '@/components/arap/arapUi';
+import { Delta } from '@/components/shared/moduleUi';
+import { FaKpiGrid } from './FaKpi';
+import { faTableCls, faRow, tableHeadRow, thCls, tdCls, FaCard, FaPill, FaEmptyRow } from './FaTable';
 import type { FaActions } from './FixedAssetsWorkspace';
+import FaTrendChart, { type FaPointBuilder, type FaSeries } from './FaTrendChart';
+import FaCategoryInsights from './FaCategoryInsights';
+import FaDonut, { FA_DONUT_COLORS, FA_DONUT_OTHERS_COLOR, type FaDonutItem } from './FaDonut';
 
-export const PALET = ['#0B5E5C', '#0F7D4E', '#14B8A6', '#5EEAD4', '#A7F3D0', '#CBD5E1', '#94A3B8', '#64748B'];
+
+// Chart tren: Total Cost, Accumulated Depreciation, Additions (kolom) + Net Book Value (garis).
+const OV_SERIES: FaSeries[] = [
+  { key: 'cost', name: 'Total Cost', color: '#2563EB', kind: 'bar' },
+  { key: 'accumulated', name: 'Accumulated Depreciation', color: '#DC2626', kind: 'bar' },
+  { key: 'additions', name: 'Additions', color: '#F59E0B', kind: 'bar' },
+  { key: 'nbv', name: 'Net Book Value', color: '#16A34A', kind: 'line', emphasis: true },
+];
+const ovBuild: FaPointBuilder = (i, get) => {
+  const m = get(i);
+  return { cost: m?.cost ?? null, accumulated: m?.accumulated ?? null, additions: m?.additions ?? null, nbv: m?.nbv ?? null };
+};
 
 export default function OverviewTab({ clientId, asOf, actions }: { clientId: string; asOf: string; actions: FaActions }) {
-  const [months, setMonths] = useState(12);
-  const ov = useFaData<Overview | null>(`ov:${clientId}:${asOf}:${months}`, s => fetchOverview(clientId, asOf, months, s), null);
+  const ov = useFaData<Overview | null>(`ov:${clientId}:${asOf}`, s => fetchOverview(clientId, asOf, 12, s), null);
   const d = ov.data;
   const k = d?.kpi;
   const loading = ov.loading && !d;
   const totalNbv = d?.by_category.reduce((n, c) => n + c.nbv, 0) ?? 0;
+  // Warna donut sama dengan donut Sales/Purchase; "Uncategorized" memakai warna abu "Others".
+  const donutItems = useMemo<FaDonutItem[]>(() => {
+    let n = 0;
+    return (d?.by_category ?? []).filter(c => c.nbv !== 0).map(c => ({
+      key: c.category, name: c.category, value: c.nbv,
+      color: c.category === 'Uncategorized' ? FA_DONUT_OTHERS_COLOR : FA_DONUT_COLORS[n++ % FA_DONUT_COLORS.length],
+    }));
+  }, [d?.by_category]);
 
   return (
     <div className="space-y-5">
@@ -38,106 +60,59 @@ export default function OverviewTab({ clientId, asOf, actions }: { clientId: str
         </div>
       )}
 
-      <KpiGrid loading={loading} cards={[
-        { label: 'Total Fixed Assets', value: rupiah(k?.current.total_cost), icon: Coins, tone: 'green',
+      <FaKpiGrid loading={loading} cards={[
+        { label: 'Total Fixed Assets', value: rupiah(k?.current.total_cost), icon: Coins, tone: 'emerald',
           delta: <Delta now={k?.current.total_cost} prev={k?.previous.total_cost} suffix="vs. previous year" /> },
-        { label: 'Accumulated Depreciation', value: rupiah(k?.current.accumulated), icon: PieIcon, tone: 'red',
+        { label: 'Accumulated Depreciation', value: rupiah(k?.current.accumulated), icon: PieIcon, tone: 'rose',
           delta: <Delta now={k?.current.accumulated} prev={k?.previous.accumulated} goodWhenDown suffix="vs. previous year" /> },
-        { label: 'Net Book Value', value: rupiah(k?.current.nbv), icon: TrendingUp, tone: 'green',
+        { label: 'Net Book Value', value: rupiah(k?.current.nbv), icon: TrendingUp, tone: 'teal',
           delta: <Delta now={k?.current.nbv} prev={k?.previous.nbv} suffix="vs. previous year" /> },
-        { label: 'Additions This Year', value: rupiah(k?.current.additions_ytd), icon: Plus, tone: 'amber',
+        { label: 'Additions This Year', value: rupiah(k?.current.additions_ytd), icon: Plus, tone: 'sky',
           delta: <Delta now={k?.current.additions_ytd} prev={k?.previous.additions_ytd} suffix="vs. last year" /> },
       ]} />
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
-        <Card className="xl:col-span-3" title="Net Book Value Trend" action={
-          <select value={months} onChange={e => setMonths(Number(e.target.value))} className="rounded-lg border border-border bg-card px-2 py-1.5 text-xs">
-            <option value={6}>Last 6 Months</option><option value={12}>Last 12 Months</option><option value={24}>Last 24 Months</option>
-          </select>
-        }>
-          <div className="h-72 px-3 pb-4">
-            {loading ? <div className="h-full animate-pulse rounded-xl bg-slate-50" /> : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={d?.trend ?? []} margin={{ top: 10, right: 16, left: 8, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="faNbv" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0F7D4E" stopOpacity={0.25} /><stop offset="100%" stopColor="#0F7D4E" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-                  <XAxis dataKey="month" tickFormatter={m => fmtMonth(m).slice(0, 3)} tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={v => rupiahShort(v).replace('Rp ', '')} tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} width={56} />
-                  <Tooltip formatter={(v: number) => rupiah(v)} labelFormatter={m => fmtMonth(String(m))} />
-                  <Area type="monotone" dataKey="nbv" name="Net Book Value" stroke="#0F7D4E" strokeWidth={2.5} fill="url(#faNbv)" dot={{ r: 3, fill: '#0F7D4E' }} />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </Card>
+        <FaTrendChart className="xl:col-span-3" title="Fixed Asset Trend" clientId={clientId} asOf={asOf} series={OV_SERIES} build={ovBuild} />
 
-        <Card className="xl:col-span-2" title="Assets by Category" subtitle="By net book value" action={
+        <Card className="flex flex-col xl:col-span-2" title="Assets by Category" subtitle="By net book value" action={
           <button type="button" onClick={actions.manageCategories} className="inline-flex items-center gap-1 text-xs font-medium text-[#0F7D4E] hover:underline"><Layers size={13} /> Categories</button>
         }>
-          <div className="flex flex-col items-center gap-4 px-5 pb-5 sm:flex-row">
-            <div className="relative h-48 w-48 shrink-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={d?.by_category ?? []} dataKey="nbv" nameKey="category" innerRadius={58} outerRadius={88} paddingAngle={1} stroke="none">
-                    {(d?.by_category ?? []).map((_, i) => <Cell key={i} fill={PALET[i % PALET.length]} />)}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => rupiah(v)} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-sm font-bold text-foreground">{rupiahShort(totalNbv)}</span>
-                <span className="text-[10px] text-muted-foreground">Net Book Value</span>
-              </div>
-            </div>
-            <ul className="w-full space-y-2 text-xs">
-              {(d?.by_category ?? []).length === 0 && <li className="text-muted-foreground">No assets yet.</li>}
-              {(d?.by_category ?? []).map((c, i) => (
-                <li key={c.category} className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: PALET[i % PALET.length] }} />
-                  <span className="min-w-0 flex-1 truncate text-foreground">{c.category}</span>
-                  <span className="w-10 text-right text-muted-foreground">{totalNbv ? Math.round((c.nbv / totalNbv) * 100) : 0}%</span>
-                  <span className="w-28 text-right font-medium text-foreground">{rupiah(c.nbv)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <FaDonut items={donutItems} centerLabel={rupiahShort(totalNbv)} centerSubLabel="Net Book Value" size={168} integer
+            formatLegend={v => rupiah(Math.round(v))} formatCallout={v => rupiahShort(v)} emptyText="No assets yet." />
+          <FaCategoryInsights data={d} onRegister={() => actions.goTab('register')} onReview={() => actions.goTab('depreciation')} />
         </Card>
       </div>
 
-      <Card title="Assets Near End of Useful Life" subtitle="Remaining useful life of 24 months or less" action={
-        <button type="button" onClick={() => actions.goTab('register')} className="text-xs font-medium text-[#0F7D4E] hover:underline">View All ›</button>
+      <FaCard title="Assets Near End of Useful Life" subtitle="Remaining useful life of 24 months or less" action={
+        <button type="button" onClick={() => actions.goTab('register')} className="text-xs font-semibold text-[#0F7D4E] hover:underline">View All ›</button>
       }>
-        <div className="overflow-x-auto px-2 pb-3">
-          <table className="w-full min-w-[820px] text-sm">
+        <div className="overflow-x-auto scrollbar-thin">
+          <table className={`${faTableCls} min-w-[820px]`}>
             <thead><tr className={tableHeadRow}>
               <th className={thCls}>Asset Code</th><th className={thCls}>Asset Name</th><th className={thCls}>Category</th>
               <th className={thCls}>Acquisition Date</th><th className={thCls}>Useful Life</th><th className={thCls}>Remaining Life</th>
-              <th className={`${thCls} text-right`}>Net Book Value</th><th className="w-10" />
+              <th className={`${thCls} text-right`}>Net Book Value</th><th className={`${thCls} w-10`} />
             </tr></thead>
-            <tbody className="divide-y divide-border">
-              {(loading || !(d?.near_end_of_life.length)) && <EmptyRow cols={8} loading={loading} text="No assets are close to the end of their useful life." />}
+            <tbody>
+              {(loading || !(d?.near_end_of_life.length)) && <FaEmptyRow cols={8} loading={loading} text="No assets are close to the end of their useful life." />}
               {d?.near_end_of_life.slice(0, 10).map(a => (
-                <tr key={a.id} className="hover:bg-slate-50/60">
+                <tr key={a.id} className={faRow}>
                   <td className={`${tdCls} font-medium`}>{a.asset_code}</td>
                   <td className={tdCls}>{a.name}</td>
                   <td className={tdCls}>{a.category ?? '—'}</td>
                   <td className={tdCls}>{fmtDate(a.acquisition_date)}</td>
                   <td className={tdCls}>{lifeLabel(a.useful_life_months)}</td>
-                  <td className={tdCls}><span className="rounded-md bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-600">{lifeLabel(a.remaining_life_months)}</span></td>
+                  <td className={tdCls}><FaPill label={lifeLabel(a.remaining_life_months)} style="bg-rose-50 text-rose-600" /></td>
                   <td className={`${tdCls} text-right font-medium`}>{rupiah(a.net_book_value)}</td>
                   <td className={tdCls}>
-                    <button type="button" onClick={() => actions.openAsset(a.id)} className="rounded-md p-1 text-muted-foreground hover:bg-slate-100" aria-label="Open asset"><MoreHorizontal size={16} /></button>
+                    <button type="button" onClick={() => actions.openAsset(a.id)} className="rounded p-1 text-neutral-600 transition-colors hover:bg-neutral-300" aria-label="Open asset"><MoreHorizontal size={13} /></button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </Card>
+      </FaCard>
     </div>
   );
 }

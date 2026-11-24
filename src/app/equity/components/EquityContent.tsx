@@ -99,8 +99,10 @@ export default function EquityContent() {
   );
 
   return (
-    <div>
+    <div className="min-h-screen bg-background pb-16">
+      <div className="mx-auto max-w-screen-2xl px-6 py-5 lg:px-8 xl:px-10">
       <PageHeader
+        moduleHeading
         title="Equity"
         subtitle="Monitor shareholder equity, capital structure, and retained earnings movement"
         period={equityData.periodLabel || 'Jan 2026 – Aug 2026'}
@@ -152,6 +154,7 @@ export default function EquityContent() {
         />
       </div>
       <EquityAllInsights isSampleData={equityData.isSampleData} insights={insights} />
+      </div>
     </div>
   );
 }

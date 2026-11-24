@@ -12,7 +12,8 @@ import {
   DOC_TYPE_LABEL, fetchInvAccounts, fetchItems, fetchPurchaseSources, fetchSalesSources, fetchWarehouses, qty, REASON_LABEL, saveDocument, useInvData,
   type AdjustmentReason, type CoaAccount, type DocInput, type DocType, type SourceDoc, type StockDoc, type Warehouse,
 } from '@/lib/inventoryStore';
-import { btnOutline, btnPrimary, btnSmall, Drawer, inputCls } from '@/components/arap/arapUi';
+import { Drawer } from '@/components/arap/arapUi';
+import { btnOutline, btnPrimary, btnSmall, inputCls } from './invUi';
 import { AccountSelect, FormField } from '@/components/shared/moduleUi';
 
 interface Baris { key: number; item_id: string; quantity: string; counted_qty: string; unit_cost: string; source_line_id: string | null; info?: string }

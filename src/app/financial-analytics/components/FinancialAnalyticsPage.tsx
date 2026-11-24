@@ -16,7 +16,8 @@ import FinancialAIInsights from './FinancialAIInsights';
 
 export default function FinancialAnalyticsPage() {
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="min-h-screen bg-background pb-16">
+      <div className="mx-auto max-w-screen-2xl space-y-5 px-6 py-5 lg:px-8 xl:px-10 animate-fade-in">
       <AnalyticsHeader />
       <FinancialHealthHero />
       <AnalyticsKPICards />
@@ -37,6 +38,7 @@ export default function FinancialAnalyticsPage() {
       <TrendExplorer />
       <AnomalyDetection />
       <FinancialAIInsights />
+      </div>
     </div>
   );
 }

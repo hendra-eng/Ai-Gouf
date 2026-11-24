@@ -87,8 +87,10 @@ export default function LiabilitiesContent() {
   );
 
   return (
-    <div>
+    <div className="min-h-screen bg-background pb-16">
+      <div className="mx-auto max-w-screen-2xl px-6 py-5 lg:px-8 xl:px-10">
       <PageHeader
+        moduleHeading
         title="Liabilities"
         subtitle="Monitor company obligations, debt, payables, and upcoming financial commitments"
         period={liabData.periodLabel || 'Jan 2026 – Aug 2026'}
@@ -136,6 +138,7 @@ export default function LiabilitiesContent() {
       <LiabilityDueSchedule isSampleData={liabData.isSampleData} obligations={obligations} />
       <LiabilityTransactions isSampleData={liabData.isSampleData} rows={txRows} />
       <LiabilitiesAllInsights isSampleData={liabData.isSampleData} insights={insights} />
+      </div>
     </div>
   );
 }

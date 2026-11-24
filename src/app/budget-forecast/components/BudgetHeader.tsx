@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
 import { useBudgetData } from '../lib/budgetBridge';
 
 const SCENARIOS = ['Base Case', 'Optimistic', 'Conservative'];
@@ -18,14 +19,14 @@ export default function BudgetHeader() {
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div>
+      <div className={salesFont.className}>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Budget &amp; Forecast</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Budget &amp; Forecast</h1>
           <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold border border-primary/20">
             FY 2026
           </span>
         </div>
-        <p className="text-sm text-muted-foreground mt-0.5">
+        <p className="mt-1 text-sm font-medium text-neutral-500">
           Plan financial performance, monitor budget variance, and forecast future results
         </p>
       </div>

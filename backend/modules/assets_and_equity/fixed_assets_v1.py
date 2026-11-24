@@ -1016,6 +1016,38 @@ def overview(client_id: UUID = Query(...), as_of: Optional[date] = Query(None), 
     return _respon(aksi)
 
 
+@router.get("/trend", summary="Tren bulanan 1 tahun kalender (biaya, akumulasi, NBV, penyusutan, penambahan) untuk chart Overview & Depreciation")
+def tren_tahunan(client_id: UUID = Query(...), year: int = Query(..., ge=2000, le=2100), as_of: Optional[date] = Query(None),
+                 _u: Dict[str, Any] = Depends(get_current_user_v1)):
+    """12 titik bulan (Jan..Des) untuk `year`. Nilai tiap bulan dihitung per akhir bulan,
+    dibatasi `as_of`; bulan yang dimulai SETELAH as_of berisi null (tidak digambar)."""
+    kid = str(client_id)
+    per = as_of or date.today()
+
+    def aksi(session):
+        b = _muat(session, kid)
+        jur = [j for j in b.jurnal if j.jenis == "depreciation"]
+        bulan = []
+        for m in range(1, 13):
+            awal = date(year, m, 1)
+            baris: Dict[str, Any] = {"month": awal.strftime("%Y-%m")}
+            if awal > per:
+                baris.update({"cost": None, "accumulated": None, "nbv": None, "depreciation": None, "additions": None})
+                bulan.append(baris)
+                continue
+            akhir = min(_akhir_bulan(awal), per)
+            aktif = [a for a in b.aset if a.ada(akhir) and not a.dilepas(akhir)]
+            baris["cost"] = _f(sum((a.biaya(akhir) for a in aktif), NOL))
+            baris["accumulated"] = _f(sum((a.akumulasi(akhir) for a in aktif), NOL))
+            baris["nbv"] = _f(sum((a.nbv(akhir) for a in aktif), NOL))
+            baris["depreciation"] = _f(sum((j.nominal for j in jur if awal <= j.tanggal <= akhir and j.efektif(akhir)), NOL))
+            baris["additions"] = _f(sum((_dec(a.row.cost) for a in b.aset
+                                         if a.row.purchase_date and awal <= a.row.purchase_date <= akhir), NOL))
+            bulan.append(baris)
+        return {"year": year, "as_of": per, "months": bulan}
+    return _respon(aksi)
+
+
 def _per_kategori(b: Buku, per: date, saring=None) -> List[Dict[str, Any]]:
     grup: Dict[str, Dict[str, Any]] = {}
     for a in b.aset:

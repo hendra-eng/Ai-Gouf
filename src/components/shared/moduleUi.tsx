@@ -222,6 +222,12 @@ export const tabBarCls = 'flex flex-col gap-2 border-b border-border lg:flex-row
 export const tabListCls = '-mb-px flex gap-1 overflow-x-auto';
 export const tabCls = (active: boolean) =>
   `flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm transition-colors ${active ? 'border-[#0F7D4E] font-semibold text-[#0F7D4E]' : 'border-transparent text-muted-foreground hover:text-foreground'}`;
+/** Varian tab "elegant" -- sama persis dengan tab Purchase/Sales (monokrom, garis bawah hitam, text-sm, px-3.5).
+ *  Pakai bersama font Sales (salesFont) di <nav> dan strokeWidth ikon 2 (aktif) / 1.5 (tidak aktif). */
+export const elegantTabBarCls = 'flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between';
+export const elegantTabNavCls = `${tabListCls} min-w-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`;
+export const elegantTabCls = (active: boolean) =>
+  `group flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3.5 py-3 text-sm tracking-tight transition-colors ${active ? 'border-neutral-900 font-semibold text-neutral-900' : 'border-transparent font-medium text-neutral-500 hover:border-neutral-300 hover:text-neutral-900'}`;
 export const tabBadgeCls = 'inline-flex min-w-[16px] items-center justify-center rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800';
 
 /** Klasifikasi akun dari COA untuk filter dropdown. */
