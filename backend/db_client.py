@@ -5891,6 +5891,49 @@ def promote_sales_rows_bulk(source_file_id: str, management_client_id: Optional[
             "dilewati_sudah_pernah_dipromosikan": sudah_pernah, "dilewati_invoice_no_bentrok": bentrok}
 
 
+def hapus_total_source_file(source_file_id: str) -> Dict[str, Any]:
+    """[BARU] Hapus PERMANEN satu source file Sales beserta SEMUA turunannya: baris source, invoice (termasuk yang sudah
+    Posted -- GL membaca langsung dari invoice, jadi jurnalnya ikut hilang), mapping akun, detail/line invoice, exception
+    dan activity log. Hard delete (bukan soft delete) supaya no. invoice bebas dipakai lagi saat file di-upload ulang
+    (unique constraint client_id + invoice_no tetap berlaku untuk baris soft-deleted).
+    DITOLAK kalau ada invoice yang sudah punya pelunasan di Cash & Bank (baris transaksi bank/cash menunjuk ke invoice itu):
+    batalkan dulu pelunasannya di Cash & Bank supaya data bank tidak yatim. Return {ok, ...}."""
+    session = SessionLocal()
+    try:
+        sf = session.query(SalesSourceFile).filter(SalesSourceFile.id == source_file_id).first()
+        if sf is None:
+            return {"ok": False, "kode": "NOT_FOUND"}
+        id_baris = [r[0] for r in session.query(SalesSourceRow.id).filter(SalesSourceRow.source_file_id == source_file_id).all()]
+        id_inv = [r[0] for r in session.query(SalesInvoice.id).filter(SalesInvoice.source_row_id.in_(id_baris)).all()] if id_baris else []
+
+        if id_inv:
+            terhubung = session.query(BankCashTransactionLine.sales_invoice_id).filter(
+                BankCashTransactionLine.sales_invoice_id.in_(id_inv)).distinct().count()
+            if terhubung:
+                return {"ok": False, "kode": "ADA_PELUNASAN", "jumlah": terhubung}
+            session.query(FinanceTransactionBankCashException).filter(
+                FinanceTransactionBankCashException.linked_sales_invoice_id.in_(id_inv)
+            ).update({FinanceTransactionBankCashException.linked_sales_invoice_id: None}, synchronize_session=False)
+            session.query(SalesActivityLog).filter(SalesActivityLog.invoice_id.in_(id_inv)).delete(synchronize_session=False)
+            session.query(SalesException).filter(SalesException.invoice_id.in_(id_inv)).delete(synchronize_session=False)
+        if id_baris:
+            session.query(SalesException).filter(SalesException.source_row_id.in_(id_baris)).delete(synchronize_session=False)
+        n_inv = 0
+        if id_inv:
+            # mapping akun, detail & line invoice ikut terhapus lewat ON DELETE CASCADE
+            n_inv = session.query(SalesInvoice).filter(SalesInvoice.id.in_(id_inv)).delete(synchronize_session=False)
+        # baris source ikut terhapus lewat ON DELETE CASCADE dari source file
+        session.query(SalesSourceFile).filter(SalesSourceFile.id == source_file_id).delete(synchronize_session=False)
+        session.commit()
+        return {"ok": True, "invoice_dihapus": n_inv, "baris_dihapus": len(id_baris)}
+    except Exception as e:
+        session.rollback()
+        print(f"Error hapus_total_source_file: {e}")
+        return {"ok": False, "kode": "DB_ERROR", "error": str(e)[:300]}
+    finally:
+        session.close()
+
+
 def rekonsiliasi_file_kumulatif(source_file_id: str, management_client_id: Optional[str], user_id: Optional[str] = None,
                                 nama_user: Optional[str] = None) -> Dict[str, Any]:
     """[BARU] File KUMULATIF (resep mapping_rules.file_kumulatif = true, mis. UBD "Monitoring Project Income": tiap
@@ -5922,10 +5965,11 @@ def rekonsiliasi_file_kumulatif(source_file_id: str, management_client_id: Optio
             SalesSourceRow.dpp, SalesSourceRow.ppn, SalesSourceRow.total,
         ).filter(SalesSourceRow.source_file_id == source_file_id, SalesSourceRow.deleted_at.is_(None),
                  SalesSourceRow.is_valid.is_(True)).all() if r[0]}
+        # File lama yang sudah dihapus dari daftar Source Data tetap dihitung: invoice hasil promote-nya tidak ikut terhapus.
         id_file_lama = session.query(SalesSourceFile.id).filter(
             SalesSourceFile.template_id == sf.template_id,
             SalesSourceFile.management_client_id == sf.management_client_id,
-            SalesSourceFile.deleted_at.is_(None), SalesSourceFile.id != sf.id,
+            SalesSourceFile.id != sf.id,
             SalesSourceFile.uploaded_at < sf.uploaded_at)
         invoices = session.query(SalesInvoice).join(SalesSourceRow, SalesSourceRow.id == SalesInvoice.source_row_id).filter(
             SalesSourceRow.source_file_id.in_(id_file_lama),

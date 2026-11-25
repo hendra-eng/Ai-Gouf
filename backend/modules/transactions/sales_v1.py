@@ -397,10 +397,21 @@ def hapus_source_file(
     source_file_id: str,
     current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
 ):
-    berhasil = dbc.soft_delete_sales_source_file(source_file_id, deleted_by=current_user.get("id"))
-    if not berhasil:
-        return gagal(message="Source file tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
-    return sukses(message="Source file berhasil dinonaktifkan.")
+    # [DIUBAH] Hapus TOTAL: source file + baris + semua invoice turunannya (juga yang sudah Posted) di semua tab Sales.
+    hasil = dbc.hapus_total_source_file(source_file_id)
+    if not hasil.get("ok"):
+        if hasil.get("kode") == "NOT_FOUND":
+            return gagal(message="Source file tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
+        if hasil.get("kode") == "ADA_PELUNASAN":
+            return gagal(
+                message=(f"{hasil['jumlah']} invoice dari file ini sudah punya pelunasan di Cash & Bank. "
+                         "Batalkan pelunasannya di Cash & Bank dulu, lalu hapus file ini lagi."),
+                errors={"code": "ADA_PELUNASAN"}, status_code=409)
+        return gagal(message="Gagal menghapus source file (kesalahan database).", errors={"code": "DB_ERROR"}, status_code=500)
+    return sukses(
+        data=hasil,
+        message=f"Source file dihapus permanen beserta {hasil['invoice_dihapus']} invoice dan {hasil['baris_dihapus']} baris datanya.",
+    )
 
 
 # ============================================================

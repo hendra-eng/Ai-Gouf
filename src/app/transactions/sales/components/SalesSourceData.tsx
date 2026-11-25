@@ -199,7 +199,7 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
   const handleDeleteFile = async (f: BackendSalesSourceFile) => {
     setMenuFileId(null);
     const ok = window.confirm(
-      `${t('Hapus file')} "${f.file_name}"?\n\n${t('Invoice yang sudah dibuat dari file ini tidak ikut terhapus.')}`
+      `${t('Hapus file')} "${f.file_name}"?\n\n${t('PERMANEN: semua invoice dari file ini di semua tab Sales (termasuk yang sudah Posted), jurnalnya, dan datanya di database ikut terhapus dan tidak bisa dikembalikan.')}`
     );
     if (!ok) return;
     setDeletingFileId(f.id);
