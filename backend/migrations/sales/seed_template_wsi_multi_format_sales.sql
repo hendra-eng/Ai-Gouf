@@ -1,5 +1,11 @@
 -- seed_template_wsi_multi_format_sales.sql
 -- =============================================================
+-- FILTER PERIODE DARI NAMA FILE (2026-11-25): tiap varian memakai "filter_periode_nama_file": "jika_ada".
+--   Kalau NAMA FILE memuat tahun+bulan (KODE_SALES_202608.xlsx / ..._Agustus_2026.xlsx / rentang tanggal),
+--   hanya transaksi di periode itu yang DIAMBIL (Period di Source Data juga terisi dari nama file).
+--   Kalau nama file TIDAK memuat periode -> semua baris diambil seperti biasa (Period tampil "-").
+--   Butuh sales_import_v1.py versi baru (mode "jika_ada"). Seed ini aman dijalankan ulang.
+--
 -- Template pola kolom (financial_transaction_sales_import_templates) untuk
 -- klien WSI (PT Well Star Indonesia). SATU baris setting ("Multi") untuk halaman
 -- Transactions > Sales > Source Data, berisi 1 varian Excel: laporan "HOTEL SALES
@@ -207,6 +213,7 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "daily_channel_recap",
+        "filter_periode_nama_file": "jika_ada",
         "description": "Rekap penjualan hotel PT Well Star Indonesia per channel OTA. 1 file = 1 properti (nama properti HANYA ada di nama file: 'HOTEL SALES RECAP - August Lime villa.xlsx'); 1 sheet = 1 channel (AIRBNB, BOOKING.COM, sheet channel baru otomatis ikut terbaca); 1 baris = 1 hari. 1 baris kanonis (source_rows) = 1 HARI x 1 CHANNEL x 1 PROPERTI dengan INCOME BEFORE TAX tidak 0. Kolom dicari lewat NAMA header (bukan posisi) di 15 baris teratas tiap sheet, jadi urutan kolom/kop yang bergeser tetap terbaca.",
         "prefix_invoice": "WSI",
         "properti": [

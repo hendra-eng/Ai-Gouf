@@ -1,5 +1,11 @@
 -- seed_template_evita_multi_format_sales.sql
 -- =============================================================
+-- FILTER PERIODE DARI NAMA FILE (2026-11-25): tiap varian memakai "filter_periode_nama_file": "jika_ada".
+--   Kalau NAMA FILE memuat tahun+bulan (KODE_SALES_202608.xlsx / ..._Agustus_2026.xlsx / rentang tanggal),
+--   hanya transaksi di periode itu yang DIAMBIL (Period di Source Data juga terisi dari nama file).
+--   Kalau nama file TIDAK memuat periode -> semua baris diambil seperti biasa (Period tampil "-").
+--   Butuh sales_import_v1.py versi baru (mode "jika_ada"). Seed ini aman dijalankan ulang.
+--
 -- Template pola kolom (financial_transaction_sales_import_templates) untuk
 -- klien EVITA (file sumber berawalan "EBA", kode voucher PENJ/EVITABERKATABADI;
 -- 2 usaha/Kanal: EVITA SERANGAN dan ANAGEN COKROAMINOTO). SATU baris setting
@@ -160,6 +166,7 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "flat_grouped_by_key",
+        "filter_periode_nama_file": "jika_ada",
         "description": "Sheet DATA workbook penjualan Evita (EBA) -- 1 baris = 1 transaksi/line dengan nomor urut 4 digit (kolom tanpa judul di kanan 'Harga Setelah Diskon'). Nomor invoice dirakit dari 'Kode Transaksi' + '/' + nomor urut (sama dengan rumus kolom bantu di sheet DATA, tapi dihitung ulang sehingga tidak bergantung pada nilai hasil rumus). 1 baris source_rows = 1 nomor invoice. Cabang = kolom Kanal (EVITA SERANGAN / ANAGEN COKROAMINOTO) dipakai memilih akun pendapatan. Kolom dicari lewat NAMA header, jadi urutan/kolom tambahan tidak masalah.",
         "date_format": "DD/MM/YYYY",
         "number_format": {

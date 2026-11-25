@@ -1,5 +1,11 @@
 -- seed_template_ym_multi_format_sales.sql
 -- =============================================================
+-- FILTER PERIODE DARI NAMA FILE (2026-11-25): tiap varian memakai "filter_periode_nama_file": "jika_ada".
+--   Kalau NAMA FILE memuat tahun+bulan (KODE_SALES_202608.xlsx / ..._Agustus_2026.xlsx / rentang tanggal),
+--   hanya transaksi di periode itu yang DIAMBIL (Period di Source Data juga terisi dari nama file).
+--   Kalau nama file TIDAK memuat periode -> semua baris diambil seperti biasa (Period tampil "-").
+--   Butuh sales_import_v1.py versi baru (mode "jika_ada"). Seed ini aman dijalankan ulang.
+--
 -- Template pola kolom (financial_transaction_sales_import_templates) untuk
 -- klien YM (PT YONISO MASIKARA -- North Bali Beach Cottages & Spa dan North
 -- Bali Divecenter). SATU baris setting ("Multi") untuk halaman Transactions >
@@ -218,6 +224,7 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_income_list",
+        "filter_periode_nama_file": "jika_ada",
         "description": "Varian xlsx 'INCOME LIST' PT YONISO MASIKARA (North Bali Beach Cottages & Spa + North Bali Divecenter): 1 sheet per bulan (0126, 0826, '0826 YANG DI PAKAI'), 1 baris = 1 tamu = 1 invoice. Nilai = kolom Total (Part Diving + Part R&B&S + Extra income) dalam Rupiah.",
         "prefix_invoice": "YM",
         "kolom_wajib": [
@@ -286,6 +293,7 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_income_list",
+        "filter_periode_nama_file": "jika_ada",
         "description": "Varian xls 'Pemasukan' PT YONISO MASIKARA (daftar dari pihak hotel): 1 sheet per bulan ('Jan 26', 'Maret 26'), 1 baris = 1 tamu = 1 invoice. Nilai = kolom 'Total Rp'; pembayaran cash hanya berisi 'total €' -- tanpa kurs di template baris itu INVALID (tidak ditebak).",
         "prefix_invoice": "YM",
         "kolom_wajib": [

@@ -1,5 +1,11 @@
 -- seed_template_mm_multi_format_sales.sql
 -- =============================================================
+-- FILTER PERIODE DARI NAMA FILE (2026-11-25): tiap varian memakai "filter_periode_nama_file": "jika_ada".
+--   Kalau NAMA FILE memuat tahun+bulan (KODE_SALES_202608.xlsx / ..._Agustus_2026.xlsx / rentang tanggal),
+--   hanya transaksi di periode itu yang DIAMBIL (Period di Source Data juga terisi dari nama file).
+--   Kalau nama file TIDAK memuat periode -> semua baris diambil seperti biasa (Period tampil "-").
+--   Butuh sales_import_v1.py versi baru (mode "jika_ada"). Seed ini aman dijalankan ulang.
+--
 -- Template pola kolom (financial_transaction_sales_import_templates) untuk
 -- klien MM. SATU baris setting ("Multi") untuk halaman Transactions > Sales >
 -- Source Data.
@@ -153,6 +159,7 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "category_summary",
+        "filter_periode_nama_file": "jika_ada",
         "description": "Laporan POS 'Report Category Sales' MM (Excel, sheet Sheet1): 1 baris = 1 KATEGORI untuk 1 periode & 1 outlet. File TIDAK memuat nomor invoice maupun tanggal, jadi periode dan outlet diambil dari NAMA FILE (mis. 'Report Category Sales - 01-08-2026 - 31-08-2026 - Outlet 1.xlsx'). 1 baris source_rows = 1 kategori; tanggal invoice = akhir periode; nomor invoice = MM-POS-<awal>-<akhir>-<OUTLET>-<KATEGORI>; cabang = nama kategori (dipakai memilih akun pendapatan). dpp = Net Sales. Kolom dicari lewat NAMA header; baris Total dan kolom catatan manual di kanan tabel diabaikan.",
         "number_format": {
           "thousands_separator": ",",

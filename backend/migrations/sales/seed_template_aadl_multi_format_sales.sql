@@ -1,5 +1,11 @@
 -- seed_template_aadl_multi_format_sales.sql
 -- =============================================================
+-- FILTER PERIODE DARI NAMA FILE: SENGAJA TIDAK DIAKTIFKAN utk AADL (2026-11-25). Nama file AADL memuat
+--   tanggal "Up Date 3 Agustus 2026" (tanggal UPDATE, bukan bulan transaksi) -- mis. file folder Juli
+--   bertuliskan Agustus -- sehingga filter akan memotong transaksi yang benar. Aktifkan
+--   "filter_periode_nama_file": "jika_ada" di tiap varian SETELAH nama file diseragamkan, mis.
+--   AADL_Kapu_202607.xlsx.
+--
 -- Template pola kolom (financial_transaction_sales_import_templates) untuk
 -- klien AADL (PT Akshaya Ananda Dylan Lestari). SATU baris setting ("Multi")
 -- untuk halaman Transactions > Sales > Source Data, yang melayani laporan

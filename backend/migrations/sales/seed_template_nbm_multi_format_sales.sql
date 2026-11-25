@@ -12,6 +12,11 @@
 -- Varian lain nanti cukup ditambahkan ke array itu (lihat bagian "Menambah
 -- varian lagi" di bawah).
 --
+-- FILTER PERIODE DARI NAMA FILE (2026-11-25): ketiga varian memakai "filter_periode_nama_file": true.
+--   Periode di NAMA FILE (mis. "... - 01-08-2026 - 31-08-2026 ..." / "sales_by_customer_01-08-2026_31-08-2026")
+--   menentukan transaksi yang DIAMBIL; baris di luar rentang itu dilewati. Nama file tanpa periode ->
+--   tidak ada yang diimpor (aman, mencegah dobel). Seed ini aman dijalankan ulang.
+--
 -- HASIL UJI DATASET dataset/Sales/NBM/<Bulan>/ (parser asli, template dari DB, 2026-11-07):
 --   Juni    Report Item Details   2.025 struk  TOTAL 298.327.548,25
 --   Juni    sales_by_customer       678 inv    TOTAL 135.713.400,00
@@ -306,6 +311,7 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "flat_grouped_by_key",
+        "filter_periode_nama_file": true,
         "description": "Export POS 'Report Item Details' (semua outlet NBM) -- 1 baris CSV = 1 item/line dalam struk; banyak baris berbagi 1 Receipt Number. 1 baris kanonis (source_rows) = 1 STRUK (Receipt Number), diagregasi dengan menjumlah semua barisnya, termasuk baris Event Type = Refund yang bernilai NEGATIF (refund otomatis mengurangi total struk asalnya). Kolom dicari lewat NAMA di baris header, bukan posisi; tetapi urutan+isi header harus sama persis dengan file contoh agar signature cocok.",
         "encoding": "utf-8-sig",
         "delimiter": ",",
@@ -359,6 +365,7 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "sectioned_by_customer_header",
+        "filter_periode_nama_file": true,
         "description": "Laporan 'Penjualan per Pelanggan' NBM (wholesale, nomor invoice INV/WS/...) -- tiap pelanggan = 1 SEKSI: 1 baris judul (nama pelanggan di kolom A, kolom lain kosong), N baris line (1 invoice bisa punya banyak line produk, termasuk line 'Diskon' bernilai negatif), 1 baris 'Total Penjualan'. Line dijumlah per nomor invoice -> 1 baris kanonis (source_rows) = 1 INVOICE. Yang dijumlah kolom 'Jumlah Tagihan' (I); kolom 'Total' (J) adalah total berjalan per pelanggan dan TIDAK dipakai. Posisi kolom (1-based) dari resep, bukan nama, karena kolom A dipakai ganda untuk nama pelanggan & tanggal.",
         "date_format": "DD/MM/YYYY",
         "number_format": {
@@ -423,6 +430,7 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "flat_grouped_by_key",
+        "filter_periode_nama_file": true,
         "description": "Export POS 'Report Transaction' (semua outlet NBM) -- ringkasan PER STRUK: 1 baris CSV = 1 struk (Event Type = Payment), plus baris Event Type = Refund yang memakai Receipt Number struk asalnya dengan nilai NEGATIF. Dijumlah per Receipt Number -> 1 baris kanonis (source_rows) = 1 struk, refund otomatis mengurangi struk asalnya. Rumus SAMA dengan varian 'Report Item Details' (dpp = Net Sales + Gratuity, ppn = Tax) supaya angka antar bulan konsisten apa pun jenis export-nya. Kolom dicari lewat NAMA di baris header; urutan+isi header harus sama persis dengan file contoh agar signature cocok.",
         "encoding": "utf-8-sig",
         "delimiter": ",",

@@ -33,6 +33,13 @@
 --   parser membawa nilai terakhir ke baris di bawahnya.
 --   Kolom yang dipakai: BULAN | NO INVOICE | BEBAN (pelanggan) | NILAI INVOICE | PPN(11%).
 --
+-- FILTER PERIODE DARI NAMA FILE (2026-11-25): resep varian ini memakai "filter_periode_nama_file": true.
+--   Bulan di NAMA FILE (BRW_SALES_202606.xlsx / ..._Juni_2026.xlsx) menentukan bulan transaksi yang
+--   DIAMBIL; baris bulan lain di file kumulatif dilewati. Jadi file Juni -> hanya invoice Juni, Juli ->
+--   hanya Juli, Agustus -> hanya Agustus, dan "Buat Invoice" tiap bulan tidak lagi bentrok no. invoice.
+--   Nama file tanpa bulan+tahun -> tidak ada yang diimpor (aman, mencegah dobel). Jangan dipakai
+--   bersama "file_kumulatif". Seed ini aman dijalankan ulang (resep diperbarui di tempat).
+--
 -- PENTING -- FILE BERSIFAT KUMULATIF: tiap file memuat SEMUA bulan sampai bulan itu (file
 --   Agustus juga berisi invoice Jan-Jul). Upload file bulan berikutnya akan mengekstrak ulang
 --   invoice lama; saat "promote" ke invoice, nomor invoice yang sudah ada otomatis DILEWATI
@@ -140,6 +147,7 @@ DECLARE
         "header_cari_dalam_baris": 5,
         "cocok_jika_kolom_ada": ["BULAN", "NO INVOICE", "BEBAN", "NILAI INVOICE", "PPN(11%)"],
         "dasar": "tagihan",
+        "filter_periode_nama_file": true,
         "date_format": "DD/MM/YYYY",
         "number_format": {
           "thousands_separator": ",",

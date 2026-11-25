@@ -1,5 +1,11 @@
 -- seed_template_sau_multi_format_sales.sql
 -- =============================================================
+-- FILTER PERIODE DARI NAMA FILE (2026-11-25): tiap varian memakai "filter_periode_nama_file": "jika_ada".
+--   Kalau NAMA FILE memuat tahun+bulan (KODE_SALES_202608.xlsx / ..._Agustus_2026.xlsx / rentang tanggal),
+--   hanya transaksi di periode itu yang DIAMBIL (Period di Source Data juga terisi dari nama file).
+--   Kalau nama file TIDAK memuat periode -> semua baris diambil seperti biasa (Period tampil "-").
+--   Butuh sales_import_v1.py versi baru (mode "jika_ada"). Seed ini aman dijalankan ulang.
+--
 -- Template pola kolom (financial_transaction_sales_import_templates) untuk
 -- klien SAU (CV Sumber Alodie Utama). SATU baris setting ("Multi") untuk
 -- halaman Transactions > Sales > Source Data, yang melayani laporan
@@ -245,6 +251,7 @@ BEGIN
       ],
       "mapping_rules": {
         "format_type": "grouped_invoice_report",
+        "filter_periode_nama_file": "jika_ada",
         "description": "Laporan Penjualan Detail (POS/kasir) SAU -- 1 baris kanonis (source_rows) = 1 TRANSAKSI/INVOICE, bukan 1 baris item. Tiap invoice = 1 blok baris CSV: header invoice, label item, N baris item, subtotal, footer (Pot./Pajak/Biaya/Total Akhir), lalu 1 baris kosong. Format SAMA untuk keempat cabang (CRS, NGY, OL, PCL); cabang dibaca dari nama file.",
         "delimiter": ";",
         "quoted_fields": true,
@@ -340,6 +347,7 @@ BEGIN
       ],
       "mapping_rules": {
         "format_type": "grouped_invoice_report_pdf",
+        "filter_periode_nama_file": "jika_ada",
         "description": "Laporan Penjualan Detail (POS/kasir) SAU versi PDF -- isi dan struktur blok SAMA dengan varian CSV: 1 baris kanonis (source_rows) = 1 TRANSAKSI/INVOICE, bukan 1 baris item. Tiap invoice = header invoice, band label item, N baris item, baris subtotal, footer (Pot./Pajak/Biaya/Total Akhir). Beda dengan CSV: tidak ada baris/sel, jadi resep memakai KATA + POSISI (x0, top) di text layer PDF. Format SAMA untuk keempat cabang (CRS, NGY, OL, PCL); cabang dibaca dari nama file.",
         "source_kind": "pdf_text_layer",
         "pdf_reader": {

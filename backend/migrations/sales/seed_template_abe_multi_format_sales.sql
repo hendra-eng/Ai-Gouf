@@ -1,5 +1,11 @@
 -- seed_template_abe_multi_format_sales.sql
 -- =============================================================
+-- FILTER PERIODE DARI NAMA FILE (2026-11-25): tiap varian memakai "filter_periode_nama_file": "jika_ada".
+--   Kalau NAMA FILE memuat tahun+bulan (KODE_SALES_202608.xlsx / ..._Agustus_2026.xlsx / rentang tanggal),
+--   hanya transaksi di periode itu yang DIAMBIL (Period di Source Data juga terisi dari nama file).
+--   Kalau nama file TIDAK memuat periode -> semua baris diambil seperti biasa (Period tampil "-").
+--   Butuh sales_import_v1.py versi baru (mode "jika_ada"). Seed ini aman dijalankan ulang.
+--
 -- Template pola kolom (financial_transaction_sales_import_templates) untuk
 -- klien ABE. SATU baris setting ("Multi") untuk halaman Transactions > Sales >
 -- Source Data, dengan SATU varian Excel yang membaca SEMUA sheet catatan
@@ -170,6 +176,7 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "multi_sheet_line_items",
+        "filter_periode_nama_file": "jika_ada",
         "description": "Catatan penjualan manual ABE, 1 workbook = banyak sheet. 1 baris sheet = 1 item; tanggal hanya di baris pertama tiap kelompok (baris kosong di bawahnya ikut tanggal di atas); baris tersembunyi (hasil filter) dan baris bernilai 0 dilewati; baris dijumlah per (tanggal, pelanggan) -> 1 invoice. Nomor invoice dibentuk <prefix_invoice>-YYYYMMDD-<PELANGGAN> karena file tidak punya nomor invoice. ppn = 0 (file tidak punya pajak).",
         "number_format": {
           "thousands_separator": ",",

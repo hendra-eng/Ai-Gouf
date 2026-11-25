@@ -1785,15 +1785,22 @@ def _hitung_confidence(baris: List[Dict[str, Any]], period_label: Optional[str])
 
 def _saring_periode_nama_file(hasil: List[Dict[str, Any]], mapping_rules: Dict[str, Any],
                               file_name: Optional[str]) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
-    """Kalau resep punya filter_periode_nama_file = true: ambil hanya baris yang tanggalnya di dalam periode
-    NAMA FILE. Return (baris_terpilih, info) -- info None kalau filter tidak aktif.
+    """Kalau resep punya filter_periode_nama_file = true (atau "jika_ada"): ambil hanya baris yang tanggalnya di
+    dalam periode NAMA FILE. Return (baris_terpilih, info) -- info None kalau filter tidak aktif / (mode
+    "jika_ada") nama file tanpa periode.
     Galat (ValueError, ditampilkan apa adanya ke user; file tersimpan sbg 'Gagal'):
       - nama file tidak memuat periode  -> aman: TIDAK ada yang diimpor (mencegah transaksi dobel);
       - tidak satu pun baris jatuh di periode itu -> kemungkinan bulan di nama file salah.
     Baris yang tanggalnya tidak terbaca tetap dibawa (sudah ditandai tidak valid oleh parser)."""
-    if not (mapping_rules or {}).get("filter_periode_nama_file"):
+    flag = (mapping_rules or {}).get("filter_periode_nama_file")
+    if not flag:
         return hasil, None
+    # Mode "jika_ada" (utk klien yang file-nya TIDAK kumulatif): filter hanya jalan kalau NAMA FILE memuat
+    # tahun+bulan; kalau tidak, semua baris diambil seperti biasa. Mode true (UBD, BRW, NBM) = ketat.
+    jika_ada = isinstance(flag, str) and flag.strip().lower() in ("jika_ada", "jika-ada", "if_present")
     p = _periode_filter_dari_nama_file(file_name)
+    if p is None and jika_ada:
+        return hasil, None
     if p is None:
         raise ValueError(
             "Nama file tidak memuat periode, jadi tidak ada transaksi yang diimpor (supaya tidak dobel dengan "

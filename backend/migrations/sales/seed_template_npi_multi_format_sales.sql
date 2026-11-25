@@ -1,5 +1,11 @@
 -- seed_template_npi_multi_format_sales.sql
 -- =============================================================
+-- FILTER PERIODE DARI NAMA FILE (2026-11-25): tiap varian memakai "filter_periode_nama_file": "jika_ada".
+--   Kalau NAMA FILE memuat tahun+bulan (KODE_SALES_202608.xlsx / ..._Agustus_2026.xlsx / rentang tanggal),
+--   hanya transaksi di periode itu yang DIAMBIL (Period di Source Data juga terisi dari nama file).
+--   Kalau nama file TIDAK memuat periode -> semua baris diambil seperti biasa (Period tampil "-").
+--   Butuh sales_import_v1.py versi baru (mode "jika_ada"). Seed ini aman dijalankan ulang.
+--
 -- Template pola kolom (financial_transaction_sales_import_templates) untuk
 -- klien NPI (PT Nusa Penida Investments). SATU baris setting ("Multi") untuk
 -- halaman Transactions > Sales > Source Data.
@@ -244,6 +250,7 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "flat_grouped_by_key",
+        "filter_periode_nama_file": "jika_ada",
         "description": "Laporan POS 'Sales Recapitulation Detail Report' NPI (PT Nusa Penida Investments; outlet PLAZA MARIETTA dan SIBARITA) -- 1 baris Excel = 1 item/line menu dalam bill; banyak baris berbagi 1 Bill Number. 1 baris kanonis (source_rows) = 1 BILL (Bill Number), diagregasi dengan menjumlah semua barisnya. Kolom dicari lewat NAMA di baris header (bukan posisi), jadi urutan kolom boleh berubah/ditambah. Kop laporan (judul, periode, branch, dst) ada di atas header dan jumlah barisnya boleh berubah; baris ringkasan di bawah data ('Rounding Total', 'Platform Fee Total', dst) dilewati.",
         "date_format": "DD-MM-YYYY",
         "number_format": {
