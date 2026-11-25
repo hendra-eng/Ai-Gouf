@@ -321,7 +321,23 @@ export default function SalesTransaction() {
   const printedBy = user?.nama || user?.username || undefined;
   // Daftar invoice per company aktif (bukan per user login).
   const { invoices: backendInvoices, loading, error, refresh } = useSalesInvoices(activeClientId ?? null);
-  const transactions = useMemo(() => backendInvoices.map(petakanDariBackend), [backendInvoices]);
+  // Urutan tabel: tanggal invoice dari yang terkecil (Jan -> Des, tgl 1 -> 31), bukan urutan
+  // klik Create Invoice di Source Data. Tanggal sama -> urut nomor invoice (angka dibaca natural,
+  // jadi ...-6-14 sebelum ...-6-149). Invoice tanpa tanggal ditaruh paling bawah.
+  const transactions = useMemo(
+    () =>
+      backendInvoices.map(petakanDariBackend).sort((a, b) => {
+        const da = (a.dateISO || '').slice(0, 10);
+        const db = (b.dateISO || '').slice(0, 10);
+        if (da !== db) {
+          if (!da) return 1;
+          if (!db) return -1;
+          return da < db ? -1 : 1;
+        }
+        return a.id.localeCompare(b.id, undefined, { numeric: true });
+      }),
+    [backendInvoices],
+  );
 
   // Filters
   const [search, setSearch] = useState('');
