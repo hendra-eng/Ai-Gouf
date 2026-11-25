@@ -187,6 +187,10 @@ export interface PromoteToInvoicesResult {
   dilewati_tidak_valid: number;
   dilewati_sudah_pernah_dipromosikan: number;
   dilewati_invoice_no_bentrok: number;
+  /** File kumulatif: invoice file lama yang hilang di file terbaru (dibatalkan / disesuaikan / masuk Exceptions). */
+  invoice_dibatalkan_file_baru?: number;
+  invoice_diperbarui_file_baru?: number;
+  exception_perlu_reversal?: number;
 }
 
 /**

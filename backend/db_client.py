@@ -5891,6 +5891,109 @@ def promote_sales_rows_bulk(source_file_id: str, management_client_id: Optional[
             "dilewati_sudah_pernah_dipromosikan": sudah_pernah, "dilewati_invoice_no_bentrok": bentrok}
 
 
+def rekonsiliasi_file_kumulatif(source_file_id: str, management_client_id: Optional[str], user_id: Optional[str] = None,
+                                nama_user: Optional[str] = None) -> Dict[str, Any]:
+    """[BARU] File KUMULATIF (resep mapping_rules.file_kumulatif = true, mis. UBD "Monitoring Project Income": tiap
+    bulan isinya Jan s/d bulan itu): file yang LEBIH BARU menggantikan file lama untuk klien + template yang sama.
+    Dipanggil setelah promote. Invoice yang berasal dari file lama dan:
+      - tidak ada lagi di file terbaru -> belum Posted: dibatalkan (soft delete + activity log);
+                                          sudah Posted: TIDAK disentuh, dibuatkan Exception 'High' (perlu reversal manual);
+      - masih ada tapi nilai/tanggal/customer berubah -> belum Posted: diperbarui; sudah Posted: Exception.
+    Tidak jalan kalau file ini bukan file terbaru untuk template-nya (supaya mempromosikan file lama tidak membatalkan
+    invoice dari file yang lebih baru). Return ringkasan angka + daftar voucher yang dibatalkan."""
+    hasil: Dict[str, Any] = {"aktif": False, "dibatalkan": 0, "diperbarui": 0, "perlu_reversal": 0, "voucher_dibatalkan": []}
+    session = SessionLocal()
+    try:
+        sf = session.query(SalesSourceFile).filter(SalesSourceFile.id == source_file_id).first()
+        if sf is None or not sf.template_id or not (sf.mapping_rules or {}).get("file_kumulatif"):
+            return hasil
+        lebih_baru = session.query(SalesSourceFile.id).filter(
+            SalesSourceFile.template_id == sf.template_id,
+            SalesSourceFile.management_client_id == sf.management_client_id,
+            SalesSourceFile.deleted_at.is_(None), SalesSourceFile.id != sf.id,
+            SalesSourceFile.uploaded_at > sf.uploaded_at).first()
+        if lebih_baru is not None:
+            hasil["dilewati"] = "Ada file yang lebih baru untuk template ini -- file ini tidak dipakai sebagai acuan."
+            return hasil
+        hasil["aktif"] = True
+
+        baru = {r[0]: r for r in session.query(
+            SalesSourceRow.no_invoice, SalesSourceRow.tanggal, SalesSourceRow.nama_customer,
+            SalesSourceRow.dpp, SalesSourceRow.ppn, SalesSourceRow.total,
+        ).filter(SalesSourceRow.source_file_id == source_file_id, SalesSourceRow.deleted_at.is_(None),
+                 SalesSourceRow.is_valid.is_(True)).all() if r[0]}
+        id_file_lama = session.query(SalesSourceFile.id).filter(
+            SalesSourceFile.template_id == sf.template_id,
+            SalesSourceFile.management_client_id == sf.management_client_id,
+            SalesSourceFile.deleted_at.is_(None), SalesSourceFile.id != sf.id,
+            SalesSourceFile.uploaded_at < sf.uploaded_at)
+        invoices = session.query(SalesInvoice).join(SalesSourceRow, SalesSourceRow.id == SalesInvoice.source_row_id).filter(
+            SalesSourceRow.source_file_id.in_(id_file_lama),
+            SalesInvoice.management_client_id == management_client_id,
+            SalesInvoice.deleted_at.is_(None), SalesInvoice.is_opening_balance.is_(False)).all()
+
+        sekarang = datetime.now()
+        oleh = nama_user or "System"
+
+        def _log(inv, tipe, teks):
+            session.add(SalesActivityLog(client_id=management_client_id, invoice_id=inv.id, event_type=tipe,
+                                         description=teks, reference_no=inv.invoice_no, performed_by=oleh, created_by=user_id))
+
+        def _exception(inv, teks, snippet):
+            ada = session.query(SalesException.id).filter(
+                SalesException.invoice_id == inv.id, SalesException.exception_type == "Perubahan File Kumulatif",
+                SalesException.status == "Open", SalesException.deleted_at.is_(None)).first()
+            if ada is None:
+                session.add(SalesException(client_id=management_client_id, invoice_id=inv.id,
+                                           exception_type="Perubahan File Kumulatif", priority="High", status="Open",
+                                           ai_suggestion=teks, source_snippet=snippet, created_by=user_id))
+            hasil["perlu_reversal"] += 1
+
+        for inv in invoices:
+            posted = (inv.posting_status or "").strip().lower() == "posted"
+            b = baru.get(inv.invoice_no)
+            if b is None:
+                if posted:
+                    _exception(inv, f"Voucher {inv.invoice_no} sudah Posted tetapi tidak ada lagi di file terbaru "
+                                    f"({sf.file_name}). Cek apakah perlu dibalik (reversal).",
+                               {"invoice_no": inv.invoice_no, "gross_amount": float(inv.gross_amount or 0), "file": sf.file_name})
+                else:
+                    inv.deleted_at = sekarang
+                    inv.deleted_by = user_id
+                    _log(inv, "Dibatalkan", f"Voucher tidak ada lagi di file terbaru {sf.file_name} -- invoice dibatalkan otomatis.")
+                    hasil["dibatalkan"] += 1
+                    hasil["voucher_dibatalkan"].append(inv.invoice_no)
+                continue
+            _, tgl, cust, dpp, ppn, total = b
+            beda = (round(float(total or 0), 2) != round(float(inv.gross_amount or 0), 2)
+                    or round(float(dpp or 0), 2) != round(float(inv.dpp or 0), 2)
+                    or (tgl is not None and tgl != inv.invoice_date)
+                    or ((cust or "-") != (inv.customer_name or "-")))
+            if not beda:
+                continue
+            if posted:
+                _exception(inv, f"Voucher {inv.invoice_no} sudah Posted tetapi nilai/tanggal/customer di file terbaru "
+                                f"({sf.file_name}) berbeda: total {float(inv.gross_amount or 0):,.2f} -> {float(total or 0):,.2f}.",
+                           {"invoice_no": inv.invoice_no, "gross_lama": float(inv.gross_amount or 0), "gross_baru": float(total or 0)})
+            else:
+                lama = float(inv.gross_amount or 0)
+                inv.dpp, inv.ppn, inv.gross_amount = dpp or 0, ppn or 0, total or 0
+                if tgl is not None:
+                    inv.invoice_date = tgl
+                inv.customer_name = cust or "-"
+                inv.edited_at, inv.edited_by = sekarang, user_id
+                _log(inv, "Diperbarui", f"Disesuaikan dengan file terbaru {sf.file_name}: total {lama:,.2f} -> {float(total or 0):,.2f}.")
+                hasil["diperbarui"] += 1
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error rekonsiliasi_file_kumulatif: {e}")
+        return {**hasil, "error": str(e)}
+    finally:
+        session.close()
+
+
 # --- 5) financial_transaction_sales_exceptions ---
 
 CRUD_FIELDS_SALES_EXCEPTION = [

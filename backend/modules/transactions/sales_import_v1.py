@@ -3190,18 +3190,30 @@ def promote_source_file_to_invoices(
     if dibuat > 0:
         dbc.update_sales_source_file(source_file_id, {"status_ekstraksi": "Berhasil"}, updated_by=user_id)
 
+    # [BARU] File kumulatif (mapping_rules.file_kumulatif): file terbaru menggantikan file lama -- voucher yang hilang
+    # dari file terbaru dibatalkan (kalau belum Posted) atau dijadikan Exception (kalau sudah Posted).
+    rekon = dbc.rekonsiliasi_file_kumulatif(source_file_id, client_id, user_id,
+                                            current_user.get("nama") or current_user.get("username"))
+
     ringkasan = {
         "total_baris": len(rows),
         "invoice_dibuat": dibuat,
         "dilewati_tidak_valid": dilewati_tidak_valid,
         "dilewati_sudah_pernah_dipromosikan": dilewati_sudah_pernah,
         "dilewati_invoice_no_bentrok": dilewati_invoice_bentrok,
+        "invoice_dibatalkan_file_baru": rekon.get("dibatalkan", 0),
+        "invoice_diperbarui_file_baru": rekon.get("diperbarui", 0),
+        "exception_perlu_reversal": rekon.get("perlu_reversal", 0),
     }
+    catatan_rekon = ""
+    if rekon.get("aktif") and (rekon["dibatalkan"] or rekon["diperbarui"] or rekon["perlu_reversal"]):
+        catatan_rekon = (f" Sinkron dengan file terbaru: {rekon['dibatalkan']} invoice dibatalkan, "
+                         f"{rekon['diperbarui']} diperbarui, {rekon['perlu_reversal']} sudah Posted (masuk Exceptions).")
     return sukses(
         data=ringkasan,
         message=(
             f"{dibuat} invoice baru dibuat dari {len(rows)} baris "
             f"({dilewati_tidak_valid} tidak valid, {dilewati_sudah_pernah} sudah pernah dipromosikan, "
-            f"{dilewati_invoice_bentrok} bentrok no. invoice)."
+            f"{dilewati_invoice_bentrok} bentrok no. invoice)." + catatan_rekon
         ),
     )
