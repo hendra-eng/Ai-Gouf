@@ -133,11 +133,11 @@ DECLARE
     v_id          UUID;
     v_bentrok     INTEGER;
     -- Hash baris seed ini (lihat "column_signature_hash" di kepala file).
-    v_hash_baru   CONSTANT TEXT := '1b80b85b1f4b164b246d35d95ff0ad87eb63e6e83b7f230d0ebc69d282712b67';
-    v_hash_lama   TEXT[] := ARRAY[]::TEXT[];
+    v_hash_baru   CONSTANT TEXT := 'cad3694579ca969cb7849372ba86871175b8e21e5dfec494d34e0d1ea09e243d';
+    v_hash_lama   TEXT[] := ARRAY['1b80b85b1f4b164b246d35d95ff0ad87eb63e6e83b7f230d0ebc69d282712b67']::TEXT[];
     v_rules       JSONB := $json${
   "format_type": "multi_format",
-  "description": "1 setting klien MM untuk laporan penjualan. Varian Excel: POS 'Report Category Sales' (ringkasan per kategori per outlet). Varian lain (mis. laporan per item/transaksi) nanti ditambahkan ke array variants.",
+  "description": "1 setting klien MM untuk laporan penjualan. Varian Excel: (1) POS 'Report Category Sales' ringkasan per kategori (Agustus); (2) laporan POS per transaksi, sheet Sheet1 dengan kolom MONTH (Juni); (3) laporan POS per transaksi, sheet 'Report Item Details' (Juli). Semua menghasilkan 1 invoice = 1 kategori per periode.",
   "variants": [
     {
       "file_type": "Excel",
@@ -202,6 +202,175 @@ DECLARE
         },
         "row_granularity": "per_category_per_period",
         "catatan_analisis": "Dianalisis dari 'Report Category Sales - 01-08-2026 - 31-08-2026 - Outlet 1.xlsx': sheet Sheet1 A1:M25, header baris 1 (10 kolom), 6 baris kategori (BARBER, CAFE MM, MERCHANDISE, RENTALS, SERVICE MOTOR, Uncategorized) lalu baris 'Total' (Net Sales 23.413.000, 92 item). Semua Discount/Refund/COGS = 0. Kolom K-M berisi catatan manual user (mis. 'BARBER' di baris Uncategorized, subtotal 9.588.000 = BARBER + Uncategorized) dan TIDAK dibaca."
+      }
+    },
+    {
+      "file_type": "Excel",
+      "sheet_name": "Sheet1",
+      "header_row_index": 2,
+      "data_start_row_index": 3,
+      "column_signature_hash": "990a4cdd18ab11e4f800bd001e6f08cd526c4768335988cc1bd292191acbf544",
+      "header_columns": [
+        "Outlet",
+        "Receipt Number",
+        "MONTH",
+        "Date",
+        "Time",
+        "Category",
+        "Brand",
+        "Items",
+        "Variant",
+        "SKU",
+        "Quantity",
+        "Modifier Applied",
+        "Discount Applied",
+        "Gross Sales",
+        "Discounts",
+        "Refunds",
+        "Net Sales",
+        "Gratuity",
+        "TOTAL",
+        "Tax",
+        "Sales Type",
+        "Collected By",
+        "Served By",
+        "Customer",
+        "Payment Method",
+        "Event Type",
+        "Reason of Refund"
+      ],
+      "mapping_rules": {
+        "format_type": "category_summary",
+        "filter_periode_nama_file": "jika_ada",
+        "description": "Laporan POS PER TRANSAKSI MM (sheet Sheet1, header baris 2, ada kolom MONTH): 1 baris = 1 item struk. File bisa KUMULATIF (202606 berisi Jan-Jun), jadi hanya baris yang kolom Date-nya di periode NAMA FILE yang dijumlah per Category (Net Sales). Hasilnya sama bentuknya dengan varian Agustus: 1 invoice = 1 kategori sebulan.",
+        "number_format": {
+          "thousands_separator": ",",
+          "decimal_separator": "."
+        },
+        "kategori": "Category",
+        "dpp_columns": [
+          "Net Sales"
+        ],
+        "ppn_columns": [],
+        "akhir_data_jika": [
+          "Total",
+          "Grand Total"
+        ],
+        "abaikan_nilai_nol": true,
+        "prefix_invoice": "MM-POS",
+        "tanggal_pakai": "akhir",
+        "outlet_dari_nama_file": {
+          "pattern": "Outlet[ _]+([A-Za-z0-9]+)",
+          "group": 1,
+          "label": "OUTLET"
+        },
+        "customer_prefix": "Penjualan POS",
+        "signature_abaikan_kolom_kosong_di_ujung": true,
+        "header_cari_dalam_baris": 10,
+        "cocok_jika_kolom_ada": [
+          "Category",
+          "Date",
+          "Gross Sales",
+          "Net Sales"
+        ],
+        "cari_di_semua_sheet": true,
+        "field_mapping": {
+          "tanggal": "akhir periode dari NAMA FILE (YYYYMM)",
+          "invoice": "MM-POS-<awal YYYYMMDD>-<akhir YYYYMMDD>-OUTLET<n dari nama file>-<KATEGORI>",
+          "customer": "Penjualan POS - Outlet <n> - <Category Name>",
+          "cabang": "Category Name",
+          "dpp": "Net Sales dijumlah per Category untuk baris yang tanggalnya di dalam periode NAMA FILE",
+          "ppn": "0 (laporan tidak punya kolom pajak)",
+          "total": "dpp + ppn"
+        },
+        "row_granularity": "per_category_per_period_dari_transaksi",
+        "catatan_analisis": "Laporan POS PER TRANSAKSI MM (sheet Sheet1, header baris 2, ada kolom MONTH): 1 baris = 1 item struk. File bisa KUMULATIF (202606 berisi Jan-Jun), jadi hanya baris yang kolom Date-nya di periode NAMA FILE yang dijumlah per Category (Net Sales). Hasilnya sama bentuknya dengan varian Agustus: 1 invoice = 1 kategori sebulan.",
+        "tanggal_kolom": "Date",
+        "date_format": "YYYY-MM-DD"
+      }
+    },
+    {
+      "file_type": "Excel",
+      "sheet_name": "Report Item Details - 01-07-202",
+      "header_row_index": 2,
+      "data_start_row_index": 3,
+      "column_signature_hash": "4fbc91b165055d70ed958edb508edca6ff894e1f103f7c8074bb32e109dacda5",
+      "header_columns": [
+        "Outlet",
+        "Receipt Number",
+        "Date",
+        "Time",
+        "Category",
+        "Brand",
+        "Items",
+        "Variant",
+        "SKU",
+        "Quantity",
+        "Modifier Applied",
+        "Discount Applied",
+        "Gross Sales",
+        "Discounts",
+        "Refunds",
+        "Net Sales",
+        "Gratuity",
+        "Total",
+        "Tax",
+        "Sales Type",
+        "Collected By",
+        "Served By",
+        "Customer",
+        "Payment Method",
+        "Event Type",
+        "Reason of Refund"
+      ],
+      "mapping_rules": {
+        "format_type": "category_summary",
+        "filter_periode_nama_file": "jika_ada",
+        "description": "Laporan POS PER TRANSAKSI MM (sheet 'Report Item Details - dd-mm-yyy', header baris 2, baris 1 berisi subtotal, sheet pivot lain diabaikan): hanya baris yang kolom Date-nya di periode NAMA FILE yang dijumlah per Category (Net Sales).",
+        "number_format": {
+          "thousands_separator": ",",
+          "decimal_separator": "."
+        },
+        "kategori": "Category",
+        "dpp_columns": [
+          "Net Sales"
+        ],
+        "ppn_columns": [],
+        "akhir_data_jika": [
+          "Total",
+          "Grand Total"
+        ],
+        "abaikan_nilai_nol": true,
+        "prefix_invoice": "MM-POS",
+        "tanggal_pakai": "akhir",
+        "outlet_dari_nama_file": {
+          "pattern": "Outlet[ _]+([A-Za-z0-9]+)",
+          "group": 1,
+          "label": "OUTLET"
+        },
+        "customer_prefix": "Penjualan POS",
+        "signature_abaikan_kolom_kosong_di_ujung": true,
+        "header_cari_dalam_baris": 10,
+        "cocok_jika_kolom_ada": [
+          "Category",
+          "Date",
+          "Gross Sales",
+          "Net Sales"
+        ],
+        "cari_di_semua_sheet": true,
+        "field_mapping": {
+          "tanggal": "akhir periode dari NAMA FILE (YYYYMM)",
+          "invoice": "MM-POS-<awal YYYYMMDD>-<akhir YYYYMMDD>-OUTLET<n dari nama file>-<KATEGORI>",
+          "customer": "Penjualan POS - Outlet <n> - <Category Name>",
+          "cabang": "Category Name",
+          "dpp": "Net Sales dijumlah per Category untuk baris yang tanggalnya di dalam periode NAMA FILE",
+          "ppn": "0 (laporan tidak punya kolom pajak)",
+          "total": "dpp + ppn"
+        },
+        "row_granularity": "per_category_per_period_dari_transaksi",
+        "catatan_analisis": "Laporan POS PER TRANSAKSI MM (sheet 'Report Item Details - dd-mm-yyy', header baris 2, baris 1 berisi subtotal, sheet pivot lain diabaikan): hanya baris yang kolom Date-nya di periode NAMA FILE yang dijumlah per Category (Net Sales).",
+        "tanggal_kolom": "Date",
+        "date_format": "YYYY-MM-DD"
       }
     }
   ],

@@ -1882,6 +1882,13 @@ def _parse_category_summary(rows: List[List[str]], template: Dict[str, Any], fil
         if mo:
             outlet = (mo.group(aturan_outlet.get("group", 1)) or "").strip()
 
+    # [BARU] Laporan POS PER TRANSAKSI (MM Juni/Juli: 1 baris = 1 item struk): resep "tanggal_kolom" =
+    # nama kolom tanggal. Kalau periode terbaca dari NAMA FILE, hanya baris yang tanggalnya di dalam periode
+    # itu yang dijumlah per kategori (file bisa kumulatif, mis. Januari-Juni di file 202606). Tanpa resep ini
+    # (laporan ringkasan seperti Agustus) perilaku TIDAK berubah.
+    i_tgl = kolom(recipe["tanggal_kolom"]) if recipe.get("tanggal_kolom") else None
+    fmt_tgl = recipe.get("date_format", "YYYY-MM-DD")
+
     agregat: Dict[str, Dict[str, Any]] = {}
     for row in rows[template["data_start_row_index"] - 1:]:
         sel = list(row[:lebar])
@@ -1890,6 +1897,10 @@ def _parse_category_summary(rows: List[List[str]], template: Dict[str, Any], fil
         kategori = _ambil_kolom(row, i_kat + 1)
         if _norm_label(kategori) in akhir:
             break
+        if i_tgl is not None and awal_p is not None and akhir_p is not None:
+            t_baris = _parse_tanggal(_ambil_kolom(row, i_tgl + 1), fmt_tgl)
+            if t_baris is not None and not (awal_p <= t_baris <= akhir_p):
+                continue
         dpp = sum(_parse_angka(_ambil_kolom(row, i + 1), number_format) for i in i_dpp)
         ppn = sum(_parse_angka(_ambil_kolom(row, i + 1), number_format) for i in i_ppn)
         a = agregat.get(_norm_label(kategori))
