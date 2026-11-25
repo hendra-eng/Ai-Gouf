@@ -1868,6 +1868,11 @@ def _parse_category_summary(rows: List[List[str]], template: Dict[str, Any], fil
     lebar = len(header)
 
     awal_p, akhir_p = _periode_dari_nama_file(file_name)
+    if awal_p is None or akhir_p is None:
+        # Nama file tanpa tanggal lengkap: coba format bulan (MM_SALES_202608, ..._2026-08, ..._Agustus_2026 -> 1 s/d akhir bulan).
+        p_nama = _periode_filter_dari_nama_file(file_name)
+        if p_nama:
+            awal_p, akhir_p = p_nama["awal"], p_nama["akhir"]
     tanggal = awal_p if recipe.get("tanggal_pakai") == "awal" else akhir_p
     outlet = ""
     aturan_outlet = recipe.get("outlet_dari_nama_file")
