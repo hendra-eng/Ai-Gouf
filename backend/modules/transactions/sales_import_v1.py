@@ -1726,6 +1726,63 @@ def _label_periode(p: Dict[str, Any]) -> str:
     return f"{awal:%d-%m-%Y} s/d {akhir:%d-%m-%Y}"
 
 
+def _period_label_dari_nama_file(file_name: Optional[str]) -> Optional[str]:
+    """Label kolom Period (Source Data) dari NAMA FILE, utk klien/file apa pun: 202608, 2026-08,
+    Agustus 2026, Aug_2026, dst -> \"Agustus 2026\". Nama file tanpa tahun+bulan -> None (UI tampil '-')."""
+    p = _periode_filter_dari_nama_file(file_name)
+    return _label_periode(p) if p else None
+
+
+def _customer_dominan(baris: List[Dict[str, Any]]) -> Optional[str]:
+    """Kolom Customer / Entity (Source Data): nama customer dengan transaksi (baris) TERBANYAK di file.
+    Nama dibandingkan tanpa beda huruf besar/kecil & spasi ganda; seri -> yang muncul duluan.
+    Tidak ada nama customer sama sekali -> None (UI tampil '-')."""
+    hitung: Dict[str, int] = {}
+    asli: Dict[str, str] = {}
+    for r in baris or []:
+        nama = re.sub(r"\s+", " ", str(r.get("nama_customer") or "")).strip()
+        if not nama:
+            continue
+        k = _norm_label(nama)
+        if k not in asli:
+            asli[k] = nama
+        hitung[k] = hitung.get(k, 0) + 1
+    if not hitung:
+        return None
+    terbanyak = max(hitung.values())
+    for k in asli:  # urutan muncul pertama
+        if hitung[k] == terbanyak:
+            return asli[k][:255]
+    return None
+
+
+def _hitung_confidence(baris: List[Dict[str, Any]], period_label: Optional[str]) -> float:
+    """Confidence (0-100) = kualitas ISI file hasil ekstraksi, bukan tebakan AI template:
+      60%  baris valid   (rows_valid / rows)  -- tanggal terbaca, customer ada, angka masuk akal, dst
+      15%  tidak dobel   (1 - baris_dobel / rows)
+      15%  angka konsisten (DPP + PPN = Total per baris, toleransi pembulatan Rp1)
+      10%  period terbaca (dari nama file)
+    Aturan keras: 0 baris -> 0; ada baris tidak valid ('Butuh Review') -> maksimal 89 (tidak pernah hijau).
+    Cek invoice tidak dihitung terpisah: format tanpa nomor invoice (mis. UBD) tidak dianggap salah."""
+    n = len(baris or [])
+    if n == 0:
+        return 0.0
+    valid = sum(1 for r in baris if r.get("is_valid"))
+    dobel = sum(1 for r in baris if r.get("is_duplicate_candidate"))
+
+    def konsisten(r: Dict[str, Any]) -> bool:
+        try:
+            return abs(float(r.get("dpp") or 0) + float(r.get("ppn") or 0) - float(r.get("total") or 0)) <= 1.0
+        except (TypeError, ValueError):
+            return False
+
+    cocok = sum(1 for r in baris if konsisten(r))
+    skor = 60 * valid / n + 15 * (1 - dobel / n) + 15 * cocok / n + (10 if period_label else 0)
+    if valid < n:
+        skor = min(skor, 89.0)
+    return round(max(0.0, min(100.0, skor)), 2)
+
+
 def _saring_periode_nama_file(hasil: List[Dict[str, Any]], mapping_rules: Dict[str, Any],
                               file_name: Optional[str]) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
     """Kalau resep punya filter_periode_nama_file = true: ambil hanya baris yang tanggalnya di dalam periode
@@ -3187,6 +3244,7 @@ async def upload_source_file(
             "rows_detected": 0,
             "status_ekstraksi": "Butuh Review",
             "status_mapping": "Butuh Review",
+            "period_label": _period_label_dari_nama_file(file.filename),
             "processed_by": current_user.get("nama") or current_user.get("username"),
             "uploaded_by": user_id,
         }, created_by=user_id)
@@ -3218,6 +3276,7 @@ async def upload_source_file(
             "rows_detected": 0,
             "status_ekstraksi": "Gagal",
             "status_mapping": "Gagal",
+            "period_label": _period_label_dari_nama_file(file.filename),
             "template_id": template["id"],
             "processed_by": current_user.get("nama") or current_user.get("username"),
             "uploaded_by": user_id,
@@ -3246,13 +3305,17 @@ async def upload_source_file(
         "duplicate_count": duplicate_count,
         "status_ekstraksi": "Berhasil" if rows_invalid == 0 else "Butuh Review",
         "status_mapping": "Berhasil",
-        "confidence_score": template.get("ai_confidence"),
+        "confidence_score": _hitung_confidence(
+            baris_ekstrak,
+            (info_periode["label"] if info_periode else None) or _period_label_dari_nama_file(file.filename),
+        ),
         "dpp_total": dpp_total,
         "ppn_total": ppn_total,
         "grand_total": grand_total,
         "ai_model_version": template.get("ai_model_version"),
         "mapping_rules": _mapping_rules_file(template.get("mapping_rules"), info_periode),
-        "period_label": info_periode["label"] if info_periode else None,
+        "period_label": (info_periode["label"] if info_periode else None) or _period_label_dari_nama_file(file.filename),
+        "customer_hint": _customer_dominan(baris_ekstrak),
         "template_id": template["id"],
         "processed_by": current_user.get("nama") or current_user.get("username"),
         "uploaded_by": user_id,

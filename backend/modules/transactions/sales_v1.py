@@ -342,6 +342,16 @@ def buat_source_file(
     return sukses(data=dibuat, message="Source file berhasil dibuat.", status_code=201)
 
 
+def _isi_period_dari_nama_file(row: Dict[str, Any]) -> Dict[str, Any]:
+    """File lama yang period_label-nya masih kosong: isi dari NAMA FILE saat dibaca (tanpa ubah DB)."""
+    if row and not row.get("period_label"):
+        from .sales_import_v1 import _period_label_dari_nama_file
+        label = _period_label_dari_nama_file(row.get("file_name"))
+        if label:
+            return {**row, "period_label": label}
+    return row
+
+
 @router.get(
     "/source-files",
     summary="Daftar source file (tab Source Data)",
@@ -353,7 +363,7 @@ def daftar_source_file(
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
     data = dbc.list_sales_source_files(client_id=client_id, termasuk_nonaktif=termasuk_nonaktif)
-    return sukses(data=data, message="OK")
+    return sukses(data=[_isi_period_dari_nama_file(r) for r in data], message="OK")
 
 
 @router.get(
@@ -369,7 +379,7 @@ def detail_source_file(
     data = dbc.get_sales_source_file_by_id(source_file_id, termasuk_nonaktif=termasuk_nonaktif)
     if data is None:
         return gagal(message="Source file tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
-    return sukses(data=data, message="OK")
+    return sukses(data=_isi_period_dari_nama_file(data), message="OK")
 
 
 @router.put(
