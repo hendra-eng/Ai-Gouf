@@ -5392,6 +5392,20 @@ def create_sales_source_rows_bulk(rows: List[Dict[str, Any]], source_file_id: st
     finally:
         session.close()
 
+def sales_source_row_id_sudah_jadi_invoice(source_file_id: str) -> set:
+    """ID baris source_rows milik 1 file yang sudah punya invoice aktif (belum dihapus) -- dipakai UI Source Data
+    untuk menandai 'Invoice sudah dibuat'. Gagal baca -> set kosong (UI tetap menampilkan tabel)."""
+    session = SessionLocal()
+    try:
+        return {str(r[0]) for r in session.query(SalesInvoice.source_row_id).filter(
+            SalesInvoice.source_row_id.in_(session.query(SalesSourceRow.id).filter(SalesSourceRow.source_file_id == source_file_id)),
+            SalesInvoice.deleted_at.is_(None)).all()}
+    except Exception:
+        session.rollback()
+        return set()
+    finally:
+        session.close()
+
 def get_sales_source_row_by_id(source_row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
     return _sales_crud_get_by_id(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, source_row_id, termasuk_nonaktif)
 

@@ -445,6 +445,10 @@ def daftar_source_row(
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
     data = dbc.list_sales_source_rows(source_file_id=source_file_id, client_id=client_id, termasuk_nonaktif=termasuk_nonaktif)
+    if source_file_id:  # tandai baris yang sudah jadi invoice (UI: panel "Invoice sudah dibuat")
+        sudah = dbc.sales_source_row_id_sudah_jadi_invoice(source_file_id)
+        for r in data:
+            r["invoice_dibuat"] = str(r.get("id")) in sudah
     return sukses(data=data, message="OK")
 
 

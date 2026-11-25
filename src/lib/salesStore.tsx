@@ -261,6 +261,8 @@ export interface BackendSalesSourceRow {
   validation_notes: string | null;
   is_duplicate_candidate: boolean;
   aktif: boolean;
+  /** true kalau baris ini sudah jadi invoice aktif (diisi backend pada GET /source-rows?source_file_id=...). */
+  invoice_dibuat?: boolean;
 }
 
 export async function listSalesSourceRows(sourceFileId?: string | null, clientId?: string | null): Promise<BackendSalesSourceRow[]> {

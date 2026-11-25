@@ -214,6 +214,11 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
   };
 
   const [isPromoting, setIsPromoting] = useState(false);
+  // [BARU] Semua baris valid file ini sudah jadi invoice -> tabel preview diganti panel centang hijau (dan tombol
+  // Buat Invoice disembunyikan). Dibaca dari flag invoice_dibuat di backend, jadi tetap tampil setelah refresh.
+  const jumlahSudahInvoice = previewRows.filter(r => r.invoice_dibuat).length;
+  const jumlahTidakValid = previewRows.filter(r => !r.is_valid).length;
+  const semuaSudahInvoice = previewRows.length > 0 && jumlahSudahInvoice > 0 && previewRows.every(r => r.invoice_dibuat || !r.is_valid);
   const handlePromoteToInvoices = async () => {
     if (!selectedFile) return;
     setIsPromoting(true);
@@ -541,7 +546,7 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
           leading={
             <span className={PANEL_ICON_CHIP}><FileText size={17} /></span>
           }
-          action={selectedFile && previewRows.length > 0 ? (
+          action={selectedFile && previewRows.length > 0 && !semuaSudahInvoice ? (
             <button
               onClick={handlePromoteToInvoices}
               disabled={isPromoting}
@@ -566,7 +571,19 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
           {selectedFile && !loadingRows && previewRows.length === 0 && (
             <p className="py-6 text-center text-xs text-neutral-500">{t('Belum ada baris data untuk file ini (ekstraksi otomatis belum tersambung).')}</p>
           )}
-          {selectedFile && previewRows.length > 0 && (
+          {selectedFile && semuaSudahInvoice && (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                <CheckCircle size={32} />
+              </span>
+              <p className="text-sm font-semibold text-emerald-700">{t('Invoice sudah dibuat')}</p>
+              <p className="max-w-xs text-xs text-neutral-500">
+                {jumlahSudahInvoice} {t('invoice dari file ini sudah ada di tab Sales Transaction.')}
+                {jumlahTidakValid > 0 ? ` ${jumlahTidakValid} ${t('baris tidak valid tidak dibuat invoice.')}` : ''}
+              </p>
+            </div>
+          )}
+          {selectedFile && previewRows.length > 0 && !semuaSudahInvoice && (
             <>
               <div className="overflow-x-auto scrollbar-thin">
                 <table className="w-full select-text border-separate border-spacing-0 text-xs">
