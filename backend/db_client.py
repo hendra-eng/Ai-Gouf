@@ -5824,8 +5824,14 @@ def promote_sales_rows_bulk(source_file_id: str, management_client_id: Optional[
         sudah_row = {str(r[0]) for r in session.query(SalesInvoice.source_row_id).filter(
             SalesInvoice.source_row_id.in_(session.query(SalesSourceRow.id).filter(SalesSourceRow.source_file_id == source_file_id)),
             SalesInvoice.deleted_at.is_(None)).all()}
+        # [DIUBAH] Konvensi tabel invoice: client_id = id USER pembuat (sama dengan modul AR, Add Sales Invoice manual dan
+        # data lama); company ada di management_client_id. Bentrok no. invoice dicek per company ATAU per user, karena
+        # unique constraint (client_id, invoice_no) berlaku per client_id.
+        _syarat_milik = SalesInvoice.management_client_id == management_client_id
+        if user_id:
+            _syarat_milik = or_(_syarat_milik, SalesInvoice.client_id == user_id)
         dipakai_no = {r[0] for r in session.query(SalesInvoice.invoice_no).filter(
-            SalesInvoice.client_id == management_client_id, SalesInvoice.deleted_at.is_(None)).all()}
+            _syarat_milik, SalesInvoice.deleted_at.is_(None)).all()}
     finally:
         session.close()
 
@@ -5844,7 +5850,7 @@ def promote_sales_rows_bulk(source_file_id: str, management_client_id: Optional[
             bentrok += 1; continue
         dipakai_no.add(no)
         kandidat.append({
-            "id": str(_uuid.uuid4()), "client_id": management_client_id, "management_client_id": management_client_id,
+            "id": str(_uuid.uuid4()), "client_id": user_id, "management_client_id": management_client_id,
             "invoice_no": no, "invoice_date": tgl, "customer_name": cust or "-", "cabang": cab,
             "dpp": dpp or 0, "ppn": ppn or 0, "pph": 0, "gross_amount": total or 0, "paid_amount": 0,
             "tax_invoice_status": "Belum Terbit Faktur", "posting_status": "Draft", "reconcile_status": "Unreconciled",
