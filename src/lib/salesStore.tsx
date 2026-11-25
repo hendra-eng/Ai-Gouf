@@ -187,6 +187,9 @@ export interface PromoteToInvoicesResult {
   dilewati_tidak_valid: number;
   dilewati_sudah_pernah_dipromosikan: number;
   dilewati_invoice_no_bentrok: number;
+  /** Baris yang gagal disimpan karena error database (bukan bentrok no. invoice) + teks errornya. */
+  dilewati_gagal_insert?: number;
+  error_insert?: string | null;
   /** File kumulatif: invoice file lama yang hilang di file terbaru (dibatalkan / disesuaikan / masuk Exceptions). */
   invoice_dibatalkan_file_baru?: number;
   invoice_diperbarui_file_baru?: number;

@@ -223,6 +223,11 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
         toast.success(t('Invoice berhasil dibuat'), {
           description: `${hasil.invoice_dibuat} ${t('invoice baru -- cek tab Sales Transaction.')}`,
         });
+      } else if ((hasil.dilewati_gagal_insert ?? 0) > 0) {
+        toast.error(t('Gagal menyimpan invoice'), {
+          description: `${hasil.dilewati_gagal_insert} ${t('baris gagal disimpan (error database).')} ${hasil.error_insert ?? ''}`,
+          duration: 20000,
+        });
       } else {
         toast.info(t('Tidak ada invoice baru'), {
           description: `${hasil.dilewati_sudah_pernah_dipromosikan} ${t('sudah pernah dipromosikan')}, ${hasil.dilewati_tidak_valid} ${t('tidak valid')}, ${hasil.dilewati_invoice_no_bentrok} ${t('bentrok no. invoice.')}`,

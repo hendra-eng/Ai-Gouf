@@ -3201,6 +3201,8 @@ def promote_source_file_to_invoices(
         "dilewati_tidak_valid": dilewati_tidak_valid,
         "dilewati_sudah_pernah_dipromosikan": dilewati_sudah_pernah,
         "dilewati_invoice_no_bentrok": dilewati_invoice_bentrok,
+        "dilewati_gagal_insert": hasil_promote.get("dilewati_gagal_insert", 0),
+        "error_insert": hasil_promote.get("error_insert"),
         "invoice_dibatalkan_file_baru": rekon.get("dibatalkan", 0),
         "invoice_diperbarui_file_baru": rekon.get("diperbarui", 0),
         "exception_perlu_reversal": rekon.get("perlu_reversal", 0),

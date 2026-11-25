@@ -5830,6 +5830,8 @@ def promote_sales_rows_bulk(source_file_id: str, management_client_id: Optional[
         session.close()
 
     tidak_valid = sudah_pernah = bentrok = 0
+    gagal_insert = 0  # [BARU] gagal karena ERROR database (bukan bentrok no. invoice) -- dipisah supaya tidak menyesatkan
+    error_insert: Optional[str] = None
     kandidat = []
     for (rid, valid, no, tgl, cust, cab, dpp, ppn, total) in rows:
         if not valid:
@@ -5883,12 +5885,15 @@ def promote_sales_rows_bulk(source_file_id: str, management_client_id: Optional[
             bentrok += len(potong) - len(masuk)
         except Exception as e:
             session.rollback()
-            print(f"Error promote_sales_rows_bulk: {e}")
-            bentrok += len(potong)
+            print(f"Error promote_sales_rows_bulk: {e}", flush=True)
+            gagal_insert += len(potong)
+            if error_insert is None:
+                error_insert = (str(getattr(e, "orig", None) or e)).strip()[:400]
         finally:
             session.close()
     return {"total_baris": len(rows), "invoice_dibuat": dibuat, "dilewati_tidak_valid": tidak_valid,
-            "dilewati_sudah_pernah_dipromosikan": sudah_pernah, "dilewati_invoice_no_bentrok": bentrok}
+            "dilewati_sudah_pernah_dipromosikan": sudah_pernah, "dilewati_invoice_no_bentrok": bentrok,
+            "dilewati_gagal_insert": gagal_insert, "error_insert": error_insert}
 
 
 def hapus_total_source_file(source_file_id: str) -> Dict[str, Any]:
