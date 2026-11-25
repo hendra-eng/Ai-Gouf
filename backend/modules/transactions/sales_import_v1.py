@@ -1642,6 +1642,132 @@ def _periode_dari_nama_file(file_name: Optional[str]) -> Tuple[Optional[date], O
     return None, None
 
 
+# ------------------------------------------------------------
+# FILTER PERIODE DARI NAMA FILE (resep: filter_periode_nama_file = true)
+# ------------------------------------------------------------
+# Untuk file yang isinya KUMULATIF (mis. UBD "Monitoring Project Income": file Agustus memuat
+# Jan..Agt). Periode yang mau diambil ditulis di NAMA FILE; baris di luar periode itu dilewati
+# supaya bulan yang sama tidak masuk dua kali dari file bulan berbeda. Format nama yang dikenali
+# (urutan prioritas):
+#   rentang  : UBD_SALES_20260801-20260815.xlsx        -> 01-08-2026 s/d 15-08-2026
+#   1 hari   : UBD_SALES_20260815.xlsx / ..._15-08-2026.xlsx
+#   rentang  : ..._01-08-2026_31-08-2026.xlsx           (pola lama NBM dkk.)
+#   1 bulan  : UBD_SALES_202608.xlsx / ..._2026-08.xlsx -> 01-08-2026 s/d 31-08-2026
+#   1 bulan  : ..._Agustus_2026.xlsx / ..._Aug-2026.xlsx
+# Akhiran revisi "_v2" boleh ada (hanya dicatat, tidak mengubah periode).
+
+_NAMA_BULAN = {
+    "januari": 1, "january": 1, "jan": 1, "februari": 2, "february": 2, "feb": 2, "pebruari": 2,
+    "maret": 3, "march": 3, "mar": 3, "april": 4, "apr": 4, "mei": 5, "may": 5,
+    "juni": 6, "june": 6, "jun": 6, "juli": 7, "july": 7, "jul": 7,
+    "agustus": 8, "august": 8, "agu": 8, "agt": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+    "oktober": 10, "october": 10, "okt": 10, "oct": 10, "november": 11, "nopember": 11, "nov": 11,
+    "desember": 12, "december": 12, "des": 12, "dec": 12,
+}
+_BULAN_ID = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli",
+             "Agustus", "September", "Oktober", "November", "Desember"]
+
+
+def _tgl_aman(y: Any, m: Any, d: Any) -> Optional[date]:
+    try:
+        return date(int(y), int(m), int(d))
+    except (ValueError, TypeError):
+        return None
+
+
+def _periode_filter_dari_nama_file(file_name: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Periode yang diminta NAMA FILE -> {awal, akhir, bulan_penuh, versi}; None kalau nama file tidak memuat
+    periode. Rentang terbalik / tanggal mustahil (mis. 20261345) dianggap tidak ada periode."""
+    if not file_name:
+        return None
+    stem = file_name.replace(chr(92), "/").split("/")[-1].rsplit(".", 1)[0]
+    mv = re.search(r"(?i)(?:^|[^a-z0-9])v(\d{1,2})(?![a-z0-9])", stem)
+    versi = int(mv.group(1)) if mv else None
+
+    def hasil(awal: Optional[date], akhir: Optional[date], bulan_penuh: bool = False) -> Optional[Dict[str, Any]]:
+        if awal is None or akhir is None or awal > akhir:
+            return None
+        return {"awal": awal, "akhir": akhir, "bulan_penuh": bulan_penuh, "versi": versi}
+
+    # a) rentang compact YYYYMMDD-YYYYMMDD
+    m = re.search(r"(?<!\d)(\d{4})(\d{2})(\d{2})(?:[-_ ]+|[-_ ]*(?:sd|s\.d\.?|to)[-_ ]*)(\d{4})(\d{2})(\d{2})(?!\d)", stem, re.I)
+    if m:
+        return hasil(_tgl_aman(*m.group(1, 2, 3)), _tgl_aman(*m.group(4, 5, 6)))
+    # b) 1 hari compact YYYYMMDD
+    m = re.search(r"(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)", stem)
+    if m:
+        d = _tgl_aman(*m.group(1, 2, 3))
+        if d:
+            return hasil(d, d)
+    # c) pola bertanda pemisah (DD-MM-YYYY [- DD-MM-YYYY] atau YYYY-MM-DD) -- helper lama
+    awal, akhir = _periode_dari_nama_file(file_name)
+    if awal is not None and akhir is not None:
+        return hasil(awal, akhir)
+    # d) 1 bulan: YYYYMM / YYYY-MM
+    m = re.search(r"(?<!\d)(20\d{2})[-_. ]?(0[1-9]|1[0-2])(?!\d)", stem)
+    if m:
+        y, mo = int(m.group(1)), int(m.group(2))
+        return hasil(date(y, mo, 1), date(y, mo, calendar.monthrange(y, mo)[1]), True)
+    # e) 1 bulan: nama bulan + tahun
+    for m in re.finditer(r"(?<![A-Za-z])([A-Za-z]{3,9})[-_. ]*(20\d{2})(?!\d)", stem):
+        mo = _NAMA_BULAN.get(m.group(1).lower())
+        if mo:
+            y = int(m.group(2))
+            return hasil(date(y, mo, 1), date(y, mo, calendar.monthrange(y, mo)[1]), True)
+    return None
+
+
+def _label_periode(p: Dict[str, Any]) -> str:
+    awal, akhir = p["awal"], p["akhir"]
+    if p.get("bulan_penuh"):
+        return f"{_BULAN_ID[awal.month]} {awal.year}"
+    if awal == akhir:
+        return f"{awal:%d-%m-%Y}"
+    return f"{awal:%d-%m-%Y} s/d {akhir:%d-%m-%Y}"
+
+
+def _saring_periode_nama_file(hasil: List[Dict[str, Any]], mapping_rules: Dict[str, Any],
+                              file_name: Optional[str]) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Kalau resep punya filter_periode_nama_file = true: ambil hanya baris yang tanggalnya di dalam periode
+    NAMA FILE. Return (baris_terpilih, info) -- info None kalau filter tidak aktif.
+    Galat (ValueError, ditampilkan apa adanya ke user; file tersimpan sbg 'Gagal'):
+      - nama file tidak memuat periode  -> aman: TIDAK ada yang diimpor (mencegah transaksi dobel);
+      - tidak satu pun baris jatuh di periode itu -> kemungkinan bulan di nama file salah.
+    Baris yang tanggalnya tidak terbaca tetap dibawa (sudah ditandai tidak valid oleh parser)."""
+    if not (mapping_rules or {}).get("filter_periode_nama_file"):
+        return hasil, None
+    p = _periode_filter_dari_nama_file(file_name)
+    if p is None:
+        raise ValueError(
+            "Nama file tidak memuat periode, jadi tidak ada transaksi yang diimpor (supaya tidak dobel dengan "
+            "file bulan lain). Ganti nama file lalu upload ulang, contoh: KODE_SALES_202608.xlsx (1 bulan) "
+            "atau KODE_SALES_20260801-20260815.xlsx (rentang tanggal)."
+        )
+    terpilih: List[Dict[str, Any]] = []
+    dilewati = 0
+    for r in hasil:
+        t = r.get("tanggal")
+        if isinstance(t, datetime):
+            t = t.date()
+        if t is None or p["awal"] <= t <= p["akhir"]:
+            terpilih.append(r)
+        else:
+            dilewati += 1
+    label = _label_periode(p)
+    if hasil and not terpilih:
+        raise ValueError(
+            f"Tidak ada transaksi di periode {label} (sesuai nama file); {dilewati} baris di file ini ada di "
+            f"luar periode itu. Cek apakah bulan/tanggal di nama file sudah benar."
+        )
+    for i, r in enumerate(terpilih, 1):
+        r["row_no"] = i
+    info = {
+        "label": label, "awal": p["awal"].isoformat(), "akhir": p["akhir"].isoformat(), "versi": p["versi"],
+        "diambil": len(terpilih), "dilewati": dilewati, "total_di_file": len(hasil),
+    }
+    return terpilih, info
+
+
 def _parse_category_summary(rows: List[List[str]], template: Dict[str, Any], file_name: Optional[str] = None) -> List[Dict[str, Any]]:
     """Format_type='category_summary' (MM) -- laporan POS "Category Sales": 1 baris = 1 KATEGORI
     untuk 1 periode, TANPA nomor invoice dan TANPA tanggal di dalam file. Periode (dan outlet)
@@ -3008,6 +3134,17 @@ def _ekstrak_dengan_template(rows: List[List[str]], template: Dict[str, Any], fi
 # ENDPOINT
 # ============================================================
 
+def _mapping_rules_file(mapping_rules: Optional[Dict[str, Any]], info_periode: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """mapping_rules yang disimpan di source file. Kalau filter periode nama file aktif: file ini hanya memuat 1
+    periode, jadi file_kumulatif DIMATIKAN di salinan ini (kalau tidak, rekonsiliasi file kumulatif akan
+    membatalkan invoice bulan lain yang memang tidak ada di file ini), dan ringkasan filter dicatat."""
+    if not info_periode:
+        return mapping_rules
+    hasil = {k: v for k, v in (mapping_rules or {}).items() if k != "file_kumulatif"}
+    hasil["periode_filter"] = info_periode
+    return hasil
+
+
 @router.post(
     "/source-files/upload",
     summary="Upload file laporan penjualan (CSV/Excel/PDF) + ekstraksi otomatis pakai template (khusus Supervisor ke atas)",
@@ -3069,6 +3206,8 @@ async def upload_source_file(
     template, rows = cocok
     try:
         baris_ekstrak = await run_in_threadpool(_ekstrak_dengan_template, rows, template, file.filename)
+        # [BARU] resep filter_periode_nama_file: hanya baris yang masuk periode di NAMA FILE yang diambil.
+        baris_ekstrak, info_periode = _saring_periode_nama_file(baris_ekstrak, template.get("mapping_rules") or {}, file.filename)
     except Exception as e:
         logger.error(f"Gagal ekstraksi file {file.filename} pakai template {template['id']}: {e}")
         source_file = dbc.create_sales_source_file({
@@ -3112,7 +3251,8 @@ async def upload_source_file(
         "ppn_total": ppn_total,
         "grand_total": grand_total,
         "ai_model_version": template.get("ai_model_version"),
-        "mapping_rules": template.get("mapping_rules"),
+        "mapping_rules": _mapping_rules_file(template.get("mapping_rules"), info_periode),
+        "period_label": info_periode["label"] if info_periode else None,
         "template_id": template["id"],
         "processed_by": current_user.get("nama") or current_user.get("username"),
         "uploaded_by": user_id,
@@ -3139,7 +3279,11 @@ async def upload_source_file(
 
     return sukses(
         data={**source_file, "template_matched": True, "rows_extracted": len(baris_ekstrak)},
-        message=f"File berhasil diekstrak pakai template yang sudah dipelajari sebelumnya ({len(baris_ekstrak)} baris).",
+        message=(
+            f"File berhasil diekstrak pakai template yang sudah dipelajari sebelumnya ({len(baris_ekstrak)} baris)."
+            + (f" Periode {info_periode['label']} (dari nama file): {info_periode['diambil']} baris diambil, "
+               f"{info_periode['dilewati']} baris di luar periode dilewati." if info_periode else "")
+        ),
         status_code=201,
     )
 

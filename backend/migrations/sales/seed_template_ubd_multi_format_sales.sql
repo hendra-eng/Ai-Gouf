@@ -15,6 +15,12 @@
 --   Juli/UBD_monitoring_project_income_202607.xlsx      A2:M69 (tanpa baris subtotal J1)
 --   Agustus/UBD_monitoring_project_income_202608_roy.xlsx  A1:M72 (rincian di bawah)
 --
+-- FILTER PERIODE DARI NAMA FILE (2026-11-25): resep varian ini memakai "filter_periode_nama_file": true.
+--   Periode yang diambil ditulis di NAMA FILE, mis. UBD_SALES_202608.xlsx (1 bulan) atau
+--   UBD_SALES_20260801-20260815.xlsx (rentang tanggal); baris di luar periode itu dilewati. Nama file tanpa
+--   periode -> file ditolak (status Gagal) supaya tidak ada transaksi dobel. Lihat _saring_periode_nama_file
+--   di sales_import_v1.py. Jangan dipakai bersama "file_kumulatif" (dua pendekatan yang saling bertentangan).
+--
 -- HASIL UJI 3 FILE (parser asli, 2026-11-07) -- total = baris total tabel rekonsiliasi:
 --   202606: 42 invoice valid, 06-01 s/d 30-06-2026, TOTAL 3.988.722.322
 --   202607: 50 invoice valid, 06-01 s/d 31-07-2026, TOTAL 4.564.815.958
@@ -219,6 +225,7 @@ DECLARE
         "format_type": "flat_grouped_by_key",
         "description": "Workbook 'Monitoring Project Income' UBD -- jurnal pendapatan proyek yang diekspor dari buku besar (akun 4-40101 PROJECT INCOME), tahun berjalan (Januari s/d bulan laporan, bukan 1 bulan saja). Bukan laporan invoice: 1 baris = 1 voucher penerimaan bank (OCBC IDR / OCBC CWU IDR) dan tidak ada nomor invoice/faktur, jadi No Voucher dipakai sebagai nomor invoice. 1 baris kanonis (source_rows) = 1 No Voucher; dpp = Kredit - Debit, tanpa PPN (file tidak punya kolom pajak). Kolom dicari lewat NAMA di baris header, bukan posisi. Baris subtotal di atas header dan tabel rekonsiliasi bulanan (Month / Amount GL / TB / Selisih) di bawah data dilewati.",
         "date_format": "DD/MM/YYYY",
+        "filter_periode_nama_file": true,
         "number_format": {
           "thousands_separator": ",",
           "decimal_separator": "."
