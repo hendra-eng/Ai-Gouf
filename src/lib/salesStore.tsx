@@ -366,6 +366,62 @@ export async function bulkPostSalesInvoices(invoiceIds: string[]): Promise<BulkP
   return res;
 }
 
+export interface BulkApproveResult { approved: BulkPostItem[]; skipped: BulkPostItem[]; failed: BulkPostItem[] }
+
+// Journal Preview > Approve All / Post All: ribuan invoice dikirim bertahap (200 per request)
+// supaya tiap request tidak terlalu lama; store di-refresh SEKALI di akhir.
+const UKURAN_BATCH_MASSAL = 200;
+
+function potongBatch<T>(daftar: T[], ukuran: number): T[][] {
+  const hasil: T[][] = [];
+  for (let i = 0; i < daftar.length; i += ukuran) hasil.push(daftar.slice(i, i + ukuran));
+  return hasil;
+}
+
+/** Approve banyak invoice sekaligus (klasifikasi akun disetujui -> status Approved / Siap Posting). */
+export async function bulkApproveSalesInvoices(
+  invoiceIds: string[],
+  onProgress?: (selesai: number, total: number) => void,
+): Promise<BulkApproveResult> {
+  const total: BulkApproveResult = { approved: [], skipped: [], failed: [] };
+  let selesai = 0;
+  try {
+    for (const batch of potongBatch(invoiceIds, UKURAN_BATCH_MASSAL)) {
+      const res = await post<BulkApproveResult>(`${SALES_BASE_URL}/invoices/bulk-approve`, { invoice_ids: batch });
+      total.approved.push(...res.approved);
+      total.skipped.push(...res.skipped);
+      total.failed.push(...res.failed);
+      selesai += batch.length;
+      onProgress?.(selesai, invoiceIds.length);
+    }
+  } finally {
+    notifySalesChanged();
+  }
+  return total;
+}
+
+/** Post banyak invoice bertahap (200 per request) dengan aturan yang sama dengan bulkPostSalesInvoices. */
+export async function bulkPostSalesInvoicesBertahap(
+  invoiceIds: string[],
+  onProgress?: (selesai: number, total: number) => void,
+): Promise<BulkPostResult> {
+  const total: BulkPostResult = { posted: [], skipped: [], failed: [] };
+  let selesai = 0;
+  try {
+    for (const batch of potongBatch(invoiceIds, UKURAN_BATCH_MASSAL)) {
+      const res = await post<BulkPostResult>(`${SALES_BASE_URL}/invoices/bulk-post`, { invoice_ids: batch });
+      total.posted.push(...res.posted);
+      total.skipped.push(...res.skipped);
+      total.failed.push(...res.failed);
+      selesai += batch.length;
+      onProgress?.(selesai, invoiceIds.length);
+    }
+  } finally {
+    notifySalesChanged();
+  }
+  return total;
+}
+
 export async function deleteSalesInvoice(id: string): Promise<void> {
   await del(`${SALES_BASE_URL}/invoices/${id}`);
   notifySalesChanged();

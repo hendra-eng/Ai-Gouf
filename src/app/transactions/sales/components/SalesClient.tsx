@@ -38,7 +38,7 @@ export default function SalesClient() {
   const { user } = useAuth();
   const { activeClientId } = useActiveClient();
   const [activeTab, setActiveTab] = useState('overview');
-  // Slot di baris tab untuk tombol aksi milik tab Source Data & Posted (dirender via portal).
+  // Slot di baris tab untuk tombol aksi milik tab Source Data, Journal Preview & Posted (dirender via portal).
   const [actionSlot, setActionSlot] = useState<HTMLDivElement | null>(null);
 
   // Deep link ?tab=journal-preview (mis. dari AR > Create Invoice setelah Submit for Approval).
@@ -165,7 +165,7 @@ export default function SalesClient() {
             </button>
           ))}
         </nav>
-        {(activeTab === 'source-data' || activeTab === 'posted') && <div ref={setActionSlot} className="flex items-center" />}
+        {(activeTab === 'source-data' || activeTab === 'posted' || activeTab === 'journal-preview') && <div ref={setActionSlot} className="flex items-center" />}
       </div>
 
       {/* Tab Content */}
@@ -173,7 +173,7 @@ export default function SalesClient() {
         {activeTab === 'overview' && <SalesOverview />}
         {activeTab === 'source-data' && <SalesSourceData actionSlot={actionSlot} />}
         {activeTab === 'sales-transaction' && <SalesTransaction />}
-        {activeTab === 'journal-preview' && <SalesJournalPreview />}
+        {activeTab === 'journal-preview' && <SalesJournalPreview actionSlot={actionSlot} />}
         {activeTab === 'exceptions' && <SalesExceptions />}
         {activeTab === 'posted' && <SalesPosted actionSlot={actionSlot} />}
       </div>

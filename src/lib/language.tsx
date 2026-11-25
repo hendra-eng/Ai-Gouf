@@ -1638,6 +1638,41 @@ const translations: Dict = {
   'Transaksi ini tidak menghasilkan PPN keluaran.': { en: 'This transaction does not generate output VAT.', id: 'Transaksi ini tidak menghasilkan PPN keluaran.', zh: '此交易不产生销项增值税。' },
   'Tutup': { en: 'Close', id: 'Tutup', zh: '关闭' },
   'Tinjau jurnal otomatis, setujui klasifikasi akun, lalu posting ke buku besar.': { en: 'Review the auto-generated journal, approve the account classification, then post it to the general ledger.', id: 'Tinjau jurnal otomatis, setujui klasifikasi akun, lalu posting ke buku besar.', zh: '查看自动生成的分录，批准科目分类，然后过账至总账。' },
+
+  // ─── Sales > Journal Preview: tombol Approve All / Post All (baris tab) ───
+  // Placeholder {n}, {s}, {total} diisi di komponen (t() tidak punya parameter).
+  'Approve All': { en: 'Approve All', id: 'Setujui Semua', zh: '全部批准' },
+  'Post All': { en: 'Post All', id: 'Posting Semua', zh: '全部过账' },
+  'Menyetujui...': { en: 'Approving...', id: 'Menyetujui...', zh: '正在批准...' },
+  'Memposting...': { en: 'Posting...', id: 'Memposting...', zh: '正在过账...' },
+  'Menyetujui {s}/{total}...': { en: 'Approving {s}/{total}...', id: 'Menyetujui {s}/{total}...', zh: '正在批准 {s}/{total}...' },
+  'Memposting {s}/{total}...': { en: 'Posting {s}/{total}...', id: 'Memposting {s}/{total}...', zh: '正在过账 {s}/{total}...' },
+  'Setujui klasifikasi akun {n} invoice sekaligus?': {
+    en: 'Approve the account classification of {n} invoice(s) at once?',
+    id: 'Setujui klasifikasi akun {n} invoice sekaligus?',
+    zh: '确定一次性批准 {n} 张发票的科目分类吗？',
+  },
+  'Posting {n} invoice ke buku besar sekaligus?': {
+    en: 'Post {n} invoice(s) to the general ledger at once?',
+    id: 'Posting {n} invoice ke buku besar sekaligus?',
+    zh: '确定一次性将 {n} 张发票过账至总账吗？',
+  },
+  '{n} invoice disetujui': { en: '{n} invoice(s) approved', id: '{n} invoice disetujui', zh: '已批准 {n} 张发票' },
+  '{n} invoice diposting': { en: '{n} invoice(s) posted', id: '{n} invoice diposting', zh: '已过账 {n} 张发票' },
+  '{n} invoice gagal disetujui': { en: '{n} invoice(s) could not be approved', id: '{n} invoice gagal disetujui', zh: '{n} 张发票批准失败' },
+  '{n} invoice gagal diposting': { en: '{n} invoice(s) could not be posted', id: '{n} invoice gagal diposting', zh: '{n} 张发票过账失败' },
+  '{n} dilewati (sudah disetujui/diposting).': { en: '{n} skipped (already approved/posted).', id: '{n} dilewati (sudah disetujui/diposting).', zh: '已跳过 {n} 张（已批准/已过账）。' },
+  '{n} dilewati (sudah diposting).': { en: '{n} skipped (already posted).', id: '{n} dilewati (sudah diposting).', zh: '已跳过 {n} 张（已过账）。' },
+  '…dan {n} lainnya': { en: '…and {n} more', id: '…dan {n} lainnya', zh: '…以及另外 {n} 项' },
+  'Tidak ada invoice yang perlu disetujui.': { en: 'No invoices need approval.', id: 'Tidak ada invoice yang perlu disetujui.', zh: '没有需要批准的发票。' },
+  'Tidak ada invoice yang perlu diposting.': { en: 'No invoices need posting.', id: 'Tidak ada invoice yang perlu diposting.', zh: '没有需要过账的发票。' },
+
+  // ─── Sales > Journal Preview: judul panel detail (sebelumnya belum ada di kamus) ───
+  'Detail Journal Preview': { en: 'Detail Journal Preview', id: 'Detail Pratinjau Jurnal', zh: '分录预览详情' },
+  'Source Document': { en: 'Source Document', id: 'Dokumen Sumber', zh: '源文件' },
+  'AI Extraction': { en: 'AI Extraction', id: 'Ekstraksi AI', zh: 'AI 提取' },
+  'Accounting Classification': { en: 'Accounting Classification', id: 'Klasifikasi Akun', zh: '科目分类' },
+  'Total Invoice': { en: 'Total Invoice', id: 'Total Invoice', zh: '发票总额' },
 };
 
 export function translate(text: string, lang: LanguageCode): string {

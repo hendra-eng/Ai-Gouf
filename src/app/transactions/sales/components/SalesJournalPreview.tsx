@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
   Search, CheckCircle, Check, X, Eye, Pencil, Info, FileText, Clock, ShieldCheck, BookOpen,
@@ -11,6 +12,7 @@ import { useAuth } from '@/lib/auth';
 import {
   useSalesInvoices, updateSalesInvoice, upsertSalesAccountMapping,
   ensureSalesAccountMapping, createSalesActivityLog,
+  bulkApproveSalesInvoices, bulkPostSalesInvoicesBertahap,
   type BackendSalesInvoice, type BackendSalesAccountMapping,
 } from '@/lib/salesStore';
 import { useClientCoa, type CoaAccount } from '@/lib/coaStore';
@@ -262,7 +264,15 @@ const denganAkunAktif = (list: Acc[], aktif: Acc) =>
 
 const ITEMS_PER_PAGE = 5;
 
-export default function SalesJournalPreview() {
+// Gaya tombol aksi di baris tab -- sama dengan tombol "Upload File" (outline) dan "Add Sales Invoice"
+// (primary; palet blue-* di tailwind.config.js sudah diarahkan ke hijau brand) di header halaman Sales.
+const ACTION_BTN_BASE = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50';
+const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
+const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
+
+// actionSlot: elemen di baris tab (SalesClient) tempat tombol Approve All / Post All dirender lewat
+// portal, sejajar dengan nama tab. undefined = render di tempat, null = slot belum siap, element = portal.
+export default function SalesJournalPreview({ actionSlot }: { actionSlot?: HTMLElement | null } = {}) {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { t } = useLanguage();
   const { user } = useAuth();
@@ -325,6 +335,92 @@ export default function SalesJournalPreview() {
   const pagedInvoices = filteredInvoices.slice(pageStart, pageStart + ITEMS_PER_PAGE);
 
   const selectedInvoice: BackendSalesInvoice | null = invoices.find(inv => inv.id === selectedId) ?? invoices[0] ?? null;
+
+  // ---- Approve All / Post All (tombol di baris tab) ----
+  // Berlaku untuk SEMUA invoice di antrian Journal Preview (tidak terpengaruh pencarian/filter di panel kiri):
+  //   Approve All -> yang berstatus Diproses;  Post All -> yang berstatus Siap Posting (sudah Approved).
+  // Tiap tombol hanya dirender kalau masih ada invoice yang bisa diproses; kalau sudah habis, tombolnya hilang.
+  const [bulkBusy, setBulkBusy] = useState<'approve' | 'post' | null>(null);
+  const bisaDiapprove = useMemo(() => invoices.filter(i => keUiStatus(i.posting_status) === 'Diproses'), [invoices]);
+  const bisaDipost = useMemo(() => invoices.filter(i => keUiStatus(i.posting_status) === 'Siap Posting'), [invoices]);
+
+  // t() tidak punya parameter: kalimat utuh dengan placeholder {n}/{s}/{total} diterjemahkan dulu, baru diisi
+  // (urutan kata beda di tiap bahasa, jadi jangan merangkai potongan t() + angka + t()).
+  const isi = (kunci: string, nilai: Record<string, number>) =>
+    Object.entries(nilai).reduce((teks, [k, v]) => teks.split(`{${k}}`).join(String(v)), t(kunci));
+
+  const ringkasGagal = (gagal: { id: string; invoice_no: string | null; reason?: string }[]) =>
+    gagal.slice(0, 3).map(f => `${f.invoice_no ?? f.id}: ${f.reason}`).join('\n') +
+    (gagal.length > 3 ? `\n${isi('…dan {n} lainnya', { n: gagal.length - 3 })}` : '');
+
+  const handleApproveAll = async () => {
+    const target = bisaDiapprove;
+    if (target.length === 0 || bulkBusy) return;
+    if (!window.confirm(isi('Setujui klasifikasi akun {n} invoice sekaligus?', { n: target.length }))) return;
+    setBulkBusy('approve');
+    const toastId = toast.loading(isi('Menyetujui {s}/{total}...', { s: 0, total: target.length }));
+    try {
+      const res = await bulkApproveSalesInvoices(target.map(i => i.id), (s, total) =>
+        toast.loading(isi('Menyetujui {s}/{total}...', { s, total }), { id: toastId }));
+      toast.dismiss(toastId);
+      if (res.approved.length) {
+        toast.success(isi('{n} invoice disetujui', { n: res.approved.length }), {
+          description: res.skipped.length ? isi('{n} dilewati (sudah disetujui/diposting).', { n: res.skipped.length }) : undefined,
+        });
+      }
+      if (res.failed.length) {
+        toast.error(isi('{n} invoice gagal disetujui', { n: res.failed.length }), { description: ringkasGagal(res.failed), duration: 12000 });
+      }
+      if (!res.approved.length && !res.failed.length) toast.info(t('Tidak ada invoice yang perlu disetujui.'));
+    } catch (err) {
+      toast.dismiss(toastId);
+      toast.error(err instanceof Error ? err.message : t('Gagal menyetujui'));
+    } finally {
+      setBulkBusy(null);
+    }
+  };
+
+  const handlePostAll = async () => {
+    const target = bisaDipost;
+    if (target.length === 0 || bulkBusy) return;
+    if (!window.confirm(isi('Posting {n} invoice ke buku besar sekaligus?', { n: target.length }))) return;
+    setBulkBusy('post');
+    const toastId = toast.loading(isi('Memposting {s}/{total}...', { s: 0, total: target.length }));
+    try {
+      const res = await bulkPostSalesInvoicesBertahap(target.map(i => i.id), (s, total) =>
+        toast.loading(isi('Memposting {s}/{total}...', { s, total }), { id: toastId }));
+      toast.dismiss(toastId);
+      if (res.posted.length) {
+        toast.success(isi('{n} invoice diposting', { n: res.posted.length }), {
+          description: res.skipped.length ? isi('{n} dilewati (sudah diposting).', { n: res.skipped.length }) : undefined,
+        });
+      }
+      if (res.failed.length) {
+        toast.error(isi('{n} invoice gagal diposting', { n: res.failed.length }), { description: ringkasGagal(res.failed), duration: 12000 });
+      }
+      if (!res.posted.length && !res.failed.length) toast.info(t('Tidak ada invoice yang perlu diposting.'));
+    } catch (err) {
+      toast.dismiss(toastId);
+      toast.error(err instanceof Error ? err.message : t('Gagal memposting jurnal'));
+    } finally {
+      setBulkBusy(null);
+    }
+  };
+
+  const actionBar = bisaDiapprove.length === 0 && bisaDipost.length === 0 ? null : (
+    <div className={`${salesFont.className} flex flex-wrap items-center justify-end gap-2 pb-2 lg:pb-0`}>
+      {bisaDiapprove.length > 0 && (
+        <button onClick={handleApproveAll} disabled={bulkBusy !== null} className={ACTION_BTN_SECONDARY}>
+          <CheckCircle size={14} /> {bulkBusy === 'approve' ? t('Menyetujui...') : t('Approve All')} ({bisaDiapprove.length})
+        </button>
+      )}
+      {bisaDipost.length > 0 && (
+        <button onClick={handlePostAll} disabled={bulkBusy !== null} className={ACTION_BTN_PRIMARY}>
+          <Send size={14} /> {bulkBusy === 'post' ? t('Memposting...') : t('Post All')} ({bisaDipost.length})
+        </button>
+      )}
+    </div>
+  );
 
   // COA klien pemilik invoice -> opsi dropdown akun.
   const { accounts: coaKlien } = useClientCoa(selectedInvoice?.management_client_id ?? null, { activeOnly: true });
@@ -489,6 +585,7 @@ export default function SalesJournalPreview() {
 
   return (
     <div className={`${salesFont.className} space-y-5`}>
+      {actionBar && (actionSlot === undefined ? actionBar : actionSlot ? createPortal(actionBar, actionSlot) : null)}
       {/* KPI -- desain sama dengan Sales Transaction */}
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <JournalKpiTile label={t('Antrian Jurnal')} value={String(stats.total)} pct={100} pctLabel={t('invoice belum final')} icon={FileText} />

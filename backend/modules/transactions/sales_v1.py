@@ -677,6 +677,57 @@ def bulk_post_invoices(
     return sukses(data={"posted": posted, "skipped": skipped, "failed": failed}, message=pesan)
 
 
+class SalesBulkApproveRequest(BaseModel):
+    invoice_ids: List[str] = Field(..., min_length=1, max_length=1000)
+
+
+@router.post(
+    "/invoices/bulk-approve",
+    summary="Approve banyak invoice sekaligus (tombol Approve All di tab Journal Preview; khusus Supervisor ke atas)",
+    responses={200: {"description": "OK -- ringkasan approved / skipped / failed per invoice."}},
+)
+def bulk_approve_invoices(
+    payload: SalesBulkApproveRequest,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
+):
+    """Aturan sama dengan PUT /invoices/{id} posting_status=Approved: mapping akun otomatis dari akun
+    default klien (pastikan_mapping_sales), lalu status jadi Approved (= \"Siap Posting\" di Journal Preview).
+    Yang sudah Approved/Posted/Partial/Paid dilewati; 1 invoice bermasalah tidak menghentikan sisanya.
+    Tidak ada validasi akun di sini -- validasi COA tetap dilakukan saat POSTING (validasi_posting_sales)."""
+    uid = current_user.get("id")
+    approved: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+    failed: List[Dict[str, Any]] = []
+    for invoice_id in dict.fromkeys(payload.invoice_ids):  # buang id dobel, urutan tetap
+        lama = dbc.get_sales_invoice_by_id(invoice_id)
+        if lama is None:
+            failed.append({"id": invoice_id, "invoice_no": None, "reason": "Invoice not found."})
+            continue
+        no = lama.get("invoice_no")
+        if lama.get("posting_status") in ("Approved", "Posted", "Partial", "Paid"):
+            skipped.append({"id": invoice_id, "invoice_no": no, "reason": "Already approved or posted."})
+            continue
+        try:
+            dbc.pastikan_mapping_sales(invoice_id, dibuat_oleh=uid)
+            diupdate = dbc.update_sales_invoice(invoice_id, {"posting_status": "Approved"}, updated_by=uid)
+            if diupdate is None:
+                failed.append({"id": invoice_id, "invoice_no": no, "reason": "Failed to update the invoice."})
+                continue
+        except Exception as e:  # 1 invoice bermasalah tidak menghentikan sisanya
+            logger.exception("Bulk approve sales gagal untuk invoice %s", invoice_id)
+            failed.append({"id": invoice_id, "invoice_no": no, "reason": str(e)[:300] or "Unexpected error."})
+            continue
+        approved.append({"id": invoice_id, "invoice_no": no})
+
+    pesan = f"{len(approved)} invoice(s) approved"
+    if skipped:
+        pesan += f", {len(skipped)} skipped (already approved/posted)"
+    if failed:
+        pesan += f", {len(failed)} failed"
+    pesan += "."
+    return sukses(data={"approved": approved, "skipped": skipped, "failed": failed}, message=pesan)
+
+
 @router.delete(
     "/invoices/{invoice_id}",
     summary="Nonaktifkan (soft-delete) invoice (khusus Supervisor ke atas)",
