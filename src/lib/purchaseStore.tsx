@@ -412,6 +412,13 @@ export async function listPurchaseSourceFiles(managementClientId: string): Promi
   return baca<BackendPurchaseSourceFile[]>(res);
 }
 
+/** DELETE /import/source-files/{id} -- hapus PERMANEN file + semua transaksi turunannya (termasuk yang Posted).
+ *  Ditolak backend (409) kalau ada transaksi yang sudah punya pembayaran di Cash & Bank. */
+export async function deletePurchaseSourceFile(id: string): Promise<void> {
+  await del(`${PURCHASE_BASE_URL}/import/source-files/${id}`);
+  notifyPurchaseChanged();
+}
+
 export function usePurchaseSourceFiles(companyId: string | null | undefined): {
   files: BackendPurchaseSourceFile[]; loading: boolean; error: string | null; refresh: () => void;
 } {

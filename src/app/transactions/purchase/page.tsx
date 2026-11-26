@@ -7,7 +7,7 @@ import { usePurchaseTransactions, usePurchaseExceptions, mapTransactionToUi, map
 import { PurchaseKpiTile, KpiSectionLabel } from '@/app/transactions/purchase/components/PurchaseKpiTile';
 import { salesFont } from '@/app/transactions/sales/components/salesFont';
 import { useLanguage } from '@/lib/language';
-import { ShoppingBag, CircleDollarSign, Banknote, Clock, CheckCircle, AlertTriangle, Receipt, CalendarClock } from 'lucide-react';
+import { ShoppingBag, FileText, Calculator, Banknote, Clock, CheckCircle, AlertTriangle, Receipt, CalendarClock } from 'lucide-react';
 import { PurchaseCategoryCard, PurchasePaymentStatusCard } from '@/app/transactions/purchase/components/PurchaseBreakdownCards';
 import { PurchaseTopVendorsCard, PurchaseRecentActivityCard } from '@/app/transactions/purchase/components/PurchaseVendorActivityCards';
 import PurchaseExceptionSummary from '@/app/transactions/purchase/components/PurchaseExceptionSummary';
@@ -102,6 +102,11 @@ export default function PurchaseOverviewPage() {
     overdueCount: purchaseTransactions.filter(p => p.paymentStatus === 'overdue').length,
     pendingReviewAmount: purchaseTransactions.filter(p => p.status === 'pending_review').reduce((s, p) => s + p.total, 0),
     postedAmount: purchaseTransactions.filter(p => p.status === 'posted').reduce((s, p) => s + p.total, 0),
+    // Rata-rata & bill terbesar -- untuk kartu "Average per Transaction" (sama seperti Sales Overview).
+    avgAmount: purchaseTransactions.length > 0
+      ? purchaseTransactions.reduce((s, p) => s + p.total, 0) / purchaseTransactions.length
+      : 0,
+    largestAmount: purchaseTransactions.reduce((m, p) => Math.max(m, p.total), 0),
   }), [purchaseTransactions]);
 
   const topVendors = useMemo(() => {
@@ -138,16 +143,21 @@ export default function PurchaseOverviewPage() {
         {/* KPI Cards -- desain & pengelompokan sama dengan Sales Overview */}
         <div>
           <KpiSectionLabel>{t('Purchase Performance')}</KpiSectionLabel>
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             <PurchaseKpiTile
-              label="Total Purchases" value={nTx.toLocaleString('id-ID')} icon={ShoppingBag}
-              sub="All transactions"
-              pct={nTx > 0 ? 100 : 0} pctLabel="of all transactions"
+              label={t('Total Purchases')} value={fmt(kpis.totalAmount)} icon={ShoppingBag}
+              sub={nTx > 0 ? `${fmt(kpis.postedAmount)} ${t('posted')}` : undefined}
+              pct={pctOfAmount(kpis.postedAmount)} pctLabel={t('of purchases posted')}
             />
             <PurchaseKpiTile
-              label="Purchase Amount" value={fmt(kpis.totalAmount)} icon={CircleDollarSign}
-              sub={`${nTx} transactions, gross value`}
-              pct={nTx > 0 ? 100 : 0} pctLabel="of gross purchase value"
+              label={t('Number of Transactions')} value={nTx.toLocaleString('id-ID')} icon={FileText}
+              sub={`${kpis.posted} ${t('posted')}`}
+              pct={pctOfCount(kpis.posted)} pctLabel={t('of transactions posted')}
+            />
+            <PurchaseKpiTile
+              label={t('Average per Transaction')} value={fmt(kpis.avgAmount)} icon={Calculator}
+              sub={kpis.largestAmount > 0 ? `${t('Largest')} ${fmt(kpis.largestAmount)}` : undefined}
+              pct={kpis.largestAmount > 0 ? (kpis.avgAmount / kpis.largestAmount) * 100 : 0} pctLabel={t('of largest bill')}
             />
             <PurchaseKpiTile
               label="Pending Review" value={kpis.pendingReview.toLocaleString('id-ID')} icon={Clock}

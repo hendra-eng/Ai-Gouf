@@ -7377,6 +7377,55 @@ def soft_delete_purchase_source_file(source_file_id: str, deleted_by: Optional[s
     return _purchase_crud_soft_delete(PurchaseSourceFile, source_file_id, deleted_by)
 
 
+def hapus_total_purchase_source_file(source_file_id: str) -> Dict[str, Any]:
+    """[BARU] Hapus PERMANEN satu source file Purchase beserta SEMUA turunannya: baris source, transaksi purchase
+    (termasuk yang sudah Posted -- Payables/GL membaca langsung dari transaksi, jadi ikut hilang), baris/line transaksi,
+    dan exception. Hard delete (bukan soft delete) supaya no. purchase bebas dipakai lagi saat file di-upload ulang
+    (unique constraint client_id + purchase_no tetap berlaku untuk baris soft-deleted). Pola sama dengan
+    hapus_total_source_file (Sales).
+    DITOLAK kalau ada transaksi yang sudah punya pembayaran di Cash & Bank (baris bank/cash menunjuk ke transaksi itu):
+    batalkan dulu pembayarannya di Cash & Bank supaya data bank tidak yatim. Return {ok, ...}."""
+    session = SessionLocal()
+    try:
+        sf = session.query(PurchaseSourceFile).filter(PurchaseSourceFile.id == source_file_id).first()
+        if sf is None:
+            return {"ok": False, "kode": "NOT_FOUND"}
+        baris = session.query(PurchaseSourceRow.id, PurchaseSourceRow.transaction_id).filter(
+            PurchaseSourceRow.source_file_id == source_file_id).all()
+        n_baris = len(baris)
+        id_tx = list({r[1] for r in baris if r[1]})
+
+        if id_tx:
+            terhubung = session.query(BankCashTransactionLine.purchase_transaction_id).filter(
+                BankCashTransactionLine.purchase_transaction_id.in_(id_tx)).distinct().count()
+            if terhubung:
+                return {"ok": False, "kode": "ADA_PEMBAYARAN", "jumlah": terhubung}
+            session.query(FinanceTransactionBankCashException).filter(
+                FinanceTransactionBankCashException.linked_purchase_transaction_id.in_(id_tx)
+            ).update({FinanceTransactionBankCashException.linked_purchase_transaction_id: None}, synchronize_session=False)
+            session.query(PurchaseException).filter(
+                PurchaseException.transaction_id.in_(id_tx)).delete(synchronize_session=False)
+
+        # Urutan penting: source_rows menunjuk ke transaksi (FK tanpa cascade) -> hapus dulu sebelum transaksi.
+        session.query(PurchaseSourceRow).filter(
+            PurchaseSourceRow.source_file_id == source_file_id).delete(synchronize_session=False)
+        n_tx = 0
+        if id_tx:
+            session.query(PurchaseTransactionLine).filter(
+                PurchaseTransactionLine.transaction_id.in_(id_tx)).delete(synchronize_session=False)
+            n_tx = session.query(PurchaseTransaction).filter(
+                PurchaseTransaction.id.in_(id_tx)).delete(synchronize_session=False)
+        session.query(PurchaseSourceFile).filter(PurchaseSourceFile.id == source_file_id).delete(synchronize_session=False)
+        session.commit()
+        return {"ok": True, "transaksi_dihapus": n_tx, "baris_dihapus": n_baris}
+    except Exception as e:
+        session.rollback()
+        print(f"Error hapus_total_purchase_source_file: {e}")
+        return {"ok": False, "kode": "DB_ERROR", "error": str(e)[:300]}
+    finally:
+        session.close()
+
+
 CRUD_FIELDS_PURCHASE_SOURCE_ROW = [
     "source_file_id", "client_id", "row_no", "tanggal", "no_invoice", "nama_vendor", "vendor_code",
     "no_po", "cabang", "dpp", "ppn", "total", "is_valid", "validation_notes",

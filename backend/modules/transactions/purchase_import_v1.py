@@ -1230,3 +1230,29 @@ def daftar_purchase_source_files(
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
     return sukses(data=dbc.list_purchase_source_files(management_client_id=management_client_id), message="OK")
+
+
+
+@router.delete(
+    "/import/source-files/{source_file_id}",
+    summary="Hapus PERMANEN file di tab Source Data Purchase beserta semua transaksi turunannya (khusus Supervisor ke atas)",
+    responses={200: {"description": "OK."}, 401: {"description": "Token tidak dikirim / tidak valid."}, 403: {"description": "Forbidden."}, 404: {"description": "Tidak ditemukan."}, 409: {"description": "Transaksi sudah punya pembayaran di Cash & Bank."}},
+)
+def hapus_purchase_source_file(
+    source_file_id: str,
+    _current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
+):
+    hasil = dbc.hapus_total_purchase_source_file(source_file_id)
+    if not hasil.get("ok"):
+        if hasil.get("kode") == "NOT_FOUND":
+            return gagal(message="Source file tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
+        if hasil.get("kode") == "ADA_PEMBAYARAN":
+            return gagal(
+                message=(f"{hasil['jumlah']} transaksi dari file ini sudah punya pembayaran di Cash & Bank. "
+                         "Batalkan pembayarannya di Cash & Bank dulu, lalu hapus file ini lagi."),
+                errors={"code": "ADA_PEMBAYARAN"}, status_code=409)
+        return gagal(message="Gagal menghapus source file (kesalahan database).", errors={"code": "DB_ERROR"}, status_code=500)
+    return sukses(
+        data=hasil,
+        message=f"Source file dihapus permanen beserta {hasil['transaksi_dihapus']} transaksi dan {hasil['baris_dihapus']} baris datanya.",
+    )

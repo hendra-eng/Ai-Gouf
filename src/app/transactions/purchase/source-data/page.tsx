@@ -8,9 +8,9 @@ import { downloadBlob } from '@/app/transactions/components/exportTemplates/expo
 import MappingRulesModal from '@/app/transactions/components/MappingRulesModal';
 import { salesFont as sourceFont } from '@/app/transactions/sales/components/salesFont';
 import { useActiveClient } from '@/lib/activeClient';
-import { usePurchaseSourceFiles, listPurchaseImportTemplates } from '@/lib/purchaseStore';
+import { usePurchaseSourceFiles, listPurchaseImportTemplates, deletePurchaseSourceFile, type BackendPurchaseSourceFile } from '@/lib/purchaseStore';
 import { formatTanggalWaktu } from '@/lib/salesStore';
-import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight, MoreHorizontal, Trash2 } from 'lucide-react';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -97,6 +97,27 @@ export default function PurchaseSourceDataPage() {
   const paginated = sourceFiles.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
   const goToPage = (n: number) => setCurrentPage(Math.min(Math.max(1, n), totalPages));
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+
+  // Menu aksi "···" per baris file: hapus PERMANEN file beserta semua transaksi turunannya (pola sama dengan Source Data Sales).
+  const [menuFileId, setMenuFileId] = useState<string | null>(null);
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
+  const handleDeleteFile = async (f: BackendPurchaseSourceFile) => {
+    setMenuFileId(null);
+    const ok = window.confirm(
+      `Delete file "${f.file_name}"?\n\nPERMANENT: all purchase transactions from this file in every Purchase tab (including those already Posted) and their data in the database will be deleted and cannot be restored.`
+    );
+    if (!ok) return;
+    setDeletingFileId(f.id);
+    try {
+      await deletePurchaseSourceFile(f.id);
+      if (selectedFileId === f.id) setSelectedFileId(null);
+      toast.success('File deleted', { description: f.file_name });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete file');
+    } finally {
+      setDeletingFileId(null);
+    }
+  };
 
   // ── Action bar (pola sama dengan tab Source Data Sales). Upload File ada di header (PurchaseTabs). ──
   const handleDownloadTemplate = async () => {
@@ -193,7 +214,7 @@ export default function PurchaseSourceDataPage() {
     </div>
   );
 
-  const headers = ['Upload Date', 'Source File', 'Source Type', 'Vendor / Entity', 'Period', 'Rows Detected', 'Extraction Status', 'Mapping Status', 'Confidence', 'Processed By'];
+  const headers = ['Upload Date', 'Source File', 'Source Type', 'Vendor / Entity', 'Period', 'Rows Detected', 'Extraction Status', 'Mapping Status', 'Confidence', 'Processed By', 'Actions'];
   const NUMERIC_HEADERS = ['Rows Detected'];
 
   return (
@@ -275,6 +296,31 @@ export default function PurchaseSourceDataPage() {
                       </div>
                     </td>
                     <td className="py-2 px-2 text-foreground whitespace-nowrap">{f.processed_by || '-'}</td>
+                    <td className="py-2 px-2">
+                      <div className="relative" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => setMenuFileId(menuFileId === f.id ? null : f.id)}
+                          disabled={deletingFileId === f.id}
+                          className="p-1 hover:bg-neutral-300 rounded transition-colors disabled:opacity-50"
+                          aria-label="Actions"
+                        >
+                          <MoreHorizontal size={14} className="text-neutral-600" />
+                        </button>
+                        {menuFileId === f.id && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setMenuFileId(null)} />
+                            <div className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-lg border border-border bg-card shadow-lg py-1">
+                              <button
+                                onClick={() => handleDeleteFile(f)}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 text-left"
+                              >
+                                <Trash2 size={12} /> Delete file
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {/* Baris kosong pengisi: tinggi tabel selalu = "Rows per page", supaya layar tidak bergeser (sama dengan Sales). */}
