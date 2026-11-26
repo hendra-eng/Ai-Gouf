@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { undatedFirst } from '@/lib/undatedFirst';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
@@ -295,11 +296,12 @@ export default function PurchasePreviewPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return purchaseTransactions.filter(t => {
+    const hasil = purchaseTransactions.filter(t => {
       if (statusFilter !== 'all' && groupOf(t.status) !== statusFilter) return false;
       if (!q) return true;
       return t.purchaseId.toLowerCase().includes(q) || t.vendor.toLowerCase().includes(q) || t.invoiceNumber.toLowerCase().includes(q);
     });
+    return undatedFirst(hasil, t => t.purchaseDate); // tanpa tanggal paling atas
   }, [purchaseTransactions, search, statusFilter]);
 
   // Ringkasan antrian untuk kartu KPI di atas.
@@ -553,7 +555,7 @@ export default function PurchasePreviewPage() {
                       <span className="block break-words text-xs font-semibold leading-snug text-blue-700">{t.purchaseId}</span>
                       <span className="mt-0.5 block truncate text-[11px] font-semibold text-neutral-800">{t.vendor}</span>
                       <span className="mt-1.5 flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-medium text-neutral-700">{t.purchaseDate || '—'}</span>
+                        <span className="text-[11px] font-medium text-neutral-700">{t.purchaseDate || '-'}</span>
                         <StatusPill tone={statusTones[t.status]} label={statusLabels[t.status]} />
                       </span>
                       <span className="mt-1 block text-sm font-semibold tabular-nums text-neutral-900">{fmt(t.total)}</span>
@@ -592,7 +594,7 @@ export default function PurchasePreviewPage() {
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-neutral-100 text-[11px] font-semibold text-neutral-600 ring-1 ring-neutral-200">PUR</span>
                   <div className="min-w-0">
                     <p className="break-words text-sm font-semibold text-blue-700">{tx.purchaseId}</p>
-                    <p className="truncate text-xs font-semibold text-neutral-700">{tx.vendor} · {tx.purchaseDate || '—'}</p>
+                    <p className="truncate text-xs font-semibold text-neutral-700">{tx.vendor} · {tx.purchaseDate || '-'}</p>
                   </div>
                 </div>
                 <div className="ml-auto text-right">

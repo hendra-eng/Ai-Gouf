@@ -74,8 +74,10 @@ function petakanDariBackend(inv: BackendSalesInvoice): TrxItem {
 }
 
 function formatTanggal(iso: string): string {
+  if (!iso) return '-'; // invoice tanpa tanggal tampil "-"
   try {
     const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d.getTime())) return '-';
     const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${String(d.getDate()).padStart(2, '0')} ${names[d.getMonth()]} ${d.getFullYear()}`;
   } catch {
@@ -323,15 +325,15 @@ export default function SalesTransaction() {
   const { invoices: backendInvoices, loading, error, refresh } = useSalesInvoices(activeClientId ?? null);
   // Urutan tabel: tanggal invoice dari yang terkecil (Jan -> Des, tgl 1 -> 31), bukan urutan
   // klik Create Invoice di Source Data. Tanggal sama -> urut nomor invoice (angka dibaca natural,
-  // jadi ...-6-14 sebelum ...-6-149). Invoice tanpa tanggal ditaruh paling bawah.
+  // jadi ...-6-14 sebelum ...-6-149). Invoice tanpa tanggal ditaruh paling atas (tanggal tampil "-").
   const transactions = useMemo(
     () =>
       backendInvoices.map(petakanDariBackend).sort((a, b) => {
         const da = (a.dateISO || '').slice(0, 10);
         const db = (b.dateISO || '').slice(0, 10);
         if (da !== db) {
-          if (!da) return 1;
-          if (!db) return -1;
+          if (!da) return -1;
+          if (!db) return 1;
           return da < db ? -1 : 1;
         }
         return a.id.localeCompare(b.id, undefined, { numeric: true });

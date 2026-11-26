@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { undatedFirst } from '@/lib/undatedFirst';
 import { createPortal } from 'react-dom';
 import { salesFont as sourceFont } from './salesFont';
 import ExcelJS from 'exceljs';
@@ -182,7 +183,9 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
   const paginated = sourceFiles.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
   const goToPage = (p: number) => setCurrentPage(Math.min(Math.max(1, p), totalPages));
 
-  const { rows: previewRows, loading: loadingRows } = useSalesSourceRows(selectedFile?.id);
+  const { rows: rawPreviewRows, loading: loadingRows } = useSalesSourceRows(selectedFile?.id);
+  // Baris tanpa tanggal ditaruh paling atas (tanggal tampil "-"); sisanya tetap urutan file.
+  const previewRows = useMemo(() => undatedFirst(rawPreviewRows, r => r.tanggal), [rawPreviewRows]);
 
   // [BARU] File Preview dipaging 20 baris/halaman -- file laporan bisa
   // berisi ribuan baris (mis. contoh SAU: 10.769), menampilkan semuanya

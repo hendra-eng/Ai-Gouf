@@ -13,6 +13,7 @@ import {
   type BackendPurchaseSourceFile, type BackendPurchaseSourceRow,
 } from '@/lib/purchaseStore';
 import { formatTanggalWaktu, formatTanggalSingkat } from '@/lib/salesStore';
+import { undatedFirst } from '@/lib/undatedFirst';
 import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight, MoreHorizontal, Trash2, FileText, ShieldCheck } from 'lucide-react';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -157,7 +158,9 @@ export default function PurchaseSourceDataPage() {
   }, [sourceFiles, selectedFileId]);
 
   // File Preview: baris staging file terpilih, dipaging 20 baris/halaman (file bisa berisi ribuan transaksi).
-  const { rows: previewRows, loading: loadingRows } = usePurchaseSourceRows(selectedFile?.id);
+  const { rows: rawPreviewRows, loading: loadingRows } = usePurchaseSourceRows(selectedFile?.id);
+  // Baris tanpa tanggal ditaruh paling atas (tanggal tampil "-"); sisanya tetap urutan file.
+  const previewRows = useMemo(() => undatedFirst(rawPreviewRows, r => r.tanggal), [rawPreviewRows]);
   const [previewPage, setPreviewPage] = useState(1);
   useEffect(() => { setPreviewPage(1); }, [selectedFile?.id]);
   const previewTotalPages = Math.max(1, Math.ceil(previewRows.length / PREVIEW_PAGE_SIZE));

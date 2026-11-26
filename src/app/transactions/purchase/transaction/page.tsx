@@ -92,7 +92,7 @@ const NUMERIC_FIELDS = ['subtotal', 'taxAmount', 'total'];
 // Format tanggal sama persis dengan halaman Sales: "04 Jun 2026" (tgl 2 digit, bulan singkat, tahun).
 function formatTanggal(iso?: string): string {
   const v = (iso || '').slice(0, 10);
-  if (!v) return '';
+  if (!v) return '-'; // transaksi tanpa tanggal tampil "-"
   try {
     const d = new Date(v + 'T00:00:00');
     if (isNaN(d.getTime())) return v;
@@ -232,8 +232,8 @@ export default function PurchaseTransactionPage() {
         const da = (a.purchaseDate || '').slice(0, 10);
         const db = (b.purchaseDate || '').slice(0, 10);
         if (da !== db) {
-          if (!da) return 1; // tanpa tanggal selalu paling bawah
-          if (!db) return -1;
+          if (!da) return -1; // tanpa tanggal selalu paling atas (tampil "-"), apa pun arah sortirnya
+          if (!db) return 1;
           return (da < db ? -1 : 1) * (sortDir === 'asc' ? 1 : -1);
         }
         return byId(a, b);
