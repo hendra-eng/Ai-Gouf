@@ -90,11 +90,12 @@ export default function PurchaseTabs({ actions, dateRangeActive = false, variant
             continue;
           }
           berhasil += 1;
-          totalCreated += hasil.created;
+          const tersimpan = hasil.staged ?? hasil.created;
+          totalCreated += tersimpan;
           totalDetected += hasil.transactions_detected;
           const dilewati = hasil.transactions.filter(r => !r.ok).length;
           toast.success('File imported', {
-            description: `${file.name}: ${hasil.created} of ${hasil.transactions_detected} purchase transactions imported as draft${dilewati ? ` (${dilewati} skipped)` : ''}.`,
+            description: `${file.name}: ${tersimpan} of ${hasil.transactions_detected} purchase transactions saved to Source Data${dilewati ? ` (${dilewati} skipped)` : ''}.`,
           });
         } catch (err) {
           toast.error(`${file.name}: ${err instanceof Error ? err.message : 'Failed to upload file'}`);

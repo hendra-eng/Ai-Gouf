@@ -19,10 +19,11 @@ Alur (ringkas):
        baca file & hash DIPAKAI ULANG dari sales_import_v1 (algoritma sama).
     4. KETEMU template -> ekstrak blok transaksi pakai resep mapping_rules
        (format_type 'grouped_purchase_report', lihat
-       _parse_grouped_purchase_report), lalu buat Purchase Transaction +
-       baris itemnya LANGSUNG lewat dbc.create_purchase_transaction_with_lines
-       dengan status 'draft' -- sama seperti Journal Entry, tidak ada tahap
-       staging karena tiap blok sudah memuat item lengkap + total.
+       _parse_grouped_purchase_report), lalu SIMPAN tiap blok ke tabel staging
+       financial_transaction_purchase_source_rows (header + baris item lengkap
+       di kolom `payload`). Upload TIDAK membuat Purchase Transaction --
+       transaksi baru dibuat saat baris dipromosikan (tombol Create Transaction,
+       pola sama dengan Sales: /source-files/{id}/promote-to-invoices).
     5. TIDAK ketemu template -> template_matched=false, tidak ada transaksi
        yang dibuat (belum ada inferensi AI, sama seperti Sales/JE).
 
@@ -60,6 +61,7 @@ from __future__ import annotations
 import re
 import time
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
@@ -973,14 +975,69 @@ def _period_label(d: Optional[date]) -> str:
     return f"{_BULAN_EN[d.month - 1]} {d.year}" if d else "No Date"  # kolom period_label NOT NULL
 
 
+def _json_aman(v: Any) -> Any:
+    """Ubah nilai hasil parsing jadi JSON-serializable untuk kolom JSONB (date -> ISO string, Decimal -> float)."""
+    if isinstance(v, (date, datetime)):
+        return v.isoformat()
+    if isinstance(v, Decimal):
+        return float(v)
+    if isinstance(v, dict):
+        return {str(k): _json_aman(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_json_aman(x) for x in v]
+    return v
+
+
+def _siapkan_data_transaksi(
+    t: Dict[str, Any], *, recipe: Dict[str, Any], currency: str, category: str, file_name: Optional[str],
+    client_id: Optional[str], management_client_id: str, created_by_name: Optional[str],
+) -> Dict[str, Any]:
+    """Susun header transaksi (siap dikirim ke dbc.create_purchase_transaction_with_lines) dari 1 blok hasil
+    ekstraksi. Dipanggil saat UPLOAD supaya akun AP/pajak, kategori, status bayar, dan catatan tersimpan
+    di payload staging -- promote nanti tidak perlu membaca ulang file (file tidak disimpan di server).
+    Memodifikasi t['lines'] (akun per cabang) -- panggil SEKALI per blok."""
+    cabang = f" ({t['dept']})" if t["dept"] else ""
+    _terapkan_akun_dept(t["lines"], t["dept"], recipe)
+    akun_ap = t.get("ap_account") or recipe.get("ap_account") or {}  # akun Cr per transaksi (resep akun_kredit_dari_baris) menang
+    akun_pajak = recipe.get("tax_account") or {}
+    ringkasan = (
+        f"Subtotal {t['subtotal']:,.0f}; Discount {t['potongan']:,.0f}; Tax {t['pajak']:,.0f}; "
+        f"Other Costs {t['biaya']:,.0f}; Grand Total {t['total_akhir']:,.0f}"
+    )
+    return {
+        "client_id": client_id,
+        "management_client_id": management_client_id,
+        "purchase_no": t["purchase_no"][:100],
+        "purchase_date": t["purchase_date"],
+        "vendor_name": (t["vendor_name"] or "-")[:255],
+        "vendor_code": (t["vendor_code"] or None) and t["vendor_code"][:50],
+        "source_doc_type": "Import",
+        "source_ref": (file_name or "")[:100] or None,
+        "description": f"Purchase{cabang} - {t['vendor_name']}",
+        "category": t.get("category") or category,  # kategori per baris (buku kas kecil AADL) menang
+        "currency": currency,
+        "payment_status": _status_bayar_awal(akun_ap, recipe),
+        "status": "draft",
+        "period_label": _period_label(t["purchase_date"]),
+        "created_by_name": created_by_name,
+        "notes": "; ".join([f"Dept: {t['dept']}" if t["dept"] else "", ringkasan, *t["notes"]]).strip("; "),
+        "ap_account_code": akun_ap.get("account_code") or None,
+        "ap_account_name": akun_ap.get("account_name") or None,
+        "tax_account_code": akun_pajak.get("account_code") or None,
+        "tax_account_name": akun_pajak.get("account_name") or None,
+    }
+
+
 def _catat_file_sumber(
     *, management_client_id: str, user_id: Optional[str], nama_user: Optional[str], file_name: Optional[str],
     file_type: str, template: Optional[Dict[str, Any]], baris: List[Dict[str, Any]], status: str,
-    period_label: Optional[str], durasi_ms: int,
+    period_label: Optional[str], durasi_ms: int, status_mapping: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Catat 1 file upload ke financial_transaction_purchase_source_files (+ baris staging-nya) supaya SEMUA
     file yang diupload -- berhasil, perlu review, atau gagal -- muncul di tab Source Data (daftar file, pola Sales).
-    Transaksi draft tetap dibuat langsung oleh upload; tiap source row menyimpan transaction_id-nya."""
+    Upload HANYA mengisi staging: transaction_id tiap source row kosong sampai baris dipromosikan
+    jadi Purchase Transaction. status = status ekstraksi; status_mapping (default = status) dipakai
+    'Processing' oleh upload sampai ada promote."""
     valid = [b for b in baris if b["is_valid"]]
     vendor = list(dict.fromkeys(b["nama_vendor"] for b in baris if b.get("nama_vendor")))
     vendor_hint = None if not vendor else (vendor[0] if len(vendor) == 1 else f"{vendor[0]} +{len(vendor) - 1} more")
@@ -1001,7 +1058,7 @@ def _catat_file_sumber(
         "rows_invalid": rows_invalid,
         "duplicate_count": sum(1 for b in baris if b["is_duplicate_candidate"]),
         "status_ekstraksi": status,
-        "status_mapping": status,
+        "status_mapping": status_mapping or status,
         "confidence_score": confidence,
         "dpp_total": round(sum(float(b["dpp"]) for b in valid), 2),
         "ppn_total": round(sum(float(b["ppn"]) for b in valid), 2),
@@ -1023,9 +1080,9 @@ def _catat_file_sumber(
 
 @router.post(
     "/import/upload",
-    summary="Upload file laporan pembelian (CSV/Excel) + buat transaksi draft otomatis pakai template (khusus Supervisor ke atas)",
+    summary="Upload file laporan pembelian (CSV/Excel) + ekstraksi ke staging Source Data pakai template -- TIDAK membuat transaksi (khusus Supervisor ke atas)",
     responses={
-        201: {"description": "File diproses -- lihat ringkasan created/skipped di response. template_matched=false berarti belum ada template yang cocok, TIDAK ada transaksi yang dibuat."},
+        201: {"description": "File diproses -- lihat ringkasan staged/skipped di response (created selalu 0, transaksi dibuat saat promote). template_matched=false berarti belum ada template yang cocok."},
         400: {"description": "File terlalu besar."},
         401: {"description": "Unauthorized."},
         403: {"description": "Forbidden."},
@@ -1100,13 +1157,20 @@ async def upload_purchase_import(
     category = recipe.get("category_default", "Inventory")
 
     hasil_tx: List[Dict[str, Any]] = []
-    created = 0
+    staged = 0
     skipped_invalid = 0
     skipped_duplicate = 0
     with_warnings = 0
     baris_sumber: List[Dict[str, Any]] = []
+    sudah_di_file: set = set()  # purchase_no yang sudah ada di file ini (upload tidak lagi membuat transaksi, jadi DB tidak bisa mendeteksinya)
 
-    def _baris_sumber(t: Dict[str, Any], valid: bool, catatan: Optional[str], duplikat: bool, transaction_id: Optional[str]) -> Dict[str, Any]:
+    def _baris_sumber(t: Dict[str, Any], valid: bool, catatan: Optional[str], duplikat: bool, data_transaksi: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        # payload = semua yang dibutuhkan promote untuk membuat transaksi: header (akun AP/pajak, kategori,
+        # status bayar, catatan, dst) + SELURUH baris item. Baris tidak valid hanya menyimpan ringkasan.
+        payload: Dict[str, Any] = {"line_count": len(t["lines"]), "notes": t.get("notes") or [], "warnings": t.get("warnings") or []}
+        if data_transaksi is not None:
+            payload["header"] = data_transaksi
+            payload["lines"] = t["lines"]
         return {
             "row_no": len(baris_sumber) + 1,
             "tanggal": t["purchase_date"],
@@ -1120,71 +1184,44 @@ async def upload_purchase_import(
             "is_valid": valid,
             "validation_notes": catatan,
             "is_duplicate_candidate": duplikat,
-            "transaction_id": transaction_id,
-            "payload": {"line_count": len(t["lines"]), "notes": t.get("notes") or []},
+            "transaction_id": None,  # terisi saat promote
+            "payload": _json_aman(payload),
         }
 
     for t in blok:
         if t["errors"]:
             skipped_invalid += 1
             hasil_tx.append({"purchase_no": t["purchase_no"] or "-", "ok": False, "message": " ".join(t["errors"])})
-            baris_sumber.append(_baris_sumber(t, False, " ".join(t["errors"]), False, None))
+            baris_sumber.append(_baris_sumber(t, False, " ".join(t["errors"]), False))
+            continue
+        if t["purchase_no"] in sudah_di_file:
+            skipped_duplicate += 1
+            pesan_dup = "This purchase number appears more than once in this file."
+            hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": pesan_dup})
+            baris_sumber.append(_baris_sumber(t, True, pesan_dup, True))
             continue
         if dbc.get_purchase_transaction_by_client_and_no(client_id, t["purchase_no"]):
             skipped_duplicate += 1
             hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": "This purchase number has already been imported previously."})
-            baris_sumber.append(_baris_sumber(t, True, "This purchase number has already been imported previously.", True, None))
+            baris_sumber.append(_baris_sumber(t, True, "This purchase number has already been imported previously.", True))
             continue
+        sudah_di_file.add(t["purchase_no"])
 
-        cabang = f" ({t['dept']})" if t["dept"] else ""
-        _terapkan_akun_dept(t["lines"], t["dept"], recipe)
-        akun_ap = t.get("ap_account") or recipe.get("ap_account") or {}  # akun Cr per transaksi (resep akun_kredit_dari_baris) menang
-        akun_pajak = recipe.get("tax_account") or {}
-        ringkasan = (
-            f"Subtotal {t['subtotal']:,.0f}; Discount {t['potongan']:,.0f}; Tax {t['pajak']:,.0f}; "
-            f"Other Costs {t['biaya']:,.0f}; Grand Total {t['total_akhir']:,.0f}"
+        data_transaksi = _siapkan_data_transaksi(
+            t, recipe=recipe, currency=currency, category=category, file_name=file.filename,
+            client_id=client_id, management_client_id=management_client_id, created_by_name=created_by_name,
         )
-        transaction_data = {
-            "client_id": client_id,
-            "management_client_id": management_client_id,
-            "purchase_no": t["purchase_no"][:100],
-            "purchase_date": t["purchase_date"],
-            "vendor_name": (t["vendor_name"] or "-")[:255],
-            "vendor_code": (t["vendor_code"] or None) and t["vendor_code"][:50],
-            "source_doc_type": "Import",
-            "source_ref": (file.filename or "")[:100] or None,
-            "description": f"Purchase{cabang} - {t['vendor_name']}",
-            "category": t.get("category") or category,  # kategori per baris (buku kas kecil AADL) menang
-            "currency": currency,
-            "payment_status": _status_bayar_awal(akun_ap, recipe),
-            "status": "draft",
-            "period_label": _period_label(t["purchase_date"]),
-            "created_by_name": created_by_name,
-            "notes": "; ".join([f"Dept: {t['dept']}" if t["dept"] else "", ringkasan, *t["notes"]]).strip("; "),
-            "ap_account_code": akun_ap.get("account_code") or None,
-            "ap_account_name": akun_ap.get("account_name") or None,
-            "tax_account_code": akun_pajak.get("account_code") or None,
-            "tax_account_name": akun_pajak.get("account_name") or None,
-        }
-        error_db: List[str] = []
-        dibuat = dbc.create_purchase_transaction_with_lines(transaction_data, t["lines"], created_by=client_id, error_out=error_db)
-        if dibuat is None:
-            skipped_invalid += 1
-            pesan_gagal = _pesan_gagal_simpan(error_db[0] if error_db else "", t)
-            hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": pesan_gagal})
-            baris_sumber.append(_baris_sumber(t, False, pesan_gagal, False, None))
-            continue
-        created += 1
+        staged += 1
         peringatan = t.get("warnings") or []
         if peringatan:
             with_warnings += 1
-        pesan = f"Successfully imported ({len(t['lines'])} lines, total {t['total_akhir']:,.0f})."
+        pesan = f"Ready to create ({len(t['lines'])} lines, total {t['total_akhir']:,.0f})."
         if t["purchase_date"] is None:
             pesan += " Date is empty -- fill it in before posting."
         if peringatan:
             pesan += " Warning: " + " ".join(peringatan)
         hasil_tx.append({"purchase_no": t["purchase_no"], "ok": True, "message": pesan})
-        baris_sumber.append(_baris_sumber(t, True, "; ".join(peringatan) or None, False, dibuat.get("id")))
+        baris_sumber.append(_baris_sumber(t, True, "; ".join(peringatan) or None, False, data_transaksi))
 
     dbc.touch_purchase_import_template_usage(template["id"])
 
@@ -1200,6 +1237,7 @@ async def upload_purchase_import(
         management_client_id=management_client_id, user_id=client_id, nama_user=created_by_name, file_name=file.filename,
         file_type=file_type, template=template, baris=baris_sumber,
         status="Completed" if baris_sumber and all(b["is_valid"] for b in baris_sumber) else "Needs Review",
+        status_mapping="Processing",  # berubah setelah baris dipromosikan jadi transaksi
         period_label=label_periode, durasi_ms=int((time.perf_counter() - t0) * 1000),
     )
 
@@ -1208,7 +1246,8 @@ async def upload_purchase_import(
             **(file_sumber or {}),
             "template_matched": True,
             "transactions_detected": len(blok),
-            "created": created,
+            "created": 0,  # upload tidak lagi membuat transaksi (kompatibilitas field lama)
+            "staged": staged,
             "skipped_invalid": skipped_invalid,
             "skipped_duplicate": skipped_duplicate,
             "with_warnings": with_warnings,
@@ -1216,10 +1255,82 @@ async def upload_purchase_import(
             "transactions": hasil_tx,
         },
         message=(
-            f"{created} of {len(blok)} purchase transactions imported successfully using a previously learned template."
+            f"{staged} of {len(blok)} purchase transactions saved to Source Data using a previously learned template -- use Create Transaction to turn them into drafts."
             + (f" Period {info_periode['label']} (from the file name): {info_periode['diambil']} taken, {info_periode['dilewati']} outside the period skipped." if info_periode else "")
         ),
         status_code=201,
+    )
+
+
+@router.get(
+    "/import/source-files/{source_file_id}/rows",
+    summary="Baris staging 1 file Source Data Purchase (panel File Preview), urut sesuai file -- tanpa payload item",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}, 404: {"description": "Source file tidak ditemukan."}},
+)
+def daftar_purchase_source_rows(
+    source_file_id: str,
+    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    if dbc.get_purchase_source_file_by_id(source_file_id) is None:
+        return gagal(message="Source file not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    # payload (header + item lengkap) berat dan tidak dipakai preview -- dibuang; transaction_id terisi = sudah dibuat.
+    return sukses(data=dbc.list_purchase_source_rows(source_file_id=source_file_id, dengan_payload=False), message="OK")
+
+
+@router.post(
+    "/import/source-files/{source_file_id}/promote-to-transactions",
+    summary="Buat Purchase Transaction (draft) dari baris valid file Source Data -- tombol Create Transaction (khusus Supervisor ke atas)",
+    responses={
+        200: {"description": "Selesai diproses -- lihat ringkasan created/skipped di response. Aman dipanggil ulang: baris yang sudah dibuat dilewati."},
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden."},
+        404: {"description": "Source file tidak ditemukan."},
+    },
+)
+def promote_purchase_source_file_to_transactions(
+    source_file_id: str,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
+):
+    source_file = dbc.get_purchase_source_file_by_id(source_file_id)
+    if source_file is None:
+        return gagal(message="Source file not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+
+    user_id = current_user.get("id")
+    hasil = dbc.promote_purchase_rows(source_file_id, user_id)
+    dibuat = hasil["transaksi_dibuat"]
+
+    # status_mapping: 'Completed' kalau semua baris yang bisa dipromosikan sudah jadi transaksi, selain itu 'Needs Review'
+    # (masih ada baris gagal insert). Tidak mengubah status_ekstraksi -- itu status hasil ekstraksi file.
+    if hasil["sisa_belum_dibuat"] == 0 and hasil["dilewati_gagal_insert"] == 0:
+        status_mapping = "Completed"
+    else:
+        status_mapping = "Needs Review"
+    if dibuat > 0 or source_file.get("status_mapping") == "Processing":
+        dbc.update_purchase_source_file(source_file_id, {"status_mapping": status_mapping}, updated_by=user_id)
+
+    ringkasan = {
+        "total_baris": hasil["total_baris"],
+        "transaksi_dibuat": dibuat,
+        "dilewati_tidak_valid": hasil["dilewati_tidak_valid"],
+        "dilewati_duplikat": hasil["dilewati_duplikat"],
+        "dilewati_sudah_pernah_dipromosikan": hasil["dilewati_sudah_pernah_dipromosikan"],
+        "dilewati_no_bentrok": hasil["dilewati_no_bentrok"],
+        "dilewati_gagal_insert": hasil["dilewati_gagal_insert"],
+        "error_insert": hasil["error_insert"],
+        "sisa_belum_dibuat": hasil["sisa_belum_dibuat"],
+        "status_mapping": status_mapping,
+        "transactions": hasil["transaksi"],
+    }
+    return sukses(
+        data=ringkasan,
+        message=(
+            f"{dibuat} purchase transactions created as draft from {hasil['total_baris']} rows "
+            f"({hasil['dilewati_tidak_valid']} invalid, {hasil['dilewati_duplikat']} duplicate, "
+            f"{hasil['dilewati_sudah_pernah_dipromosikan']} already created, "
+            f"{hasil['dilewati_no_bentrok']} purchase number conflicts"
+            + (f", {hasil['dilewati_gagal_insert']} failed to save: {_pesan_gagal_simpan(hasil['error_insert'] or '', {})}" if hasil["dilewati_gagal_insert"] else "")
+            + ")."
+        ),
     )
 
 

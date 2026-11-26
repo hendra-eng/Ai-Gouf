@@ -8,9 +8,12 @@ import { downloadBlob } from '@/app/transactions/components/exportTemplates/expo
 import MappingRulesModal from '@/app/transactions/components/MappingRulesModal';
 import { salesFont as sourceFont } from '@/app/transactions/sales/components/salesFont';
 import { useActiveClient } from '@/lib/activeClient';
-import { usePurchaseSourceFiles, listPurchaseImportTemplates, deletePurchaseSourceFile, type BackendPurchaseSourceFile } from '@/lib/purchaseStore';
-import { formatTanggalWaktu } from '@/lib/salesStore';
-import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight, MoreHorizontal, Trash2 } from 'lucide-react';
+import {
+  usePurchaseSourceFiles, usePurchaseSourceRows, listPurchaseImportTemplates, deletePurchaseSourceFile, promotePurchaseSourceFile,
+  type BackendPurchaseSourceFile, type BackendPurchaseSourceRow,
+} from '@/lib/purchaseStore';
+import { formatTanggalWaktu, formatTanggalSingkat } from '@/lib/salesStore';
+import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight, MoreHorizontal, Trash2, FileText } from 'lucide-react';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -68,6 +71,55 @@ const ACTION_BTN_BASE = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5
 const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
 const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
 
+const PREVIEW_PAGE_SIZE = 20;
+const PANEL_ICON_CHIP = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200';
+
+// Panel bawah Source Data -- gaya sama dengan SourcePanel di Source Data Sales.
+function SourcePanel({ title, leading, action, children }: {
+  title: string;
+  leading?: React.ReactNode;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative flex flex-col overflow-hidden rounded-xl border border-neutral-300 bg-white shadow-sm">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
+      <div className="flex items-center justify-between gap-3 border-b border-neutral-300 bg-neutral-50 px-4 pb-3 pt-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {leading}
+          <h3 className="truncate text-sm font-semibold text-neutral-900">{title}</h3>
+        </div>
+        {action}
+      </div>
+      <div className="flex flex-1 flex-col p-4">{children}</div>
+    </div>
+  );
+}
+
+// Status 1 baris staging: Created (transaction_id terisi) / Ready (bisa dibuat) / Duplicate / Invalid.
+type RowState = 'created' | 'ready' | 'duplicate' | 'invalid';
+function rowState(r: BackendPurchaseSourceRow): RowState {
+  if (r.transaction_id) return 'created';
+  if (!r.is_valid) return 'invalid';
+  if (r.is_duplicate_candidate) return 'duplicate';
+  return 'ready';
+}
+const ROW_STATE_STYLE: Record<RowState, { pill: string; dot: string; label: string }> = {
+  created: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600', label: 'Created' },
+  ready: { pill: 'bg-blue-100 text-blue-800 border-blue-300', dot: 'bg-blue-600', label: 'Ready' },
+  duplicate: { pill: 'bg-amber-100 text-amber-900 border-amber-300', dot: 'bg-amber-600', label: 'Duplicate' },
+  invalid: { pill: 'bg-red-100 text-red-800 border-red-300', dot: 'bg-red-600', label: 'Invalid' },
+};
+const formatIDR = (n: number) => Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
+
+// Klasifikasi file untuk KPI -- 1 file masuk tepat 1 kelompok. Upload hanya mengisi staging (status_mapping 'Processing'
+// sampai baris dibuat jadi transaksi lewat Create Transaction).
+function fileGroup(f: BackendPurchaseSourceFile): 'pending' | 'success' | 'review' {
+  if (f.status_ekstraksi === 'Needs Review' || f.status_ekstraksi === 'Failed' || f.status_mapping === 'Needs Review' || f.status_mapping === 'Failed') return 'review';
+  if (f.status_ekstraksi === 'Completed' && f.status_mapping === 'Completed') return 'success';
+  return 'pending';
+}
+
 function buildPageItems(current: number, total: number): (number | '…')[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const pages = new Set<number>([1, total, current - 1, current, current + 1]);
@@ -97,6 +149,53 @@ export default function PurchaseSourceDataPage() {
   const paginated = sourceFiles.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
   const goToPage = (n: number) => setCurrentPage(Math.min(Math.max(1, n), totalPages));
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const selectedFile: BackendPurchaseSourceFile | null = sourceFiles.find(f => f.id === selectedFileId) ?? sourceFiles[0] ?? null;
+  useEffect(() => {
+    if (!selectedFileId && sourceFiles.length > 0) setSelectedFileId(sourceFiles[0].id);
+    if (selectedFileId && !sourceFiles.some(f => f.id === selectedFileId)) setSelectedFileId(sourceFiles[0]?.id ?? null);
+  }, [sourceFiles, selectedFileId]);
+
+  // File Preview: baris staging file terpilih, dipaging 20 baris/halaman (file bisa berisi ribuan transaksi).
+  const { rows: previewRows, loading: loadingRows } = usePurchaseSourceRows(selectedFile?.id);
+  const [previewPage, setPreviewPage] = useState(1);
+  useEffect(() => { setPreviewPage(1); }, [selectedFile?.id]);
+  const previewTotalPages = Math.max(1, Math.ceil(previewRows.length / PREVIEW_PAGE_SIZE));
+  const previewPageSafe = Math.min(previewPage, previewTotalPages);
+  const pagedPreviewRows = previewRows.slice((previewPageSafe - 1) * PREVIEW_PAGE_SIZE, previewPageSafe * PREVIEW_PAGE_SIZE);
+  const jumlahSiap = previewRows.filter(r => rowState(r) === 'ready').length;
+  const jumlahDibuat = previewRows.filter(r => rowState(r) === 'created').length;
+
+  // Create Transaction: naikkan baris valid file terpilih jadi Purchase Transaction draft (aman diulang).
+  const [isPromoting, setIsPromoting] = useState(false);
+  const handleCreateTransactions = async () => {
+    if (!selectedFile) return;
+    setIsPromoting(true);
+    try {
+      const hasil = await promotePurchaseSourceFile(selectedFile.id);
+      if (hasil.transaksi_dibuat > 0) {
+        toast.success('Transactions created', {
+          description: `${hasil.transaksi_dibuat} new draft purchase transactions -- check the Purchase Transaction tab.`
+            + (hasil.dilewati_gagal_insert > 0 ? ` ${hasil.dilewati_gagal_insert} failed to save.` : ''),
+        });
+        if (hasil.dilewati_gagal_insert > 0) {
+          toast.error('Some rows failed to save', { description: hasil.error_insert ?? undefined, duration: 20000 });
+        }
+      } else if (hasil.dilewati_gagal_insert > 0) {
+        toast.error('Failed to save transactions', {
+          description: `${hasil.dilewati_gagal_insert} rows failed to save (database error). ${hasil.error_insert ?? ''}`,
+          duration: 20000,
+        });
+      } else {
+        toast.info('No new transactions', {
+          description: `${hasil.dilewati_sudah_pernah_dipromosikan} already created, ${hasil.dilewati_tidak_valid} invalid, ${hasil.dilewati_duplikat} duplicate, ${hasil.dilewati_no_bentrok} purchase number conflicts.`,
+        });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create transactions');
+    } finally {
+      setIsPromoting(false);
+    }
+  };
 
   // Menu aksi "···" per baris file: hapus PERMANEN file beserta semua transaksi turunannya (pola sama dengan Source Data Sales).
   const [menuFileId, setMenuFileId] = useState<string | null>(null);
@@ -193,9 +292,9 @@ export default function PurchaseSourceDataPage() {
     const sumRows = (rows: typeof sourceFiles) => rows.reduce((acc, r) => acc + (r.rows_detected || 0), 0);
     return [
       { label: 'Total File Upload', rows: sourceFiles, icon: Upload },
-      { label: 'Pending Processing', rows: sourceFiles.filter(f => f.status_ekstraksi === 'Processing'), icon: Clock },
-      { label: 'Successfully Processed', rows: sourceFiles.filter(f => f.status_ekstraksi === 'Completed'), icon: CheckCircle },
-      { label: 'Needs Review', rows: sourceFiles.filter(f => f.status_ekstraksi === 'Needs Review' || f.status_ekstraksi === 'Failed'), icon: AlertTriangle },
+      { label: 'Pending Processing', rows: sourceFiles.filter(f => fileGroup(f) === 'pending'), icon: Clock },
+      { label: 'Successfully Processed', rows: sourceFiles.filter(f => fileGroup(f) === 'success'), icon: CheckCircle },
+      { label: 'Needs Review', rows: sourceFiles.filter(f => fileGroup(f) === 'review'), icon: AlertTriangle },
     ].map(k => ({ ...k, detail: sumRows(k.rows).toLocaleString('id-ID') }));
   }, [sourceFiles]);
 
@@ -272,7 +371,7 @@ export default function PurchaseSourceDataPage() {
                   <tr
                     key={f.id}
                     onClick={() => setSelectedFileId(f.id)}
-                    className={`cursor-pointer [&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200 text-xs ${selectedFileId === f.id ? '[&>td]:bg-neutral-100' : ''}`}
+                    className={`cursor-pointer [&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200 text-xs ${selectedFile?.id === f.id ? '[&>td]:bg-neutral-100' : ''}`}
                   >
                     <td className="py-2 px-2 text-foreground whitespace-nowrap">{formatTanggalWaktu(f.uploaded_at)}</td>
                     <td className="py-2 px-2 whitespace-nowrap">
@@ -368,6 +467,106 @@ export default function PurchaseSourceDataPage() {
             </div>
           </div>
         </div>
+
+        {/* File Preview -- baris staging file terpilih + tombol Create Transaction */}
+        <SourcePanel
+          title="File Preview"
+          leading={<span className={PANEL_ICON_CHIP}><FileText size={17} /></span>}
+          action={selectedFile && jumlahSiap > 0 ? (
+            <button
+              onClick={handleCreateTransactions}
+              disabled={isPromoting}
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Turn the valid rows into draft purchase transactions in the Purchase Transaction tab"
+            >
+              {isPromoting ? 'Processing...' : `Create Transaction (${jumlahSiap.toLocaleString('id-ID')})`}
+            </button>
+          ) : undefined}
+        >
+          {selectedFile ? (
+            <div className="mb-3 flex items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-2.5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-[11px] font-bold uppercase tracking-wider text-white">{(selectedFile.file_type || '?').slice(0, 3)}</div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-neutral-900">{selectedFile.file_name}</p>
+                <p className="text-xs font-medium text-neutral-500">
+                  {selectedFile.rows_detected.toLocaleString('id-ID')} rows · Uploaded {formatTanggalWaktu(selectedFile.uploaded_at)}
+                  {previewRows.length > 0 ? ` · ${jumlahDibuat.toLocaleString('id-ID')} created, ${jumlahSiap.toLocaleString('id-ID')} ready` : ''}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="mb-3 text-xs text-neutral-500">No file selected.</p>
+          )}
+          {selectedFile && !loadingRows && previewRows.length === 0 && (
+            <p className="py-6 text-center text-xs text-neutral-500">No rows for this file.</p>
+          )}
+          {selectedFile && previewRows.length > 0 && jumlahSiap === 0 && jumlahDibuat > 0 && (
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+              <CheckCircle size={14} /> All valid rows have been created as purchase transactions.
+            </div>
+          )}
+          {selectedFile && previewRows.length > 0 && (
+            <>
+              <div className="overflow-x-auto scrollbar-thin">
+                <table className="w-full min-w-[820px] select-text border-separate border-spacing-0 text-xs">
+                  <thead>
+                    <tr className="bg-neutral-300">
+                      {['No', 'Date', 'Invoice No.', 'Vendor', 'Branch', 'DPP (IDR)', 'PPN (IDR)', 'Total (IDR)', 'Status'].map(h => (
+                        <th key={h} className={`whitespace-nowrap border-b border-t border-neutral-800 px-2 py-2 text-xs font-bold text-black ${['DPP (IDR)', 'PPN (IDR)', 'Total (IDR)'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedPreviewRows.map(r => {
+                      const st = ROW_STATE_STYLE[rowState(r)];
+                      return (
+                        <tr key={r.id} className="[&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200">
+                          <td className="px-2 py-2 text-neutral-600">{r.row_no}</td>
+                          <td className="whitespace-nowrap px-2 py-2">{r.tanggal ? formatTanggalSingkat(r.tanggal) : '-'}</td>
+                          <td className="whitespace-nowrap px-2 py-2 font-medium text-blue-700">{r.no_invoice || '-'}</td>
+                          <td className="whitespace-nowrap px-2 py-2 font-medium text-neutral-900 max-w-[220px] truncate">{r.nama_vendor || '-'}</td>
+                          <td className="whitespace-nowrap px-2 py-2 text-neutral-600">{r.cabang || '-'}</td>
+                          <td className="px-2 py-2 text-right tabular-nums">{formatIDR(r.dpp)}</td>
+                          <td className="px-2 py-2 text-right tabular-nums">{formatIDR(r.ppn)}</td>
+                          <td className="px-2 py-2 text-right font-semibold tabular-nums">{formatIDR(r.total)}</td>
+                          <td className="whitespace-nowrap px-2 py-2">
+                            <span title={r.validation_notes || undefined} className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium border ${st.pill}`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{st.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 flex items-center justify-between border-t border-neutral-200 pt-3 text-xs text-neutral-500">
+                <span>
+                  <span className="font-semibold text-foreground">{(previewPageSafe - 1) * PREVIEW_PAGE_SIZE + 1}–{Math.min(previewPageSafe * PREVIEW_PAGE_SIZE, previewRows.length)}</span> of <span className="font-semibold text-foreground">{previewRows.length}</span>
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPreviewPage(p => Math.max(1, p - 1))}
+                    disabled={previewPageSafe <= 1}
+                    aria-label="Previous page"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-card"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <span className="min-w-[3.5rem] text-center font-semibold text-foreground">{previewPageSafe} / {previewTotalPages}</span>
+                  <button
+                    onClick={() => setPreviewPage(p => Math.min(previewTotalPages, p + 1))}
+                    disabled={previewPageSafe >= previewTotalPages}
+                    aria-label="Next page"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-card"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </SourcePanel>
       </div>
 
       {showMapping && <MappingRulesModal onClose={() => setShowMapping(false)} loadTemplates={loadTemplates} />}

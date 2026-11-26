@@ -7475,6 +7475,97 @@ def update_purchase_source_row(source_row_id: str, data: Dict[str, Any], updated
     return _purchase_crud_update(PurchaseSourceRow, CRUD_FIELDS_PURCHASE_SOURCE_ROW, source_row_id, data, updated_by)
 
 
+def promote_purchase_rows(source_file_id: str, user_id: Optional[str] = None) -> Dict[str, Any]:
+    """[BARU] Tombol "Create Transaction" Source Data Purchase: naikkan baris staging VALID satu file jadi Purchase
+    Transaction 'draft' + baris itemnya. Header & item dibaca dari kolom `payload` (diisi upload, lihat
+    purchase_import_v1._baris_sumber) -- file asli tidak disimpan di server, jadi tidak dibaca ulang.
+
+    Aturan dilewati (dihitung terpisah):
+      - tidak valid / tidak punya payload lengkap (baris gagal ekstraksi)
+      - duplikat (is_duplicate_candidate: no. pembelian sudah ada di DB/file saat upload)
+      - sudah pernah dipromosikan (transaction_id terisi)
+      - bentrok: no. pembelian SUDAH dipakai transaksi lain saat promote (dicek ulang karena bisa dibuat setelah
+        upload, mis. input manual / file lain) -- juga menangkap no. dobel di dalam file ini
+    Tiap baris = 1 transaksi DB atomik (transaksi + item + transaction_id staging); baris yang gagal tidak
+    menggagalkan baris lain. Aman dipanggil ulang: baris yang sudah naik dilewati.
+    Return {total_baris, transaksi_dibuat, dilewati_*, dilewati_gagal_insert, error_insert, sisa_belum_dibuat}."""
+    session = SessionLocal()
+    try:
+        rows = session.query(
+            PurchaseSourceRow.id, PurchaseSourceRow.row_no, PurchaseSourceRow.is_valid,
+            PurchaseSourceRow.is_duplicate_candidate, PurchaseSourceRow.transaction_id, PurchaseSourceRow.payload,
+        ).filter(
+            PurchaseSourceRow.source_file_id == source_file_id, PurchaseSourceRow.deleted_at.is_(None),
+        ).order_by(PurchaseSourceRow.row_no).all()
+    finally:
+        session.close()
+
+    hasil = {
+        "total_baris": len(rows), "transaksi_dibuat": 0, "dilewati_tidak_valid": 0, "dilewati_duplikat": 0,
+        "dilewati_sudah_pernah_dipromosikan": 0, "dilewati_no_bentrok": 0, "dilewati_gagal_insert": 0,
+        "error_insert": None, "sisa_belum_dibuat": 0, "transaksi": [],
+    }
+
+    def _tanggal(v: Any) -> Optional[date]:
+        if not v:
+            return None
+        if isinstance(v, date):
+            return v
+        try:
+            return date.fromisoformat(str(v)[:10])
+        except ValueError:
+            return None
+
+    for (rid, row_no, valid, duplikat, transaction_id, payload) in rows:
+        if transaction_id:
+            hasil["dilewati_sudah_pernah_dipromosikan"] += 1
+            continue
+        header = (payload or {}).get("header") if isinstance(payload, dict) else None
+        lines = (payload or {}).get("lines") if isinstance(payload, dict) else None
+        if duplikat:
+            hasil["dilewati_duplikat"] += 1
+            continue
+        if not valid or not header or not lines:
+            hasil["dilewati_tidak_valid"] += 1
+            continue
+        data = dict(header)
+        data["purchase_date"] = _tanggal(data.get("purchase_date"))
+        # Cek ulang bentrok no. pembelian (client_id = pemilik transaksi, sama dengan cek saat upload).
+        if get_purchase_transaction_by_client_and_no(data.get("client_id"), data["purchase_no"]):
+            hasil["dilewati_no_bentrok"] += 1
+            continue
+        error_db: List[str] = []
+        dibuat = create_purchase_transaction_with_lines(
+            data, lines, created_by=user_id, error_out=error_db, source_row_id=str(rid),
+        )
+        if dibuat is None:
+            pesan = error_db[0] if error_db else ""
+            if "SOURCE_ROW_SUDAH_DIPROMOSIKAN" in pesan:
+                hasil["dilewati_sudah_pernah_dipromosikan"] += 1
+            elif "duplicate key" in pesan:
+                hasil["dilewati_no_bentrok"] += 1
+            else:
+                hasil["dilewati_gagal_insert"] += 1
+                if hasil["error_insert"] is None:
+                    hasil["error_insert"] = pesan[:400] or "database error"
+            continue
+        hasil["transaksi_dibuat"] += 1
+        hasil["transaksi"].append({"row_no": row_no, "purchase_no": data["purchase_no"], "transaction_id": dibuat.get("id")})
+
+    # Baris yang masih bisa dipromosikan (valid, bukan duplikat, belum punya transaksi, payload lengkap).
+    session = SessionLocal()
+    try:
+        sisa = session.query(PurchaseSourceRow.id, PurchaseSourceRow.payload).filter(
+            PurchaseSourceRow.source_file_id == source_file_id, PurchaseSourceRow.deleted_at.is_(None),
+            PurchaseSourceRow.is_valid.is_(True), PurchaseSourceRow.is_duplicate_candidate.is_(False),
+            PurchaseSourceRow.transaction_id.is_(None),
+        ).all()
+        hasil["sisa_belum_dibuat"] = sum(1 for _, pl in sisa if isinstance(pl, dict) and pl.get("header") and pl.get("lines"))
+    finally:
+        session.close()
+    return hasil
+
+
 # --- 5) financial_transaction_purchase_import_templates ---
 # Pola sama dengan CRUD_FIELDS_JE_IMPORT_TEMPLATE -- client_id di sini
 # reference ke management_clients, list di-order by usage_count.
@@ -7740,8 +7831,13 @@ def create_purchase_transaction_with_lines(
     lines_data: List[Dict[str, Any]],
     created_by: Optional[str] = None,
     error_out: Optional[List[str]] = None,
+    source_row_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Buat 1 Purchase Transaction + SELURUH baris item/jasa-nya dalam SATU
+    """[DIUBAH] source_row_id (opsional, dipakai promote Source Data): baris staging itu dikunci (FOR UPDATE) lalu
+    transaction_id-nya diisi di transaksi DB yang SAMA dengan pembuatan transaksi -- atomik, dan klik ganda /
+    promote paralel tidak bisa membuat transaksi dobel (yang kedua gagal dengan SOURCE_ROW_SUDAH_DIPROMOSIKAN).
+
+    Buat 1 Purchase Transaction + SELURUH baris item/jasa-nya dalam SATU
     transaksi (atomik) -- pola sama persis alasannya dengan
     create_je_draft_with_lines() (supaya tidak ada transaksi "yatim" tanpa
     baris kalau salah satu insert baris gagal di tengah jalan).
@@ -7767,6 +7863,14 @@ def create_purchase_transaction_with_lines(
         total = sum(Decimal(str(l.get("total") or 0)) for l in lines_data)
         accounts_payable = Decimal(str(transaction_data.get("accounts_payable"))) if transaction_data.get("accounts_payable") is not None else total
 
+        baris_sumber = None
+        if source_row_id:
+            baris_sumber = session.query(PurchaseSourceRow).filter(
+                PurchaseSourceRow.id == source_row_id, PurchaseSourceRow.deleted_at.is_(None),
+            ).with_for_update().first()
+            if baris_sumber is None or baris_sumber.transaction_id:
+                raise ValueError("SOURCE_ROW_SUDAH_DIPROMOSIKAN")
+
         tx = PurchaseTransaction(
             **{k: v for k, v in transaction_data.items() if k in CRUD_FIELDS_PURCHASE_TRANSACTION and k not in ("subtotal", "discount", "tax_amount", "total", "accounts_payable")},
             subtotal=subtotal,
@@ -7778,6 +7882,10 @@ def create_purchase_transaction_with_lines(
         )
         session.add(tx)
         session.flush()  # isi tx.id sebelum dipakai FK baris di bawah
+        if baris_sumber is not None:
+            baris_sumber.transaction_id = tx.id
+            baris_sumber.edited_at = datetime.now()
+            baris_sumber.edited_by = created_by
 
         for idx, line in enumerate(lines_data, start=1):
             session.add(PurchaseTransactionLine(

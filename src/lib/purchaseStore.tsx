@@ -350,6 +350,8 @@ export interface PurchaseImportTransactionResult {
 export interface UploadPurchaseSourceFileResult {
   template_matched: boolean;
   transactions_detected: number;
+  /** Jumlah transaksi yang disimpan ke staging Source Data (belum jadi transaksi -- `created` selalu 0). */
+  staged?: number;
   created: number;
   skipped_invalid?: number;
   skipped_duplicate?: number;
@@ -442,6 +444,82 @@ export function usePurchaseSourceFiles(companyId: string | null | undefined): {
   }, [muatUlang]);
 
   return { files, loading, error, refresh: muatUlang };
+}
+
+// ------------------------------------------------------------
+// Source Rows (panel File Preview) + promote (tombol Create Transaction)
+// ------------------------------------------------------------
+
+/** 1 baris staging = 1 transaksi pembelian (1 blok di laporan). transaction_id terisi = sudah dibuat jadi Purchase Transaction. */
+export interface BackendPurchaseSourceRow {
+  id: string;
+  source_file_id: string;
+  row_no: number;
+  tanggal: string | null;
+  no_invoice: string | null;
+  nama_vendor: string | null;
+  vendor_code: string | null;
+  cabang: string | null;
+  dpp: number;
+  ppn: number;
+  total: number;
+  is_valid: boolean;
+  validation_notes: string | null;
+  is_duplicate_candidate: boolean;
+  transaction_id: string | null;
+}
+
+/** GET /import/source-files/{id}/rows -- baris staging 1 file (tanpa payload item), urut row_no. */
+export async function listPurchaseSourceRows(sourceFileId: string): Promise<BackendPurchaseSourceRow[]> {
+  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/import/source-files/${sourceFileId}/rows`);
+  return baca<BackendPurchaseSourceRow[]>(res);
+}
+
+export function usePurchaseSourceRows(sourceFileId: string | null | undefined): {
+  rows: BackendPurchaseSourceRow[]; loading: boolean; error: string | null; refresh: () => void;
+} {
+  const [rows, setRows] = useState<BackendPurchaseSourceRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const muatUlang = useCallback(() => {
+    if (!sourceFileId) { setRows([]); setLoading(false); return; }
+    setLoading(true);
+    listPurchaseSourceRows(sourceFileId)
+      .then(data => { setRows(data); setError(null); })
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load source data rows'))
+      .finally(() => setLoading(false));
+  }, [sourceFileId]);
+
+  useEffect(() => {
+    muatUlang();
+    window.addEventListener(PURCHASE_CHANGED_EVENT, muatUlang);
+    return () => window.removeEventListener(PURCHASE_CHANGED_EVENT, muatUlang);
+  }, [muatUlang]);
+
+  return { rows, loading, error, refresh: muatUlang };
+}
+
+/** Ringkasan POST /import/source-files/{id}/promote-to-transactions. */
+export interface PromotePurchaseToTransactionsResult {
+  total_baris: number;
+  transaksi_dibuat: number;
+  dilewati_tidak_valid: number;
+  dilewati_duplikat: number;
+  dilewati_sudah_pernah_dipromosikan: number;
+  dilewati_no_bentrok: number;
+  dilewati_gagal_insert: number;
+  error_insert: string | null;
+  sisa_belum_dibuat: number;
+  status_mapping: PurchaseSourceFileStatus;
+  transactions: { row_no: number; purchase_no: string; transaction_id: string | null }[];
+}
+
+/** Buat Purchase Transaction (draft) dari baris valid 1 file. Aman dipanggil ulang -- baris yang sudah dibuat dilewati. */
+export async function promotePurchaseSourceFile(sourceFileId: string): Promise<PromotePurchaseToTransactionsResult> {
+  const result = await post<PromotePurchaseToTransactionsResult>(`${PURCHASE_BASE_URL}/import/source-files/${sourceFileId}/promote-to-transactions`, {});
+  notifyPurchaseChanged();
+  return result;
 }
 
 /** Purchase Import Template aktif milik company -- GET /import/templates

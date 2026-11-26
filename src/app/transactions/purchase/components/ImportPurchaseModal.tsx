@@ -48,7 +48,7 @@ export default function ImportPurchaseModal({ onClose }: { onClose: () => void }
           tidakCocok.push(file.name);
           continue;
         }
-        created += hasil.created;
+        created += hasil.staged ?? hasil.created;
         detected += hasil.transactions_detected;
         semua.push(...hasil.transactions);
       } catch (err) {
@@ -67,7 +67,7 @@ export default function ImportPurchaseModal({ onClose }: { onClose: () => void }
     setResults(semua);
     setPage(1);
     setSummary(
-      `${created} of ${detected} purchase transactions imported as draft` +
+      `${created} of ${detected} purchase transactions saved to Source Data` +
       (tidakCocok.length ? ` -- ${tidakCocok.length} file(s) not recognized: ${tidakCocok.join(', ')}` : '') + '.',
     );
     setStep('result');
