@@ -748,10 +748,13 @@ def _cari_header_ledger(rows: List[List[Any]], header_row_index: int) -> Optiona
     return next((i for i in range(min(15, len(rows))) if cocok(i)), None)
 
 
-def _blok_ditandai(cabang: str, pesan: str) -> Dict[str, Any]:
+def _blok_ditandai(cabang: str, pesan: str, periode: Optional[Tuple[int, int]] = None) -> Dict[str, Any]:
     """Baris TIDAK VALID berisi pesan (angka 0, tanpa nomor/tanggal) supaya hal yang perlu ditinjau
-    terlihat di Source Data (status 'Butuh Review') dan tidak jadi transaksi -- bukan hilang diam-diam."""
+    terlihat di Source Data (status 'Butuh Review') dan tidak jadi transaksi -- bukan hilang diam-diam.
+    periode = (tahun, bulan) sheet asal; dipakai _saring_periode_nama_file supaya blok ini hanya ikut
+    upload bulannya sendiri (bukan menempel di semua file bulan lain)."""
     return {
+        "periode_sheet": f"{periode[0]}-{periode[1]:02d}" if periode else None,
         "purchase_no": "", "purchase_date": None, "dept": cabang, "vendor_code": "", "vendor_name": "",
         "subtotal": 0.0, "potongan": 0.0, "pajak": 0.0, "biaya": 0.0, "total_akhir": 0.0,
         "lines": [], "notes": [], "warnings": [], "errors": [pesan],
@@ -773,6 +776,13 @@ def _parse_monthly_petty_cash_ledger(sumber: "_LedgerSumber", recipe: Dict[str, 
     kategori_default = recipe.get("kategori_default", "Lainnya")
     kategori_pc_default = recipe.get("purchase_category_default")  # kategori Purchase (Utilities, Maintenance, ...)
     tanggal_kosong = recipe.get("tanggal_kosong", "kosong")  # "kosong" | "ikut_baris_sebelumnya"
+    # Opsional (default mati, client lain tidak berubah):
+    #   periksa_saldo             : saldo berjalan (Saldo Awal + Debet - Credit) dicocokkan ke kolom SALDO tiap baris;
+    #                               selisih > toleransi_saldo (default 1) ditandai "Butuh Review" (baris hilang / diubah).
+    #   tandai_kemungkinan_ganda  : baris dengan sheet+tanggal+keterangan+nominal sama diberi PERINGATAN (tetap diimpor).
+    periksa_saldo = bool(recipe.get("periksa_saldo"))
+    toleransi_saldo = float(recipe.get("toleransi_saldo", 1.0))
+    tandai_ganda = bool(recipe.get("tandai_kemungkinan_ganda"))
     akun_kategori = {
         _norm_label(k): v for k, v in (recipe.get("line_account_by_kategori") or {}).items()
         if isinstance(v, dict) and v.get("account_code")
@@ -794,34 +804,54 @@ def _parse_monthly_petty_cash_ledger(sumber: "_LedgerSumber", recipe: Dict[str, 
             rows = _baris_sheet(wb[nama])
             hi = _cari_header_ledger(rows, header_row_index)
             if hi is None:
-                hasil.append(_blok_ditandai(cabang, f"Sheet '{nama}': header row (NO / TANGGAL / KETERANGAN / DEBET / CREDIT) not found -- sheet skipped."))
+                hasil.append(_blok_ditandai(cabang, f"Sheet '{nama}': header row (NO / TANGGAL / KETERANGAN / DEBET / CREDIT) not found -- sheet skipped.", (tahun, bulan)))
                 continue
             urut = 0
             tanggal_terakhir: Optional[date] = None  # untuk tanggal_kosong = ikut_baris_sebelumnya (per sheet)
+            saldo_jalan: Optional[float] = None  # periksa_saldo: saldo berjalan (per sheet)
+            sudah_ada: Dict[Tuple[Any, ...], int] = {}  # tandai_kemungkinan_ganda: kunci baris -> nomor baris pertama
+            periode = (tahun, bulan)
             for i in range(hi + 1, len(rows)):
                 r = rows[i]
                 if all(v is None or str(v).strip() == "" for v in r):
                     continue
                 ket = " ".join(str(sel(r, "keterangan") or "").split())
+                saldo_mentah = sel(r, "saldo")
+                saldo_file = _nilai_angka_sel(saldo_mentah, number_format) if saldo_mentah not in (None, "") else None
                 if ket and rx_baris_saldo.match(ket):
+                    if periksa_saldo and saldo_jalan is None and saldo_file is not None:
+                        saldo_jalan = saldo_file  # Saldo Awal sheet = titik mulai
                     continue  # Saldo Awal / Saldo Per ...
                 debet = _nilai_angka_sel(sel(r, "debet"), number_format)
                 kredit = _nilai_angka_sel(sel(r, "kredit"), number_format)
                 posisi = f"sheet '{nama}', row {i + 1}"
+                if periksa_saldo and (debet or kredit):
+                    if saldo_jalan is not None and saldo_file is not None:
+                        harapan = saldo_jalan + debet - kredit
+                        if abs(harapan - saldo_file) > toleransi_saldo:
+                            hasil.append(_blok_ditandai(cabang, (
+                                f"{posisi}: running balance in the file is {saldo_file:,.0f} but previous balance + Debit - Credit "
+                                f"= {harapan:,.0f} (difference {saldo_file - harapan:,.0f}) -- a row may be missing, edited or "
+                                "mistyped above; review."), periode))
+                        saldo_jalan = saldo_file  # sinkron ulang ke file supaya selisih tidak menjalar ke baris berikutnya
+                    elif saldo_file is not None:
+                        saldo_jalan = saldo_file
+                    elif saldo_jalan is not None:
+                        saldo_jalan = saldo_jalan + debet - kredit
 
                 if kredit > 0 and debet > 0:
-                    hasil.append(_blok_ditandai(cabang, f"{posisi}: '{ket}' has both Debit {debet:,.0f} and Credit {kredit:,.0f} -- not imported, review."))
+                    hasil.append(_blok_ditandai(cabang, f"{posisi}: '{ket}' has both Debit {debet:,.0f} and Credit {kredit:,.0f} -- not imported, review.", periode))
                     continue
                 if kredit <= 0:
                     if debet > 0 and not (ket and rx_debet_masuk.match(ket)):
                         pesan = f"'{ket}'" if ket else "an entry without description"
-                        hasil.append(_blok_ditandai(cabang, f"{posisi}: Debit {debet:,.0f} ({pesan}) is not a purchase and was not imported (cash-in/correction) -- review."))
+                        hasil.append(_blok_ditandai(cabang, f"{posisi}: Debit {debet:,.0f} ({pesan}) is not a purchase and was not imported (cash-in/correction) -- review.", periode))
                     elif kredit < 0 and ket:
-                        hasil.append(_blok_ditandai(cabang, f"{posisi}: negative Credit {kredit:,.0f} ('{ket}') -- not imported, review."))
+                        hasil.append(_blok_ditandai(cabang, f"{posisi}: negative Credit {kredit:,.0f} ('{ket}') -- not imported, review.", periode))
                     continue  # pencairan dana, baris total/kosong, teks tanpa nominal
 
                 if not ket and sel(r, "no") in (None, "") and sel(r, "tanggal") in (None, ""):
-                    hasil.append(_blok_ditandai(cabang, f"{posisi}: Credit {kredit:,.0f} has no description, number or date (looks like a stray total) -- not imported, review."))
+                    hasil.append(_blok_ditandai(cabang, f"{posisi}: Credit {kredit:,.0f} has no description, number or date (looks like a stray total) -- not imported, review.", periode))
                     continue
 
                 urut += 1
@@ -851,6 +881,12 @@ def _parse_monthly_petty_cash_ledger(sumber: "_LedgerSumber", recipe: Dict[str, 
                     info.append(f"Date not in the source; taken from the previous dated row ({tanggal.isoformat()}).")
                 if not ket:
                     peringatan.append("Description is empty in the source.")
+                if tandai_ganda:
+                    kunci_ganda = (tanggal, ket.lower(), round(kredit, 2))
+                    if kunci_ganda in sudah_ada:
+                        peringatan.append(f"Possible duplicate of row {sudah_ada[kunci_ganda]} (same date, description and amount) -- verify it is not a double entry.")
+                    else:
+                        sudah_ada[kunci_ganda] = i + 1
 
                 kategori, kategori_pc = next(((nm, pc) for nm, rx, pc in aturan_kategori if rx.search(ket)), (kategori_default, kategori_pc_default))
                 akun = akun_kategori.get(_norm_label(kategori))
@@ -877,6 +913,7 @@ def _parse_monthly_petty_cash_ledger(sumber: "_LedgerSumber", recipe: Dict[str, 
                         baris_item["account_name"] = akun.get("account_name")
                 if kategori_pc:
                     blok["category"] = kategori_pc
+                blok["periode_sheet"] = f"{tahun}-{bulan:02d}"
                 blok["warnings"].extend(peringatan)
                 blok["notes"].extend([*peringatan, *info, f"Category: {kategori}", f"Source: {posisi}"])
                 hasil.append(blok)
@@ -974,7 +1011,24 @@ def _saring_periode_nama_file(hasil: List[Dict[str, Any]], mapping_rules: Dict[s
             "Rename the file and upload again, e.g. UBD_PURCHASE_202608.xlsx (one month) or "
             "UBD_PURCHASE_20260801-20260815.xlsx (date range)."
         )
-    terpilih = [t for t in hasil if t.get("purchase_date") is None or p["awal"] <= t["purchase_date"] <= p["akhir"]]
+    def _dalam_periode(t: Dict[str, Any]) -> bool:
+        d = t.get("purchase_date")
+        if d is not None:
+            return p["awal"] <= d <= p["akhir"]
+        # Tanpa tanggal: kalau parser membawa bulan sheet asalnya (buku kas kecil), ikut bulan itu saja, bukan semua
+        # file bulan lain. Tanpa info bulan sheet -> tetap dibawa (perilaku lama).
+        ps = t.get("periode_sheet")
+        if not ps:
+            return True
+        try:
+            th, bl = (int(x) for x in str(ps).split("-"))
+            awal_bulan = date(th, bl, 1)
+            akhir_bulan = date(th + (bl == 12), bl % 12 + 1, 1) - timedelta(days=1)
+        except (ValueError, TypeError):
+            return True
+        return awal_bulan <= p["akhir"] and akhir_bulan >= p["awal"]
+
+    terpilih = [t for t in hasil if _dalam_periode(t)]
     dilewati = len(hasil) - len(terpilih)
     label = _label_periode(p)
     if hasil and not terpilih:

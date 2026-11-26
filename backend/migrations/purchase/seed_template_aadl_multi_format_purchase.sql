@@ -118,6 +118,24 @@
 -- level baris hanya pengisi kolom NOT NULL untuk template Multi.
 --
 --
+-- REVISI 2026-11-26 (penguatan template AADL; hasil uji dengan parser ASLI ke 5 file contoh):
+--   1. FILTER BULAN DARI NAMA FILE DIPERBAIKI. Dulu baris TANPA TANGGAL (Putu: 24 baris) dan baris
+--      TIDAK VALID ikut terbawa ke SETIAP file bulan, jadi upload ..._202605 ikut membawa baris bulan
+--      lain. Sekarang tiap baris membawa bulan sheet asalnya (purchase_import_v1.py, "periode_sheet")
+--      dan baris tanpa tanggal hanya ikut file bulannya sendiri. Contoh Putu, nama file 202605:
+--      sebelumnya 78 baris (25 tanpa tanggal/penanda) -> sekarang hanya yang bulan Mei.
+--   2. CEK SALDO BERJALAN (recipe.periksa_saldo): Saldo Awal + Debet - Credit dicocokkan ke kolom
+--      SALDO tiap baris. Selisih > toleransi_saldo (1 rupiah) ditandai "Butuh Review" (ada baris
+--      hilang/terubah/salah ketik di atasnya). File contoh lolos 100% (0 selisih).
+--   3. TANDA KEMUNGKINAN GANDA (recipe.tandai_kemungkinan_ganda): baris dengan sheet+tanggal+
+--      keterangan+nominal sama diberi PERINGATAN, tetap diimpor (13 baris di 5 file contoh).
+--   4. KATEGORI diperluas (typo, sinonim): baris "Lainnya" turun dari 123 menjadi 24 dari 2.782
+--      transaksi; kategori baru "Sewa", "Acara, Hadiah & Dekorasi", "Kemasan & Peralatan Saji" (urut
+--      di AKHIR daftar supaya kategori yang sudah benar tidak bergeser; hanya 1 baris campuran
+--      berpindah: "SKM,plastik sampa,detergent" Peralatan -> Kebersihan). Akun: Sewa -> 620004,
+--      Kemasan -> 620010; Acara memakai akun umum 620024.
+--   Total hasil impor TIDAK berubah: 2.782 transaksi, Rp 701.674.872 (sama dengan hitungan sel Excel).
+--
 -- NAMA FILE = PERIODE (opsional, seperti Sales/UBD/NBM): resep tiap varian memakai
 --   "filter_periode_nama_file": "jika_ada".
 --   * Nama file memuat bulan+tahun (mis. Rekapan_Pembayaran_Pattycash_Warung_Soemantri_202601.xlsx) atau rentang tanggal -> hanya transaksi
@@ -170,7 +188,8 @@ BEGIN
         RAISE EXCEPTION 'Klien AADL belum ada di management_clients (dicari client_code = ''AADL''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
-    v_rules := $json${
+    v_rules := $json$
+{
   "format_type": "multi_format",
   "description": "1 setting klien AADL untuk file pembelian: buku kas kecil (rekap pembayaran patty cash) per cabang. 5 varian Excel, 1 per cabang; varian dikenali lewat baris JUDUL sheet bulanan (column_signature_hash = hash judul). Varian CSV/PDF ditambahkan kemudian ke array variants.",
   "variants": [
@@ -190,7 +209,7 @@ BEGIN
       ],
       "mapping_rules": {
         "format_type": "monthly_petty_cash_ledger",
-        "description": "Buku kas kecil (rekap pembayaran patty cash) WARUNG SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 3: Warung Soemantri.",
+        "description": "Buku kas kecil (rekap pembayaran patty cash) WARUNG SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 3: Warung Soemantri. Cek saldo berjalan + tanda kemungkinan baris ganda aktif.",
         "source_kind": "excel_workbook_monthly",
         "filter_periode_nama_file": "jika_ada",
         "jatuh_tempo_hari": 30,
@@ -225,7 +244,7 @@ BEGIN
         "kategori_rules": [
           {
             "kategori": "Listrik",
-            "pattern": "listrik|\\btoken\\b|\\bpln\\b",
+            "pattern": "listrik|\\btoken\\b|\\bpln\\b|listtik|list+rik",
             "purchase_category": "Utilities"
           },
           {
@@ -265,44 +284,62 @@ BEGIN
           },
           {
             "kategori": "BBM & Transportasi",
-            "pattern": "\\bbbm\\b|bensin|solar|parkir|e-?money|\\btol\\b|transport|grab|gojek|\\bojek\\b|kirim|ongkir|bandara|angkut|\\btiket\\b|\\bspbu\\b",
+            "pattern": "\\bbbm\\b|bensin|solar|parkir|e-?money|\\btol\\b|transport|grab|gojek|\\bojek\\b|kirim|ongkir|bandara|angkut|\\btiket\\b|\\bspbu\\b|e-?toll|etoll|cuci mobil|mencuci mobil|pencucian mobil|accu elf|\\belf\\b|tambah angin|cover mobil|sewa mobil|\\bdriver\\b|pengantaran|\\bbengkel\\b",
             "purchase_category": "Travel"
           },
           {
             "kategori": "Laundry",
-            "pattern": "laundry|\\bcuci\\b",
+            "pattern": "laundry|\\bcuci\\b|laund[a-z]*|laundri|permak|setrika|\\bdry ?clean",
             "purchase_category": "Other"
           },
           {
             "kategori": "Perbaikan & Pemeliharaan",
-            "pattern": "perbaik|\\bservice\\b|\\bservis\\b|reparasi|semen|\\bcat\\b|bahan bangunan|bahan-bahan tukang|\\bac\\b|\\bpipa\\b|kran|keran|ganti|salotip|baut|paku|engsel|kunci|gembok|lampu|saklar|adaptor|double tape|doble tape|\\bkaca\\b|\\bwd\\b|stop kontak|kabel|\\blem\\b|\\bkuas\\b|\\blakban\\b|oli\\b|selang|\\bmcb\\b|ribo",
+            "pattern": "perbaik|\\bservice\\b|\\bservis\\b|reparasi|semen|\\bcat\\b|bahan bangunan|bahan-bahan tukang|\\bac\\b|\\bpipa\\b|kran|keran|ganti|salotip|baut|paku|engsel|kunci|gembok|lampu|saklar|adaptor|double tape|doble tape|\\bkaca\\b|\\bwd\\b|stop kontak|kabel|\\blem\\b|\\bkuas\\b|\\blakban\\b|oli\\b|selang|\\bmcb\\b|ribo|sperpat|spare ?part|tangki|\\bpump\\b|tombol flash|\\bflush\\b|slot pintu|\\bslot\\b|\\bremote\\b|cable ?ties|kawat|silicon",
             "purchase_category": "Maintenance"
           },
           {
             "kategori": "Kebersihan & Perlengkapan Kamar",
-            "pattern": "kebersihan|karbol|vixal|pembersih|sabun|tisu|tissue|pewangi|\\bpel\\b|sapu|amenit|aminit|shower|chemical|linen|handuk|sampo|shampoo|odol|sikat|rinso|molto|wipol|bayclin|pengharum|kispray|kamar|dental|tooth|trash ?bag|klorin|jet spray|prostex|tablet|obat serangga|\\bhit\\b|citrit|citric|sprai|sprei|bantal|guling|selimut|cleaner|bayklin|superpel|lilin|korek|farfum|parfum|obat nyamuk|p3k|vape",
+            "pattern": "kebersihan|karbol|vixal|pembersih|sabun|tisu|tissue|pewangi|\\bpel\\b|sapu|amenit|aminit|shower|chemical|linen|handuk|sampo|shampoo|odol|sikat|rinso|molto|wipol|bayclin|pengharum|kispray|kamar|dental|tooth|trash ?bag|klorin|jet spray|prostex|tablet|obat serangga|\\bhit\\b|citrit|citric|sprai|sprei|bantal|guling|selimut|cleaner|bayklin|superpel|lilin|korek|farfum|parfum|obat nyamuk|p3k|vape|toilet ?paper|tissu|cleanser|trasg bag|kiapray|supersol|sarung tangan|masker|semprotan|s[ie]tr[ie]t|citr[ie]d|\\bacid\\b|super ?pe?ll|detergent|toilet brush|\\bp.?lantai\\b|plaster",
             "purchase_category": "Inventory"
           },
           {
             "kategori": "ATK & Kantor",
-            "pattern": "kantor|\\batk\\b|kertas|\\bprint|cetak|kartu nama|materai|fotokopi|\\bmap\\b|pulpen|spidol|stempel|bolpoint|bolpen|stiker|buku|dokumen|kurir",
+            "pattern": "kantor|\\batk\\b|kertas|\\bprint|cetak|kartu nama|materai|fotokopi|\\bmap\\b|pulpen|spidol|stempel|bolpoint|bolpen|stiker|buku|dokumen|kurir|toner|tinta|cutter|name ?card|\\bram\\b|komputer|binder|sheet protektor|casing|stapler|kwitansi|amplop|paperline|\\bnotes\\b",
             "purchase_category": "Office Supplies"
           },
           {
             "kategori": "Peralatan & Perlengkapan",
-            "pattern": "blender|magic com|seal|lap kain|apron|celemek|bordir|alas meja|wrapping|handle mop|\\bmop\\b|gantungan|piring|gelas|sendok|panci|wajan|teflon|talenan|pisau|toples|mangkok|nampan|spatula|plastik|show ?case|rak\\b|kompor|termos|dispenser|kipas|baterai|\\bapar\\b|pompa|genset|\\bember\\b|payung",
+            "pattern": "blender|magic com|seal|lap kain|apron|celemek|bordir|alas meja|wrapping|handle mop|\\bmop\\b|gantungan|piring|gelas|sendok|panci|wajan|teflon|talenan|pisau|toples|mangkok|nampan|spatula|plastik|show ?case|rak\\b|kompor|termos|dispenser|kipas|baterai|\\bapar\\b|pompa|genset|\\bember\\b|payung|\\bmug\\b|gunting|saringan|akril[ik]+|\\brambu\\b|seragam|\\bkain\\b|wastra|\\bteko\\b|\\bht\\b|take ?away|\\bpayung\\b|\\bbendera\\b|tali bendera|tanbang",
             "purchase_category": "Inventory"
           },
           {
             "kategori": "Bahan Makanan & Minuman",
-            "pattern": "beras|gula|telur|ayam|tomat|timun|bawang|\\bkol\\b|roti|minyak|margarin|saos|kecap|indomie|nescafe|kopi|coffe|\\bteh\\b|\\bthe\\b|susu|\\buht\\b|yakult|mineral|aqua|galon|\\bair\\b|soto|sosis|kornet|bumbu|soun|jeruk|soda|belanja|balanja|toge|rawit|daging|ikan|sayur|buah|tepung|goreng|\\bmpc\\b|skm|meses|singkong|cabe|cabai|tahu|tempe|garam|mentega|keju|coklat|sirup|syrup|nestle|stick|bombay|koya|pedas|lemon|santan|kelapa|wortel|kentang|bakso|nugget|pisang|\\bmie\\b|bihun|jahe|serai|sereh|kacang|snack|permen|biskuit|wafer|krupuk|kerupuk|cream|creamer|pop ?mie|\\bdus\\b|es batu|beef|burger|french fries|yogurt|cimory|minuman|denali|lafonte|go getter|getter|\\bbeer\\b|\\bgo\\b|konsumsi|royco|sugar|lada",
+            "pattern": "beras|gula|telur|ayam|tomat|timun|bawang|\\bkol\\b|roti|minyak|margarin|saos|kecap|indomie|nescafe|kopi|coffe|\\bteh\\b|\\bthe\\b|susu|\\buht\\b|yakult|mineral|aqua|galon|\\bair\\b|soto|sosis|kornet|bumbu|soun|jeruk|soda|belanja|balanja|toge|rawit|daging|ikan|sayur|buah|tepung|goreng|\\bmpc\\b|skm|meses|singkong|cabe|cabai|tahu|tempe|garam|mentega|keju|coklat|sirup|syrup|nestle|stick|bombay|koya|pedas|lemon|santan|kelapa|wortel|kentang|bakso|nugget|pisang|\\bmie\\b|bihun|jahe|serai|sereh|kacang|snack|permen|biskuit|wafer|krupuk|kerupuk|cream|creamer|pop ?mie|\\bdus\\b|es batu|beef|burger|french fries|yogurt|cimory|minuman|denali|lafonte|go getter|getter|\\bbeer\\b|\\bgo\\b|konsumsi|royco|sugar|lada|fries|kantang|nug+at|golda|fanta|floridina|froridina|milku|sprite|\\bcola\\b|pocari|kaki naga|oleh-?2|mayones|kemiri|kunyit|parsley|tea ?bag|pulpy|sedotan",
             "purchase_category": "Raw Materials"
+          },
+          {
+            "kategori": "Kemasan & Peralatan Saji",
+            "pattern": "\\bcup\\b|\\bgarpu\\b|sumpit|lunch ?box|\\bopp\\b|paper bowl|\\bbowl\\b|\\bpaper\\b",
+            "purchase_category": "Inventory"
+          },
+          {
+            "kategori": "Sewa",
+            "pattern": "\\bsewa\\b",
+            "purchase_category": "Other"
+          },
+          {
+            "kategori": "Acara, Hadiah & Dekorasi",
+            "pattern": "acara|\\bhut\\b|ultah|ulang tahun|\\bkue\\b|tumpeng|hadiah|kemerdekaan|\\b17 ?an\\b|hiasan|natal|karangan bunga|lomba|dekorasi|souvenir|oleh-?oleh|auditor|prasmanan|catering|sertifikasi",
+            "purchase_category": "Other"
           }
         ],
         "line_account_by_kategori_catatan": "KOSONG sampai COA AADL ada. Isi {\"<kategori>\": {\"account_code\":\"..\",\"account_name\":\"..\"}} (kunci = nama kategori di kategori_rules, tidak peka huruf besar/kecil). Tanpa ini akun ikut Settings > Account Mapping klien.",
         "line_account_by_kategori": {},
         "row_granularity": "per_expense_row",
-        "tanggal_kosong": "kosong"
+        "tanggal_kosong": "kosong",
+        "periksa_saldo": true,
+        "toleransi_saldo": 1,
+        "tandai_kemungkinan_ganda": true
       }
     },
     {
@@ -321,7 +358,7 @@ BEGIN
       ],
       "mapping_rules": {
         "format_type": "monthly_petty_cash_ledger",
-        "description": "Buku kas kecil (rekap pembayaran patty cash) KOST WARUNG SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 3: Kost Warung Soemantri.",
+        "description": "Buku kas kecil (rekap pembayaran patty cash) KOST WARUNG SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 3: Kost Warung Soemantri. Cek saldo berjalan + tanda kemungkinan baris ganda aktif.",
         "source_kind": "excel_workbook_monthly",
         "filter_periode_nama_file": "jika_ada",
         "jatuh_tempo_hari": 30,
@@ -356,7 +393,7 @@ BEGIN
         "kategori_rules": [
           {
             "kategori": "Listrik",
-            "pattern": "listrik|\\btoken\\b|\\bpln\\b",
+            "pattern": "listrik|\\btoken\\b|\\bpln\\b|listtik|list+rik",
             "purchase_category": "Utilities"
           },
           {
@@ -396,44 +433,62 @@ BEGIN
           },
           {
             "kategori": "BBM & Transportasi",
-            "pattern": "\\bbbm\\b|bensin|solar|parkir|e-?money|\\btol\\b|transport|grab|gojek|\\bojek\\b|kirim|ongkir|bandara|angkut|\\btiket\\b|\\bspbu\\b",
+            "pattern": "\\bbbm\\b|bensin|solar|parkir|e-?money|\\btol\\b|transport|grab|gojek|\\bojek\\b|kirim|ongkir|bandara|angkut|\\btiket\\b|\\bspbu\\b|e-?toll|etoll|cuci mobil|mencuci mobil|pencucian mobil|accu elf|\\belf\\b|tambah angin|cover mobil|sewa mobil|\\bdriver\\b|pengantaran|\\bbengkel\\b",
             "purchase_category": "Travel"
           },
           {
             "kategori": "Laundry",
-            "pattern": "laundry|\\bcuci\\b",
+            "pattern": "laundry|\\bcuci\\b|laund[a-z]*|laundri|permak|setrika|\\bdry ?clean",
             "purchase_category": "Other"
           },
           {
             "kategori": "Perbaikan & Pemeliharaan",
-            "pattern": "perbaik|\\bservice\\b|\\bservis\\b|reparasi|semen|\\bcat\\b|bahan bangunan|bahan-bahan tukang|\\bac\\b|\\bpipa\\b|kran|keran|ganti|salotip|baut|paku|engsel|kunci|gembok|lampu|saklar|adaptor|double tape|doble tape|\\bkaca\\b|\\bwd\\b|stop kontak|kabel|\\blem\\b|\\bkuas\\b|\\blakban\\b|oli\\b|selang|\\bmcb\\b|ribo",
+            "pattern": "perbaik|\\bservice\\b|\\bservis\\b|reparasi|semen|\\bcat\\b|bahan bangunan|bahan-bahan tukang|\\bac\\b|\\bpipa\\b|kran|keran|ganti|salotip|baut|paku|engsel|kunci|gembok|lampu|saklar|adaptor|double tape|doble tape|\\bkaca\\b|\\bwd\\b|stop kontak|kabel|\\blem\\b|\\bkuas\\b|\\blakban\\b|oli\\b|selang|\\bmcb\\b|ribo|sperpat|spare ?part|tangki|\\bpump\\b|tombol flash|\\bflush\\b|slot pintu|\\bslot\\b|\\bremote\\b|cable ?ties|kawat|silicon",
             "purchase_category": "Maintenance"
           },
           {
             "kategori": "Kebersihan & Perlengkapan Kamar",
-            "pattern": "kebersihan|karbol|vixal|pembersih|sabun|tisu|tissue|pewangi|\\bpel\\b|sapu|amenit|aminit|shower|chemical|linen|handuk|sampo|shampoo|odol|sikat|rinso|molto|wipol|bayclin|pengharum|kispray|kamar|dental|tooth|trash ?bag|klorin|jet spray|prostex|tablet|obat serangga|\\bhit\\b|citrit|citric|sprai|sprei|bantal|guling|selimut|cleaner|bayklin|superpel|lilin|korek|farfum|parfum|obat nyamuk|p3k|vape",
+            "pattern": "kebersihan|karbol|vixal|pembersih|sabun|tisu|tissue|pewangi|\\bpel\\b|sapu|amenit|aminit|shower|chemical|linen|handuk|sampo|shampoo|odol|sikat|rinso|molto|wipol|bayclin|pengharum|kispray|kamar|dental|tooth|trash ?bag|klorin|jet spray|prostex|tablet|obat serangga|\\bhit\\b|citrit|citric|sprai|sprei|bantal|guling|selimut|cleaner|bayklin|superpel|lilin|korek|farfum|parfum|obat nyamuk|p3k|vape|toilet ?paper|tissu|cleanser|trasg bag|kiapray|supersol|sarung tangan|masker|semprotan|s[ie]tr[ie]t|citr[ie]d|\\bacid\\b|super ?pe?ll|detergent|toilet brush|\\bp.?lantai\\b|plaster",
             "purchase_category": "Inventory"
           },
           {
             "kategori": "ATK & Kantor",
-            "pattern": "kantor|\\batk\\b|kertas|\\bprint|cetak|kartu nama|materai|fotokopi|\\bmap\\b|pulpen|spidol|stempel|bolpoint|bolpen|stiker|buku|dokumen|kurir",
+            "pattern": "kantor|\\batk\\b|kertas|\\bprint|cetak|kartu nama|materai|fotokopi|\\bmap\\b|pulpen|spidol|stempel|bolpoint|bolpen|stiker|buku|dokumen|kurir|toner|tinta|cutter|name ?card|\\bram\\b|komputer|binder|sheet protektor|casing|stapler|kwitansi|amplop|paperline|\\bnotes\\b",
             "purchase_category": "Office Supplies"
           },
           {
             "kategori": "Peralatan & Perlengkapan",
-            "pattern": "blender|magic com|seal|lap kain|apron|celemek|bordir|alas meja|wrapping|handle mop|\\bmop\\b|gantungan|piring|gelas|sendok|panci|wajan|teflon|talenan|pisau|toples|mangkok|nampan|spatula|plastik|show ?case|rak\\b|kompor|termos|dispenser|kipas|baterai|\\bapar\\b|pompa|genset|\\bember\\b|payung",
+            "pattern": "blender|magic com|seal|lap kain|apron|celemek|bordir|alas meja|wrapping|handle mop|\\bmop\\b|gantungan|piring|gelas|sendok|panci|wajan|teflon|talenan|pisau|toples|mangkok|nampan|spatula|plastik|show ?case|rak\\b|kompor|termos|dispenser|kipas|baterai|\\bapar\\b|pompa|genset|\\bember\\b|payung|\\bmug\\b|gunting|saringan|akril[ik]+|\\brambu\\b|seragam|\\bkain\\b|wastra|\\bteko\\b|\\bht\\b|take ?away|\\bpayung\\b|\\bbendera\\b|tali bendera|tanbang",
             "purchase_category": "Inventory"
           },
           {
             "kategori": "Bahan Makanan & Minuman",
-            "pattern": "beras|gula|telur|ayam|tomat|timun|bawang|\\bkol\\b|roti|minyak|margarin|saos|kecap|indomie|nescafe|kopi|coffe|\\bteh\\b|\\bthe\\b|susu|\\buht\\b|yakult|mineral|aqua|galon|\\bair\\b|soto|sosis|kornet|bumbu|soun|jeruk|soda|belanja|balanja|toge|rawit|daging|ikan|sayur|buah|tepung|goreng|\\bmpc\\b|skm|meses|singkong|cabe|cabai|tahu|tempe|garam|mentega|keju|coklat|sirup|syrup|nestle|stick|bombay|koya|pedas|lemon|santan|kelapa|wortel|kentang|bakso|nugget|pisang|\\bmie\\b|bihun|jahe|serai|sereh|kacang|snack|permen|biskuit|wafer|krupuk|kerupuk|cream|creamer|pop ?mie|\\bdus\\b|es batu|beef|burger|french fries|yogurt|cimory|minuman|denali|lafonte|go getter|getter|\\bbeer\\b|\\bgo\\b|konsumsi|royco|sugar|lada",
+            "pattern": "beras|gula|telur|ayam|tomat|timun|bawang|\\bkol\\b|roti|minyak|margarin|saos|kecap|indomie|nescafe|kopi|coffe|\\bteh\\b|\\bthe\\b|susu|\\buht\\b|yakult|mineral|aqua|galon|\\bair\\b|soto|sosis|kornet|bumbu|soun|jeruk|soda|belanja|balanja|toge|rawit|daging|ikan|sayur|buah|tepung|goreng|\\bmpc\\b|skm|meses|singkong|cabe|cabai|tahu|tempe|garam|mentega|keju|coklat|sirup|syrup|nestle|stick|bombay|koya|pedas|lemon|santan|kelapa|wortel|kentang|bakso|nugget|pisang|\\bmie\\b|bihun|jahe|serai|sereh|kacang|snack|permen|biskuit|wafer|krupuk|kerupuk|cream|creamer|pop ?mie|\\bdus\\b|es batu|beef|burger|french fries|yogurt|cimory|minuman|denali|lafonte|go getter|getter|\\bbeer\\b|\\bgo\\b|konsumsi|royco|sugar|lada|fries|kantang|nug+at|golda|fanta|floridina|froridina|milku|sprite|\\bcola\\b|pocari|kaki naga|oleh-?2|mayones|kemiri|kunyit|parsley|tea ?bag|pulpy|sedotan",
             "purchase_category": "Raw Materials"
+          },
+          {
+            "kategori": "Kemasan & Peralatan Saji",
+            "pattern": "\\bcup\\b|\\bgarpu\\b|sumpit|lunch ?box|\\bopp\\b|paper bowl|\\bbowl\\b|\\bpaper\\b",
+            "purchase_category": "Inventory"
+          },
+          {
+            "kategori": "Sewa",
+            "pattern": "\\bsewa\\b",
+            "purchase_category": "Other"
+          },
+          {
+            "kategori": "Acara, Hadiah & Dekorasi",
+            "pattern": "acara|\\bhut\\b|ultah|ulang tahun|\\bkue\\b|tumpeng|hadiah|kemerdekaan|\\b17 ?an\\b|hiasan|natal|karangan bunga|lomba|dekorasi|souvenir|oleh-?oleh|auditor|prasmanan|catering|sertifikasi",
+            "purchase_category": "Other"
           }
         ],
         "line_account_by_kategori_catatan": "KOSONG sampai COA AADL ada. Isi {\"<kategori>\": {\"account_code\":\"..\",\"account_name\":\"..\"}} (kunci = nama kategori di kategori_rules, tidak peka huruf besar/kecil). Tanpa ini akun ikut Settings > Account Mapping klien.",
         "line_account_by_kategori": {},
         "row_granularity": "per_expense_row",
-        "tanggal_kosong": "kosong"
+        "tanggal_kosong": "kosong",
+        "periksa_saldo": true,
+        "toleransi_saldo": 1,
+        "tandai_kemungkinan_ganda": true
       }
     },
     {
@@ -452,7 +507,7 @@ BEGIN
       ],
       "mapping_rules": {
         "format_type": "monthly_petty_cash_ledger",
-        "description": "Buku kas kecil (rekap pembayaran patty cash) KAPU SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 3: Kost Kapu Soemantri.",
+        "description": "Buku kas kecil (rekap pembayaran patty cash) KAPU SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 3: Kost Kapu Soemantri. Cek saldo berjalan + tanda kemungkinan baris ganda aktif.",
         "source_kind": "excel_workbook_monthly",
         "filter_periode_nama_file": "jika_ada",
         "jatuh_tempo_hari": 30,
@@ -487,7 +542,7 @@ BEGIN
         "kategori_rules": [
           {
             "kategori": "Listrik",
-            "pattern": "listrik|\\btoken\\b|\\bpln\\b",
+            "pattern": "listrik|\\btoken\\b|\\bpln\\b|listtik|list+rik",
             "purchase_category": "Utilities"
           },
           {
@@ -527,44 +582,62 @@ BEGIN
           },
           {
             "kategori": "BBM & Transportasi",
-            "pattern": "\\bbbm\\b|bensin|solar|parkir|e-?money|\\btol\\b|transport|grab|gojek|\\bojek\\b|kirim|ongkir|bandara|angkut|\\btiket\\b|\\bspbu\\b",
+            "pattern": "\\bbbm\\b|bensin|solar|parkir|e-?money|\\btol\\b|transport|grab|gojek|\\bojek\\b|kirim|ongkir|bandara|angkut|\\btiket\\b|\\bspbu\\b|e-?toll|etoll|cuci mobil|mencuci mobil|pencucian mobil|accu elf|\\belf\\b|tambah angin|cover mobil|sewa mobil|\\bdriver\\b|pengantaran|\\bbengkel\\b",
             "purchase_category": "Travel"
           },
           {
             "kategori": "Laundry",
-            "pattern": "laundry|\\bcuci\\b",
+            "pattern": "laundry|\\bcuci\\b|laund[a-z]*|laundri|permak|setrika|\\bdry ?clean",
             "purchase_category": "Other"
           },
           {
             "kategori": "Perbaikan & Pemeliharaan",
-            "pattern": "perbaik|\\bservice\\b|\\bservis\\b|reparasi|semen|\\bcat\\b|bahan bangunan|bahan-bahan tukang|\\bac\\b|\\bpipa\\b|kran|keran|ganti|salotip|baut|paku|engsel|kunci|gembok|lampu|saklar|adaptor|double tape|doble tape|\\bkaca\\b|\\bwd\\b|stop kontak|kabel|\\blem\\b|\\bkuas\\b|\\blakban\\b|oli\\b|selang|\\bmcb\\b|ribo",
+            "pattern": "perbaik|\\bservice\\b|\\bservis\\b|reparasi|semen|\\bcat\\b|bahan bangunan|bahan-bahan tukang|\\bac\\b|\\bpipa\\b|kran|keran|ganti|salotip|baut|paku|engsel|kunci|gembok|lampu|saklar|adaptor|double tape|doble tape|\\bkaca\\b|\\bwd\\b|stop kontak|kabel|\\blem\\b|\\bkuas\\b|\\blakban\\b|oli\\b|selang|\\bmcb\\b|ribo|sperpat|spare ?part|tangki|\\bpump\\b|tombol flash|\\bflush\\b|slot pintu|\\bslot\\b|\\bremote\\b|cable ?ties|kawat|silicon",
             "purchase_category": "Maintenance"
           },
           {
             "kategori": "Kebersihan & Perlengkapan Kamar",
-            "pattern": "kebersihan|karbol|vixal|pembersih|sabun|tisu|tissue|pewangi|\\bpel\\b|sapu|amenit|aminit|shower|chemical|linen|handuk|sampo|shampoo|odol|sikat|rinso|molto|wipol|bayclin|pengharum|kispray|kamar|dental|tooth|trash ?bag|klorin|jet spray|prostex|tablet|obat serangga|\\bhit\\b|citrit|citric|sprai|sprei|bantal|guling|selimut|cleaner|bayklin|superpel|lilin|korek|farfum|parfum|obat nyamuk|p3k|vape",
+            "pattern": "kebersihan|karbol|vixal|pembersih|sabun|tisu|tissue|pewangi|\\bpel\\b|sapu|amenit|aminit|shower|chemical|linen|handuk|sampo|shampoo|odol|sikat|rinso|molto|wipol|bayclin|pengharum|kispray|kamar|dental|tooth|trash ?bag|klorin|jet spray|prostex|tablet|obat serangga|\\bhit\\b|citrit|citric|sprai|sprei|bantal|guling|selimut|cleaner|bayklin|superpel|lilin|korek|farfum|parfum|obat nyamuk|p3k|vape|toilet ?paper|tissu|cleanser|trasg bag|kiapray|supersol|sarung tangan|masker|semprotan|s[ie]tr[ie]t|citr[ie]d|\\bacid\\b|super ?pe?ll|detergent|toilet brush|\\bp.?lantai\\b|plaster",
             "purchase_category": "Inventory"
           },
           {
             "kategori": "ATK & Kantor",
-            "pattern": "kantor|\\batk\\b|kertas|\\bprint|cetak|kartu nama|materai|fotokopi|\\bmap\\b|pulpen|spidol|stempel|bolpoint|bolpen|stiker|buku|dokumen|kurir",
+            "pattern": "kantor|\\batk\\b|kertas|\\bprint|cetak|kartu nama|materai|fotokopi|\\bmap\\b|pulpen|spidol|stempel|bolpoint|bolpen|stiker|buku|dokumen|kurir|toner|tinta|cutter|name ?card|\\bram\\b|komputer|binder|sheet protektor|casing|stapler|kwitansi|amplop|paperline|\\bnotes\\b",
             "purchase_category": "Office Supplies"
           },
           {
             "kategori": "Peralatan & Perlengkapan",
-            "pattern": "blender|magic com|seal|lap kain|apron|celemek|bordir|alas meja|wrapping|handle mop|\\bmop\\b|gantungan|piring|gelas|sendok|panci|wajan|teflon|talenan|pisau|toples|mangkok|nampan|spatula|plastik|show ?case|rak\\b|kompor|termos|dispenser|kipas|baterai|\\bapar\\b|pompa|genset|\\bember\\b|payung",
+            "pattern": "blender|magic com|seal|lap kain|apron|celemek|bordir|alas meja|wrapping|handle mop|\\bmop\\b|gantungan|piring|gelas|sendok|panci|wajan|teflon|talenan|pisau|toples|mangkok|nampan|spatula|plastik|show ?case|rak\\b|kompor|termos|dispenser|kipas|baterai|\\bapar\\b|pompa|genset|\\bember\\b|payung|\\bmug\\b|gunting|saringan|akril[ik]+|\\brambu\\b|seragam|\\bkain\\b|wastra|\\bteko\\b|\\bht\\b|take ?away|\\bpayung\\b|\\bbendera\\b|tali bendera|tanbang",
             "purchase_category": "Inventory"
           },
           {
             "kategori": "Bahan Makanan & Minuman",
-            "pattern": "beras|gula|telur|ayam|tomat|timun|bawang|\\bkol\\b|roti|minyak|margarin|saos|kecap|indomie|nescafe|kopi|coffe|\\bteh\\b|\\bthe\\b|susu|\\buht\\b|yakult|mineral|aqua|galon|\\bair\\b|soto|sosis|kornet|bumbu|soun|jeruk|soda|belanja|balanja|toge|rawit|daging|ikan|sayur|buah|tepung|goreng|\\bmpc\\b|skm|meses|singkong|cabe|cabai|tahu|tempe|garam|mentega|keju|coklat|sirup|syrup|nestle|stick|bombay|koya|pedas|lemon|santan|kelapa|wortel|kentang|bakso|nugget|pisang|\\bmie\\b|bihun|jahe|serai|sereh|kacang|snack|permen|biskuit|wafer|krupuk|kerupuk|cream|creamer|pop ?mie|\\bdus\\b|es batu|beef|burger|french fries|yogurt|cimory|minuman|denali|lafonte|go getter|getter|\\bbeer\\b|\\bgo\\b|konsumsi|royco|sugar|lada",
+            "pattern": "beras|gula|telur|ayam|tomat|timun|bawang|\\bkol\\b|roti|minyak|margarin|saos|kecap|indomie|nescafe|kopi|coffe|\\bteh\\b|\\bthe\\b|susu|\\buht\\b|yakult|mineral|aqua|galon|\\bair\\b|soto|sosis|kornet|bumbu|soun|jeruk|soda|belanja|balanja|toge|rawit|daging|ikan|sayur|buah|tepung|goreng|\\bmpc\\b|skm|meses|singkong|cabe|cabai|tahu|tempe|garam|mentega|keju|coklat|sirup|syrup|nestle|stick|bombay|koya|pedas|lemon|santan|kelapa|wortel|kentang|bakso|nugget|pisang|\\bmie\\b|bihun|jahe|serai|sereh|kacang|snack|permen|biskuit|wafer|krupuk|kerupuk|cream|creamer|pop ?mie|\\bdus\\b|es batu|beef|burger|french fries|yogurt|cimory|minuman|denali|lafonte|go getter|getter|\\bbeer\\b|\\bgo\\b|konsumsi|royco|sugar|lada|fries|kantang|nug+at|golda|fanta|floridina|froridina|milku|sprite|\\bcola\\b|pocari|kaki naga|oleh-?2|mayones|kemiri|kunyit|parsley|tea ?bag|pulpy|sedotan",
             "purchase_category": "Raw Materials"
+          },
+          {
+            "kategori": "Kemasan & Peralatan Saji",
+            "pattern": "\\bcup\\b|\\bgarpu\\b|sumpit|lunch ?box|\\bopp\\b|paper bowl|\\bbowl\\b|\\bpaper\\b",
+            "purchase_category": "Inventory"
+          },
+          {
+            "kategori": "Sewa",
+            "pattern": "\\bsewa\\b",
+            "purchase_category": "Other"
+          },
+          {
+            "kategori": "Acara, Hadiah & Dekorasi",
+            "pattern": "acara|\\bhut\\b|ultah|ulang tahun|\\bkue\\b|tumpeng|hadiah|kemerdekaan|\\b17 ?an\\b|hiasan|natal|karangan bunga|lomba|dekorasi|souvenir|oleh-?oleh|auditor|prasmanan|catering|sertifikasi",
+            "purchase_category": "Other"
           }
         ],
         "line_account_by_kategori_catatan": "KOSONG sampai COA AADL ada. Isi {\"<kategori>\": {\"account_code\":\"..\",\"account_name\":\"..\"}} (kunci = nama kategori di kategori_rules, tidak peka huruf besar/kecil). Tanpa ini akun ikut Settings > Account Mapping klien.",
         "line_account_by_kategori": {},
         "row_granularity": "per_expense_row",
-        "tanggal_kosong": "kosong"
+        "tanggal_kosong": "kosong",
+        "periksa_saldo": true,
+        "toleransi_saldo": 1,
+        "tandai_kemungkinan_ganda": true
       }
     },
     {
@@ -583,7 +656,7 @@ BEGIN
       ],
       "mapping_rules": {
         "format_type": "monthly_petty_cash_ledger",
-        "description": "Buku kas kecil (rekap pembayaran patty cash) VILLA PUTU SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 2: PUTU SOEMANTRI FAMILY VILLAS - DENPASAR.",
+        "description": "Buku kas kecil (rekap pembayaran patty cash) VILLA PUTU SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 2: PUTU SOEMANTRI FAMILY VILLAS - DENPASAR. Cek saldo berjalan + tanda kemungkinan baris ganda aktif.",
         "source_kind": "excel_workbook_monthly",
         "filter_periode_nama_file": "jika_ada",
         "jatuh_tempo_hari": 30,
@@ -618,7 +691,7 @@ BEGIN
         "kategori_rules": [
           {
             "kategori": "Listrik",
-            "pattern": "listrik|\\btoken\\b|\\bpln\\b",
+            "pattern": "listrik|\\btoken\\b|\\bpln\\b|listtik|list+rik",
             "purchase_category": "Utilities"
           },
           {
@@ -658,44 +731,62 @@ BEGIN
           },
           {
             "kategori": "BBM & Transportasi",
-            "pattern": "\\bbbm\\b|bensin|solar|parkir|e-?money|\\btol\\b|transport|grab|gojek|\\bojek\\b|kirim|ongkir|bandara|angkut|\\btiket\\b|\\bspbu\\b",
+            "pattern": "\\bbbm\\b|bensin|solar|parkir|e-?money|\\btol\\b|transport|grab|gojek|\\bojek\\b|kirim|ongkir|bandara|angkut|\\btiket\\b|\\bspbu\\b|e-?toll|etoll|cuci mobil|mencuci mobil|pencucian mobil|accu elf|\\belf\\b|tambah angin|cover mobil|sewa mobil|\\bdriver\\b|pengantaran|\\bbengkel\\b",
             "purchase_category": "Travel"
           },
           {
             "kategori": "Laundry",
-            "pattern": "laundry|\\bcuci\\b",
+            "pattern": "laundry|\\bcuci\\b|laund[a-z]*|laundri|permak|setrika|\\bdry ?clean",
             "purchase_category": "Other"
           },
           {
             "kategori": "Perbaikan & Pemeliharaan",
-            "pattern": "perbaik|\\bservice\\b|\\bservis\\b|reparasi|semen|\\bcat\\b|bahan bangunan|bahan-bahan tukang|\\bac\\b|\\bpipa\\b|kran|keran|ganti|salotip|baut|paku|engsel|kunci|gembok|lampu|saklar|adaptor|double tape|doble tape|\\bkaca\\b|\\bwd\\b|stop kontak|kabel|\\blem\\b|\\bkuas\\b|\\blakban\\b|oli\\b|selang|\\bmcb\\b|ribo",
+            "pattern": "perbaik|\\bservice\\b|\\bservis\\b|reparasi|semen|\\bcat\\b|bahan bangunan|bahan-bahan tukang|\\bac\\b|\\bpipa\\b|kran|keran|ganti|salotip|baut|paku|engsel|kunci|gembok|lampu|saklar|adaptor|double tape|doble tape|\\bkaca\\b|\\bwd\\b|stop kontak|kabel|\\blem\\b|\\bkuas\\b|\\blakban\\b|oli\\b|selang|\\bmcb\\b|ribo|sperpat|spare ?part|tangki|\\bpump\\b|tombol flash|\\bflush\\b|slot pintu|\\bslot\\b|\\bremote\\b|cable ?ties|kawat|silicon",
             "purchase_category": "Maintenance"
           },
           {
             "kategori": "Kebersihan & Perlengkapan Kamar",
-            "pattern": "kebersihan|karbol|vixal|pembersih|sabun|tisu|tissue|pewangi|\\bpel\\b|sapu|amenit|aminit|shower|chemical|linen|handuk|sampo|shampoo|odol|sikat|rinso|molto|wipol|bayclin|pengharum|kispray|kamar|dental|tooth|trash ?bag|klorin|jet spray|prostex|tablet|obat serangga|\\bhit\\b|citrit|citric|sprai|sprei|bantal|guling|selimut|cleaner|bayklin|superpel|lilin|korek|farfum|parfum|obat nyamuk|p3k|vape",
+            "pattern": "kebersihan|karbol|vixal|pembersih|sabun|tisu|tissue|pewangi|\\bpel\\b|sapu|amenit|aminit|shower|chemical|linen|handuk|sampo|shampoo|odol|sikat|rinso|molto|wipol|bayclin|pengharum|kispray|kamar|dental|tooth|trash ?bag|klorin|jet spray|prostex|tablet|obat serangga|\\bhit\\b|citrit|citric|sprai|sprei|bantal|guling|selimut|cleaner|bayklin|superpel|lilin|korek|farfum|parfum|obat nyamuk|p3k|vape|toilet ?paper|tissu|cleanser|trasg bag|kiapray|supersol|sarung tangan|masker|semprotan|s[ie]tr[ie]t|citr[ie]d|\\bacid\\b|super ?pe?ll|detergent|toilet brush|\\bp.?lantai\\b|plaster",
             "purchase_category": "Inventory"
           },
           {
             "kategori": "ATK & Kantor",
-            "pattern": "kantor|\\batk\\b|kertas|\\bprint|cetak|kartu nama|materai|fotokopi|\\bmap\\b|pulpen|spidol|stempel|bolpoint|bolpen|stiker|buku|dokumen|kurir",
+            "pattern": "kantor|\\batk\\b|kertas|\\bprint|cetak|kartu nama|materai|fotokopi|\\bmap\\b|pulpen|spidol|stempel|bolpoint|bolpen|stiker|buku|dokumen|kurir|toner|tinta|cutter|name ?card|\\bram\\b|komputer|binder|sheet protektor|casing|stapler|kwitansi|amplop|paperline|\\bnotes\\b",
             "purchase_category": "Office Supplies"
           },
           {
             "kategori": "Peralatan & Perlengkapan",
-            "pattern": "blender|magic com|seal|lap kain|apron|celemek|bordir|alas meja|wrapping|handle mop|\\bmop\\b|gantungan|piring|gelas|sendok|panci|wajan|teflon|talenan|pisau|toples|mangkok|nampan|spatula|plastik|show ?case|rak\\b|kompor|termos|dispenser|kipas|baterai|\\bapar\\b|pompa|genset|\\bember\\b|payung",
+            "pattern": "blender|magic com|seal|lap kain|apron|celemek|bordir|alas meja|wrapping|handle mop|\\bmop\\b|gantungan|piring|gelas|sendok|panci|wajan|teflon|talenan|pisau|toples|mangkok|nampan|spatula|plastik|show ?case|rak\\b|kompor|termos|dispenser|kipas|baterai|\\bapar\\b|pompa|genset|\\bember\\b|payung|\\bmug\\b|gunting|saringan|akril[ik]+|\\brambu\\b|seragam|\\bkain\\b|wastra|\\bteko\\b|\\bht\\b|take ?away|\\bpayung\\b|\\bbendera\\b|tali bendera|tanbang",
             "purchase_category": "Inventory"
           },
           {
             "kategori": "Bahan Makanan & Minuman",
-            "pattern": "beras|gula|telur|ayam|tomat|timun|bawang|\\bkol\\b|roti|minyak|margarin|saos|kecap|indomie|nescafe|kopi|coffe|\\bteh\\b|\\bthe\\b|susu|\\buht\\b|yakult|mineral|aqua|galon|\\bair\\b|soto|sosis|kornet|bumbu|soun|jeruk|soda|belanja|balanja|toge|rawit|daging|ikan|sayur|buah|tepung|goreng|\\bmpc\\b|skm|meses|singkong|cabe|cabai|tahu|tempe|garam|mentega|keju|coklat|sirup|syrup|nestle|stick|bombay|koya|pedas|lemon|santan|kelapa|wortel|kentang|bakso|nugget|pisang|\\bmie\\b|bihun|jahe|serai|sereh|kacang|snack|permen|biskuit|wafer|krupuk|kerupuk|cream|creamer|pop ?mie|\\bdus\\b|es batu|beef|burger|french fries|yogurt|cimory|minuman|denali|lafonte|go getter|getter|\\bbeer\\b|\\bgo\\b|konsumsi|royco|sugar|lada",
+            "pattern": "beras|gula|telur|ayam|tomat|timun|bawang|\\bkol\\b|roti|minyak|margarin|saos|kecap|indomie|nescafe|kopi|coffe|\\bteh\\b|\\bthe\\b|susu|\\buht\\b|yakult|mineral|aqua|galon|\\bair\\b|soto|sosis|kornet|bumbu|soun|jeruk|soda|belanja|balanja|toge|rawit|daging|ikan|sayur|buah|tepung|goreng|\\bmpc\\b|skm|meses|singkong|cabe|cabai|tahu|tempe|garam|mentega|keju|coklat|sirup|syrup|nestle|stick|bombay|koya|pedas|lemon|santan|kelapa|wortel|kentang|bakso|nugget|pisang|\\bmie\\b|bihun|jahe|serai|sereh|kacang|snack|permen|biskuit|wafer|krupuk|kerupuk|cream|creamer|pop ?mie|\\bdus\\b|es batu|beef|burger|french fries|yogurt|cimory|minuman|denali|lafonte|go getter|getter|\\bbeer\\b|\\bgo\\b|konsumsi|royco|sugar|lada|fries|kantang|nug+at|golda|fanta|floridina|froridina|milku|sprite|\\bcola\\b|pocari|kaki naga|oleh-?2|mayones|kemiri|kunyit|parsley|tea ?bag|pulpy|sedotan",
             "purchase_category": "Raw Materials"
+          },
+          {
+            "kategori": "Kemasan & Peralatan Saji",
+            "pattern": "\\bcup\\b|\\bgarpu\\b|sumpit|lunch ?box|\\bopp\\b|paper bowl|\\bbowl\\b|\\bpaper\\b",
+            "purchase_category": "Inventory"
+          },
+          {
+            "kategori": "Sewa",
+            "pattern": "\\bsewa\\b",
+            "purchase_category": "Other"
+          },
+          {
+            "kategori": "Acara, Hadiah & Dekorasi",
+            "pattern": "acara|\\bhut\\b|ultah|ulang tahun|\\bkue\\b|tumpeng|hadiah|kemerdekaan|\\b17 ?an\\b|hiasan|natal|karangan bunga|lomba|dekorasi|souvenir|oleh-?oleh|auditor|prasmanan|catering|sertifikasi",
+            "purchase_category": "Other"
           }
         ],
         "line_account_by_kategori_catatan": "KOSONG sampai COA AADL ada. Isi {\"<kategori>\": {\"account_code\":\"..\",\"account_name\":\"..\"}} (kunci = nama kategori di kategori_rules, tidak peka huruf besar/kecil). Tanpa ini akun ikut Settings > Account Mapping klien.",
         "line_account_by_kategori": {},
         "row_granularity": "per_expense_row",
-        "tanggal_kosong": "ikut_baris_sebelumnya"
+        "tanggal_kosong": "ikut_baris_sebelumnya",
+        "periksa_saldo": true,
+        "toleransi_saldo": 1,
+        "tandai_kemungkinan_ganda": true
       }
     },
     {
@@ -714,7 +805,7 @@ BEGIN
       ],
       "mapping_rules": {
         "format_type": "monthly_petty_cash_ledger",
-        "description": "Buku kas kecil (rekap pembayaran patty cash) OMAH & KOPI SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 3: OMAH SOEMANTRI.",
+        "description": "Buku kas kecil (rekap pembayaran patty cash) OMAH & KOPI SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 3: OMAH SOEMANTRI. Cek saldo berjalan + tanda kemungkinan baris ganda aktif.",
         "source_kind": "excel_workbook_monthly",
         "filter_periode_nama_file": "jika_ada",
         "jatuh_tempo_hari": 30,
@@ -749,7 +840,7 @@ BEGIN
         "kategori_rules": [
           {
             "kategori": "Listrik",
-            "pattern": "listrik|\\btoken\\b|\\bpln\\b",
+            "pattern": "listrik|\\btoken\\b|\\bpln\\b|listtik|list+rik",
             "purchase_category": "Utilities"
           },
           {
@@ -789,44 +880,62 @@ BEGIN
           },
           {
             "kategori": "BBM & Transportasi",
-            "pattern": "\\bbbm\\b|bensin|solar|parkir|e-?money|\\btol\\b|transport|grab|gojek|\\bojek\\b|kirim|ongkir|bandara|angkut|\\btiket\\b|\\bspbu\\b",
+            "pattern": "\\bbbm\\b|bensin|solar|parkir|e-?money|\\btol\\b|transport|grab|gojek|\\bojek\\b|kirim|ongkir|bandara|angkut|\\btiket\\b|\\bspbu\\b|e-?toll|etoll|cuci mobil|mencuci mobil|pencucian mobil|accu elf|\\belf\\b|tambah angin|cover mobil|sewa mobil|\\bdriver\\b|pengantaran|\\bbengkel\\b",
             "purchase_category": "Travel"
           },
           {
             "kategori": "Laundry",
-            "pattern": "laundry|\\bcuci\\b",
+            "pattern": "laundry|\\bcuci\\b|laund[a-z]*|laundri|permak|setrika|\\bdry ?clean",
             "purchase_category": "Other"
           },
           {
             "kategori": "Perbaikan & Pemeliharaan",
-            "pattern": "perbaik|\\bservice\\b|\\bservis\\b|reparasi|semen|\\bcat\\b|bahan bangunan|bahan-bahan tukang|\\bac\\b|\\bpipa\\b|kran|keran|ganti|salotip|baut|paku|engsel|kunci|gembok|lampu|saklar|adaptor|double tape|doble tape|\\bkaca\\b|\\bwd\\b|stop kontak|kabel|\\blem\\b|\\bkuas\\b|\\blakban\\b|oli\\b|selang|\\bmcb\\b|ribo",
+            "pattern": "perbaik|\\bservice\\b|\\bservis\\b|reparasi|semen|\\bcat\\b|bahan bangunan|bahan-bahan tukang|\\bac\\b|\\bpipa\\b|kran|keran|ganti|salotip|baut|paku|engsel|kunci|gembok|lampu|saklar|adaptor|double tape|doble tape|\\bkaca\\b|\\bwd\\b|stop kontak|kabel|\\blem\\b|\\bkuas\\b|\\blakban\\b|oli\\b|selang|\\bmcb\\b|ribo|sperpat|spare ?part|tangki|\\bpump\\b|tombol flash|\\bflush\\b|slot pintu|\\bslot\\b|\\bremote\\b|cable ?ties|kawat|silicon",
             "purchase_category": "Maintenance"
           },
           {
             "kategori": "Kebersihan & Perlengkapan Kamar",
-            "pattern": "kebersihan|karbol|vixal|pembersih|sabun|tisu|tissue|pewangi|\\bpel\\b|sapu|amenit|aminit|shower|chemical|linen|handuk|sampo|shampoo|odol|sikat|rinso|molto|wipol|bayclin|pengharum|kispray|kamar|dental|tooth|trash ?bag|klorin|jet spray|prostex|tablet|obat serangga|\\bhit\\b|citrit|citric|sprai|sprei|bantal|guling|selimut|cleaner|bayklin|superpel|lilin|korek|farfum|parfum|obat nyamuk|p3k|vape",
+            "pattern": "kebersihan|karbol|vixal|pembersih|sabun|tisu|tissue|pewangi|\\bpel\\b|sapu|amenit|aminit|shower|chemical|linen|handuk|sampo|shampoo|odol|sikat|rinso|molto|wipol|bayclin|pengharum|kispray|kamar|dental|tooth|trash ?bag|klorin|jet spray|prostex|tablet|obat serangga|\\bhit\\b|citrit|citric|sprai|sprei|bantal|guling|selimut|cleaner|bayklin|superpel|lilin|korek|farfum|parfum|obat nyamuk|p3k|vape|toilet ?paper|tissu|cleanser|trasg bag|kiapray|supersol|sarung tangan|masker|semprotan|s[ie]tr[ie]t|citr[ie]d|\\bacid\\b|super ?pe?ll|detergent|toilet brush|\\bp.?lantai\\b|plaster",
             "purchase_category": "Inventory"
           },
           {
             "kategori": "ATK & Kantor",
-            "pattern": "kantor|\\batk\\b|kertas|\\bprint|cetak|kartu nama|materai|fotokopi|\\bmap\\b|pulpen|spidol|stempel|bolpoint|bolpen|stiker|buku|dokumen|kurir",
+            "pattern": "kantor|\\batk\\b|kertas|\\bprint|cetak|kartu nama|materai|fotokopi|\\bmap\\b|pulpen|spidol|stempel|bolpoint|bolpen|stiker|buku|dokumen|kurir|toner|tinta|cutter|name ?card|\\bram\\b|komputer|binder|sheet protektor|casing|stapler|kwitansi|amplop|paperline|\\bnotes\\b",
             "purchase_category": "Office Supplies"
           },
           {
             "kategori": "Peralatan & Perlengkapan",
-            "pattern": "blender|magic com|seal|lap kain|apron|celemek|bordir|alas meja|wrapping|handle mop|\\bmop\\b|gantungan|piring|gelas|sendok|panci|wajan|teflon|talenan|pisau|toples|mangkok|nampan|spatula|plastik|show ?case|rak\\b|kompor|termos|dispenser|kipas|baterai|\\bapar\\b|pompa|genset|\\bember\\b|payung",
+            "pattern": "blender|magic com|seal|lap kain|apron|celemek|bordir|alas meja|wrapping|handle mop|\\bmop\\b|gantungan|piring|gelas|sendok|panci|wajan|teflon|talenan|pisau|toples|mangkok|nampan|spatula|plastik|show ?case|rak\\b|kompor|termos|dispenser|kipas|baterai|\\bapar\\b|pompa|genset|\\bember\\b|payung|\\bmug\\b|gunting|saringan|akril[ik]+|\\brambu\\b|seragam|\\bkain\\b|wastra|\\bteko\\b|\\bht\\b|take ?away|\\bpayung\\b|\\bbendera\\b|tali bendera|tanbang",
             "purchase_category": "Inventory"
           },
           {
             "kategori": "Bahan Makanan & Minuman",
-            "pattern": "beras|gula|telur|ayam|tomat|timun|bawang|\\bkol\\b|roti|minyak|margarin|saos|kecap|indomie|nescafe|kopi|coffe|\\bteh\\b|\\bthe\\b|susu|\\buht\\b|yakult|mineral|aqua|galon|\\bair\\b|soto|sosis|kornet|bumbu|soun|jeruk|soda|belanja|balanja|toge|rawit|daging|ikan|sayur|buah|tepung|goreng|\\bmpc\\b|skm|meses|singkong|cabe|cabai|tahu|tempe|garam|mentega|keju|coklat|sirup|syrup|nestle|stick|bombay|koya|pedas|lemon|santan|kelapa|wortel|kentang|bakso|nugget|pisang|\\bmie\\b|bihun|jahe|serai|sereh|kacang|snack|permen|biskuit|wafer|krupuk|kerupuk|cream|creamer|pop ?mie|\\bdus\\b|es batu|beef|burger|french fries|yogurt|cimory|minuman|denali|lafonte|go getter|getter|\\bbeer\\b|\\bgo\\b|konsumsi|royco|sugar|lada",
+            "pattern": "beras|gula|telur|ayam|tomat|timun|bawang|\\bkol\\b|roti|minyak|margarin|saos|kecap|indomie|nescafe|kopi|coffe|\\bteh\\b|\\bthe\\b|susu|\\buht\\b|yakult|mineral|aqua|galon|\\bair\\b|soto|sosis|kornet|bumbu|soun|jeruk|soda|belanja|balanja|toge|rawit|daging|ikan|sayur|buah|tepung|goreng|\\bmpc\\b|skm|meses|singkong|cabe|cabai|tahu|tempe|garam|mentega|keju|coklat|sirup|syrup|nestle|stick|bombay|koya|pedas|lemon|santan|kelapa|wortel|kentang|bakso|nugget|pisang|\\bmie\\b|bihun|jahe|serai|sereh|kacang|snack|permen|biskuit|wafer|krupuk|kerupuk|cream|creamer|pop ?mie|\\bdus\\b|es batu|beef|burger|french fries|yogurt|cimory|minuman|denali|lafonte|go getter|getter|\\bbeer\\b|\\bgo\\b|konsumsi|royco|sugar|lada|fries|kantang|nug+at|golda|fanta|floridina|froridina|milku|sprite|\\bcola\\b|pocari|kaki naga|oleh-?2|mayones|kemiri|kunyit|parsley|tea ?bag|pulpy|sedotan",
             "purchase_category": "Raw Materials"
+          },
+          {
+            "kategori": "Kemasan & Peralatan Saji",
+            "pattern": "\\bcup\\b|\\bgarpu\\b|sumpit|lunch ?box|\\bopp\\b|paper bowl|\\bbowl\\b|\\bpaper\\b",
+            "purchase_category": "Inventory"
+          },
+          {
+            "kategori": "Sewa",
+            "pattern": "\\bsewa\\b",
+            "purchase_category": "Other"
+          },
+          {
+            "kategori": "Acara, Hadiah & Dekorasi",
+            "pattern": "acara|\\bhut\\b|ultah|ulang tahun|\\bkue\\b|tumpeng|hadiah|kemerdekaan|\\b17 ?an\\b|hiasan|natal|karangan bunga|lomba|dekorasi|souvenir|oleh-?oleh|auditor|prasmanan|catering|sertifikasi",
+            "purchase_category": "Other"
           }
         ],
         "line_account_by_kategori_catatan": "KOSONG sampai COA AADL ada. Isi {\"<kategori>\": {\"account_code\":\"..\",\"account_name\":\"..\"}} (kunci = nama kategori di kategori_rules, tidak peka huruf besar/kecil). Tanpa ini akun ikut Settings > Account Mapping klien.",
         "line_account_by_kategori": {},
         "row_granularity": "per_expense_row",
-        "tanggal_kosong": "kosong"
+        "tanggal_kosong": "kosong",
+        "periksa_saldo": true,
+        "toleransi_saldo": 1,
+        "tandai_kemungkinan_ganda": true
       }
     }
   ]
@@ -859,6 +968,8 @@ $json$::jsonb;
             ('line_account_by_kategori/Kebersihan & Perlengkapan Kamar', ARRAY['620010', '620012']),
             ('line_account_by_kategori/ATK & Kantor',              ARRAY['620009']),
             ('line_account_by_kategori/Peralatan & Perlengkapan',  ARRAY['620010']),
+            ('line_account_by_kategori/Kemasan & Peralatan Saji',  ARRAY['620010']),
+            ('line_account_by_kategori/Sewa',                      ARRAY['620004', '620024']),
             ('line_account_by_kategori/Bahan Makanan & Minuman',   ARRAY['510004', '510001'])
         ) AS x(peran, kandidat)
     LOOP
