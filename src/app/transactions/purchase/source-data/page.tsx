@@ -14,7 +14,7 @@ import {
 } from '@/lib/purchaseStore';
 import { formatTanggalWaktu, formatTanggalSingkat } from '@/lib/salesStore';
 import { undatedFirst } from '@/lib/undatedFirst';
-import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight, MoreHorizontal, Trash2, FileText, ShieldCheck } from 'lucide-react';
+import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight, MoreHorizontal, Trash2, FileText, ShieldCheck, Layers, Loader2 } from 'lucide-react';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -201,6 +201,59 @@ export default function PurchaseSourceDataPage() {
       toast.error(err instanceof Error ? err.message : 'Failed to create transactions');
     } finally {
       setIsPromoting(false);
+    }
+  };
+
+  // Create All Transactions: promote SEMUA file sumber company aktif sekali klik. Endpoint promote aman diulang
+  // (baris yang sudah dibuat dilewati backend), dijalankan berurutan supaya nomor purchase tidak bentrok.
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const isBulkPromoting = bulkProgress !== null;
+  const handleCreateAllTransactions = async () => {
+    if (isBulkPromoting || isPromoting) return;
+    const targets = sourceFiles.filter(f => (f.rows_detected ?? 0) > 0);
+    if (targets.length === 0) {
+      toast.info('No files to process');
+      return;
+    }
+    let totalCreated = 0;
+    let totalFailedRows = 0;
+    let totalAlready = 0;
+    let totalInvalid = 0;
+    let totalDuplicate = 0;
+    const failedFiles: string[] = [];
+    setBulkProgress({ done: 0, total: targets.length });
+    for (let i = 0; i < targets.length; i++) {
+      const f = targets[i];
+      try {
+        const hasil = await promotePurchaseSourceFile(f.id);
+        totalCreated += hasil.transaksi_dibuat ?? 0;
+        totalAlready += hasil.dilewati_sudah_pernah_dipromosikan ?? 0;
+        totalInvalid += hasil.dilewati_tidak_valid ?? 0;
+        totalDuplicate += hasil.dilewati_duplikat ?? 0;
+        const gagal = hasil.dilewati_gagal_insert ?? 0;
+        totalFailedRows += gagal;
+        if (gagal > 0) failedFiles.push(`${f.file_name}${hasil.error_insert ? ` (${hasil.error_insert})` : ''}`);
+      } catch (err) {
+        failedFiles.push(`${f.file_name} (${err instanceof Error ? err.message : 'failed'})`);
+      }
+      setBulkProgress({ done: i + 1, total: targets.length });
+    }
+    setBulkProgress(null);
+
+    if (totalCreated > 0) {
+      toast.success('All transactions created', {
+        description: `${totalCreated} new draft purchase transactions from ${targets.length} files -- check the Purchase Transaction tab.`,
+      });
+    } else if (failedFiles.length === 0) {
+      toast.info('No new transactions', {
+        description: `${totalAlready} already created, ${totalInvalid} invalid, ${totalDuplicate} duplicate.`,
+      });
+    }
+    if (failedFiles.length > 0) {
+      toast.error(`${failedFiles.length} file(s) failed`, {
+        description: `${totalFailedRows > 0 ? `${totalFailedRows} rows failed to save. ` : ''}${failedFiles.slice(0, 3).join('; ')}${failedFiles.length > 3 ? ' ...' : ''}`,
+        duration: 20000,
+      });
     }
   };
 
@@ -481,15 +534,28 @@ export default function PurchaseSourceDataPage() {
         <SourcePanel
           title="File Preview"
           leading={<span className={PANEL_ICON_CHIP}><FileText size={17} /></span>}
-          action={selectedFile && jumlahSiap > 0 ? (
-            <button
-              onClick={handleCreateTransactions}
-              disabled={isPromoting}
-              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-              title="Turn the valid rows into draft purchase transactions in the Purchase Transaction tab"
-            >
-              {isPromoting ? 'Processing...' : `Create Transaction (${jumlahSiap.toLocaleString('id-ID')})`}
-            </button>
+          action={sourceFiles.length > 0 ? (
+            <div className="flex shrink-0 items-center gap-2">
+              {selectedFile && jumlahSiap > 0 && (
+                <button
+                  onClick={handleCreateTransactions}
+                  disabled={isPromoting || isBulkPromoting}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Turn the valid rows into draft purchase transactions in the Purchase Transaction tab"
+                >
+                  {isPromoting ? 'Processing...' : `Create Transaction (${jumlahSiap.toLocaleString('id-ID')})`}
+                </button>
+              )}
+              <button
+                onClick={handleCreateAllTransactions}
+                disabled={isPromoting || isBulkPromoting}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-900 bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Create draft purchase transactions from all source files at once (files already created are skipped)"
+              >
+                {isBulkPromoting ? <Loader2 size={13} className="animate-spin" /> : <Layers size={13} />}
+                {isBulkPromoting ? `Processing ${bulkProgress!.done}/${bulkProgress!.total}` : 'Create All Transactions'}
+              </button>
+            </div>
           ) : undefined}
         >
           {selectedFile ? (

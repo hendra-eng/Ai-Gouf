@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import { salesFont as sourceFont } from './salesFont';
 import ExcelJS from 'exceljs';
 import { toast } from 'sonner';
-import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, FileText, ShieldCheck, MoreHorizontal, ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
+import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, FileText, ShieldCheck, MoreHorizontal, ChevronLeft, ChevronRight, X, Trash2, Layers, Loader2 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useActiveClient } from '@/lib/activeClient';
 import { downloadBlob } from '../../components/exportTemplates/exportExcelShared';
@@ -245,6 +245,59 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
       toast.error(err instanceof Error ? err.message : t('Gagal membuat invoice'));
     } finally {
       setIsPromoting(false);
+    }
+  };
+
+  // [BARU] Buat Semua Invoice: jalankan promote untuk SEMUA file sumber company aktif sekali klik.
+  // Endpoint promote aman diulang (baris yang sudah jadi invoice dilewati backend), jadi file yang
+  // sudah beres tidak menimbulkan duplikat. Dijalankan berurutan (bukan paralel) supaya tidak
+  // membebani database & nomor invoice tidak saling bentrok; progres tampil di tombol.
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const isBulkPromoting = bulkProgress !== null;
+  const handlePromoteAllToInvoices = async () => {
+    if (isBulkPromoting || isPromoting) return;
+    const targets = sourceFiles.filter(f => (f.rows_detected ?? 0) > 0);
+    if (targets.length === 0) {
+      toast.info(t('Tidak ada file untuk diproses'));
+      return;
+    }
+    let totalDibuat = 0;
+    let totalGagalBaris = 0;
+    let totalSudahAda = 0;
+    let totalTidakValid = 0;
+    const fileGagal: string[] = [];
+    setBulkProgress({ done: 0, total: targets.length });
+    for (let i = 0; i < targets.length; i++) {
+      const f = targets[i];
+      try {
+        const hasil = await promoteSourceFileToInvoices(f.id);
+        totalDibuat += hasil.invoice_dibuat ?? 0;
+        totalSudahAda += hasil.dilewati_sudah_pernah_dipromosikan ?? 0;
+        totalTidakValid += hasil.dilewati_tidak_valid ?? 0;
+        const gagal = hasil.dilewati_gagal_insert ?? 0;
+        totalGagalBaris += gagal;
+        if (gagal > 0) fileGagal.push(`${f.file_name}${hasil.error_insert ? ` (${hasil.error_insert})` : ''}`);
+      } catch (err) {
+        fileGagal.push(`${f.file_name} (${err instanceof Error ? err.message : t('Gagal membuat invoice')})`);
+      }
+      setBulkProgress({ done: i + 1, total: targets.length });
+    }
+    setBulkProgress(null);
+
+    if (totalDibuat > 0) {
+      toast.success(t('Semua invoice berhasil dibuat'), {
+        description: `${totalDibuat} ${t('invoice baru dari')} ${targets.length} ${t('file -- cek tab Sales Transaction.')}`,
+      });
+    } else if (fileGagal.length === 0) {
+      toast.info(t('Tidak ada invoice baru'), {
+        description: `${totalSudahAda} ${t('sudah pernah dipromosikan')}, ${totalTidakValid} ${t('tidak valid')}.`,
+      });
+    }
+    if (fileGagal.length > 0) {
+      toast.error(`${fileGagal.length} ${t('file gagal diproses')}`, {
+        description: `${totalGagalBaris > 0 ? `${totalGagalBaris} ${t('baris gagal disimpan.')} ` : ''}${fileGagal.slice(0, 3).join('; ')}${fileGagal.length > 3 ? ' ...' : ''}`,
+        duration: 20000,
+      });
     }
   };
 
@@ -549,15 +602,28 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
           leading={
             <span className={PANEL_ICON_CHIP}><FileText size={17} /></span>
           }
-          action={selectedFile && previewRows.length > 0 && !semuaSudahInvoice ? (
-            <button
-              onClick={handlePromoteToInvoices}
-              disabled={isPromoting}
-              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-              title={t('Naikkan baris valid jadi invoice resmi di tab Sales Transaction')}
-            >
-              {isPromoting ? t('Memproses...') : t('Buat Invoice')}
-            </button>
+          action={sourceFiles.length > 0 ? (
+            <div className="flex shrink-0 items-center gap-2">
+              {selectedFile && previewRows.length > 0 && !semuaSudahInvoice && (
+                <button
+                  onClick={handlePromoteToInvoices}
+                  disabled={isPromoting || isBulkPromoting}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  title={t('Naikkan baris valid jadi invoice resmi di tab Sales Transaction')}
+                >
+                  {isPromoting ? t('Memproses...') : t('Buat Invoice')}
+                </button>
+              )}
+              <button
+                onClick={handlePromoteAllToInvoices}
+                disabled={isPromoting || isBulkPromoting}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-900 bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+                title={t('Buat invoice dari semua file sumber sekaligus (file yang sudah dibuat otomatis dilewati)')}
+              >
+                {isBulkPromoting ? <Loader2 size={13} className="animate-spin" /> : <Layers size={13} />}
+                {isBulkPromoting ? `${t('Memproses')} ${bulkProgress!.done}/${bulkProgress!.total}` : t('Buat Semua Invoice')}
+              </button>
+            </div>
           ) : undefined}
         >
           {selectedFile ? (
