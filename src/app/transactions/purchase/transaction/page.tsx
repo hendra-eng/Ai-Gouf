@@ -334,104 +334,27 @@ export default function PurchaseTransactionPage() {
           ))}
         </div>
 
-        {/* Filters -- baris terpisah di atas tabel, sama dengan Sales Transaction */}
-        <div className="card relative px-0 pb-0 pt-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative">
-              <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}>
-                <Calendar size={12} className="text-neutral-500" />
-                <span className="text-neutral-500">Date Period</span>
-                <span className="font-medium text-neutral-900">
-                  {dateStart ? formatTanggalSingkat(dateStart) : 'All'}
-                  {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
-                </span>
-              </button>
-              {showDatePicker && (
-                <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-neutral-300 bg-white p-3 shadow-xl">
-                  <div>
-                    <label className="text-[11px] font-medium text-neutral-500">From</label>
-                    <input type="date" value={dateStart} max={dateEnd || undefined} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-medium text-neutral-500">To</label>
-                    <input type="date" value={dateEnd} min={dateStart || undefined} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
-                  </div>
-                  <div className="flex gap-2">
-                    {(dateStart || dateEnd) && (
-                      <button onClick={() => { setDateStart(''); setDateEnd(''); setShowDatePicker(false); }} className="flex-1 rounded-[6px] border border-neutral-300 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50">
-                        Clear
-                      </button>
-                    )}
-                    <button onClick={() => setShowDatePicker(false)} className="flex-1 rounded-[6px] bg-blue-600 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700">
-                      Apply
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-            <FilterSelect
-              variant="elegant"
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[{ value: 'All', label: 'All Status' }, ...Object.entries(statusLabels).map(([k, v]) => ({ value: k, label: v }))]}
-            />
-            <FilterSelect
-              variant="elegant"
-              value={paymentFilter}
-              onChange={setPaymentFilter}
-              options={[{ value: 'All', label: 'All Payment' }, ...Object.entries(paymentLabels).map(([k, v]) => ({ value: k, label: v }))]}
-            />
-            <FilterSelect
-              variant="elegant"
-              value={categoryFilter}
-              onChange={setCategoryFilter}
-              options={uniqueCategories.map(c => ({ value: c, label: c === 'All' ? 'All Categories' : c }))}
-            />
-            <FilterSelect
-              variant="elegant"
-              value={vendorFilter}
-              onChange={setVendorFilter}
-              options={uniqueVendors.map(v => ({ value: v, label: v === 'All' ? 'All Vendors' : v }))}
-            />
-          </div>
-        </div>
-
         {/* Table + Detail */}
         <div className="flex gap-4 !mt-1">
           <div className="card flex-1 min-w-0 w-full">
-            <div className="flex flex-wrap items-end justify-between gap-3 px-0 pb-3 pt-1 border-b border-border">
-              <div>
-                <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">Purchase Transaction List</h3>
-                <p className="text-sm text-neutral-500 mt-0.5">
-                  {filtered.length === 0
-                    ? `Showing 0 of ${purchaseTransactions.length} transactions`
-                    : `Showing ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} of ${filtered.length} transactions`}
-                </p>
-              </div>
-              <div className="ml-auto flex w-full flex-col items-end gap-1.5 sm:w-auto">
+            {/* Header + filter bar -- sama dengan Sales Transaction List: judul kiri, Reset + Print All kanan; dropdown filter kiri, kolom cari (400px) kanan */}
+            <div className="flex flex-col gap-3 px-0 py-3 border-b border-border">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">Purchase Transaction List</h3>
+                  <p className="text-sm text-neutral-500 mt-0.5">
+                    {filtered.length === 0
+                      ? `Showing 0 of ${purchaseTransactions.length} transactions`
+                      : `Showing ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} of ${filtered.length} transactions`}
+                  </p>
+                </div>
                 <div className="flex items-center justify-end gap-2">
-                  {selectedIds.size > 0 && (
-                    <>
-                      <span className="text-xs text-neutral-500">{selectedIds.size} selected</span>
-                      <button
-                        className={`${BTN_SECONDARY} px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed`}
-                        disabled={bulkBusy !== null || bisaApprove === 0}
-                        title="Draft / pending review → Approved"
-                        onClick={() => runBulk('approve')}
-                      >
-                        {bulkBusy === 'approve' ? 'Approving…' : `Approve (${bisaApprove})`}
-                      </button>
-                      <button
-                        className={`${BTN_PRIMARY} px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed`}
-                        disabled={bulkBusy !== null || bisaPost === 0}
-                        title="Approved → Posted (moves to the Posted tab)"
-                        onClick={() => runBulk('post')}
-                      >
-                        {bulkBusy === 'post' ? 'Posting…' : `Post (${bisaPost})`}
-                      </button>
-                      <button className="text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:underline" onClick={() => setSelectedIds(new Set())}>Clear</button>
-                    </>
-                  )}
+                  <button
+                    onClick={() => { setSearch(''); setStatusFilter('All'); setPaymentFilter('All'); setCategoryFilter('All'); setVendorFilter('All'); setDateStart(''); setDateEnd(''); }}
+                    className="text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:underline"
+                  >
+                    Reset
+                  </button>
                   <PrintMenu
                     onPrint={printList}
                     label="Print All"
@@ -440,7 +363,65 @@ export default function PurchaseTransactionPage() {
                     buttonClassName={PRINT_BTN}
                   />
                 </div>
-                <div className="relative w-full sm:w-[400px]">
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}>
+                    <Calendar size={12} className="text-neutral-500" />
+                    <span className="text-neutral-500">Date Period</span>
+                    <span className="font-medium text-neutral-900">
+                      {dateStart ? formatTanggalSingkat(dateStart) : 'All'}
+                      {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
+                    </span>
+                  </button>
+                  {showDatePicker && (
+                    <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-neutral-300 bg-white p-3 shadow-xl">
+                      <div>
+                        <label className="text-[11px] font-medium text-neutral-500">From</label>
+                        <input type="date" value={dateStart} max={dateEnd || undefined} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-medium text-neutral-500">To</label>
+                        <input type="date" value={dateEnd} min={dateStart || undefined} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
+                      </div>
+                      <div className="flex gap-2">
+                        {(dateStart || dateEnd) && (
+                          <button onClick={() => { setDateStart(''); setDateEnd(''); setShowDatePicker(false); }} className="flex-1 rounded-[6px] border border-neutral-300 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50">
+                            Clear
+                          </button>
+                        )}
+                        <button onClick={() => setShowDatePicker(false)} className="flex-1 rounded-[6px] bg-blue-600 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700">
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <FilterSelect
+                  variant="elegant"
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  options={[{ value: 'All', label: 'All Status' }, ...Object.entries(statusLabels).map(([k, v]) => ({ value: k, label: v }))]}
+                />
+                <FilterSelect
+                  variant="elegant"
+                  value={paymentFilter}
+                  onChange={setPaymentFilter}
+                  options={[{ value: 'All', label: 'All Payment' }, ...Object.entries(paymentLabels).map(([k, v]) => ({ value: k, label: v }))]}
+                />
+                <FilterSelect
+                  variant="elegant"
+                  value={categoryFilter}
+                  onChange={setCategoryFilter}
+                  options={uniqueCategories.map(c => ({ value: c, label: c === 'All' ? 'All Categories' : c }))}
+                />
+                <FilterSelect
+                  variant="elegant"
+                  value={vendorFilter}
+                  onChange={setVendorFilter}
+                  options={uniqueVendors.map(v => ({ value: v, label: v === 'All' ? 'All Vendors' : v }))}
+                />
+                <div className="relative ml-auto w-full sm:w-[400px]">
                   <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
                   <input
                     type="text"
@@ -452,6 +433,30 @@ export default function PurchaseTransactionPage() {
                 </div>
               </div>
             </div>
+            {selectedIds.size > 0 && (
+              <div className="flex flex-wrap items-center gap-3 border-b border-border bg-neutral-50 px-3 py-2 text-xs">
+                <span className="font-semibold text-neutral-900">{selectedIds.size} selected</span>
+                <div className="ml-auto flex items-center gap-2">
+                  <button className="rounded-lg px-2.5 py-1.5 font-semibold text-neutral-700 hover:bg-neutral-200" onClick={() => setSelectedIds(new Set())}>Clear selection</button>
+                  <button
+                    className={`${BTN_SECONDARY} px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed`}
+                    disabled={bulkBusy !== null || bisaApprove === 0}
+                    title="Draft / pending review → Approved"
+                    onClick={() => runBulk('approve')}
+                  >
+                    {bulkBusy === 'approve' ? 'Approving…' : `Approve (${bisaApprove})`}
+                  </button>
+                  <button
+                    className={`${BTN_PRIMARY} px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed`}
+                    disabled={bulkBusy !== null || bisaPost === 0}
+                    title="Approved → Posted (moves to the Posted tab)"
+                    onClick={() => runBulk('post')}
+                  >
+                    {bulkBusy === 'post' ? 'Posting…' : `Post (${bisaPost})`}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="overflow-x-auto scrollbar-thin">
               <table className="w-full min-w-[1100px] select-text border-separate border-spacing-0">

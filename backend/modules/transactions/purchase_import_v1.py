@@ -58,6 +58,7 @@ File TIDAK disimpan ke disk -- diproses di memory saja.
 from __future__ import annotations
 
 import re
+import time
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -956,6 +957,50 @@ def _period_label(d: Optional[date]) -> str:
     return f"{_BULAN_EN[d.month - 1]} {d.year}" if d else "No Date"  # kolom period_label NOT NULL
 
 
+def _catat_file_sumber(
+    *, management_client_id: str, user_id: Optional[str], nama_user: Optional[str], file_name: Optional[str],
+    file_type: str, template: Optional[Dict[str, Any]], baris: List[Dict[str, Any]], status: str,
+    period_label: Optional[str], durasi_ms: int,
+) -> Optional[Dict[str, Any]]:
+    """Catat 1 file upload ke financial_transaction_purchase_source_files (+ baris staging-nya) supaya SEMUA
+    file yang diupload -- berhasil, perlu review, atau gagal -- muncul di tab Source Data (daftar file, pola Sales).
+    Transaksi draft tetap dibuat langsung oleh upload; tiap source row menyimpan transaction_id-nya."""
+    valid = [b for b in baris if b["is_valid"]]
+    vendor = list(dict.fromkeys(b["nama_vendor"] for b in baris if b.get("nama_vendor")))
+    vendor_hint = None if not vendor else (vendor[0] if len(vendor) == 1 else f"{vendor[0]} +{len(vendor) - 1} more")
+    rows_invalid = len(baris) - len(valid)
+    if baris:
+        confidence = round(100.0 * len(valid) / len(baris), 2)
+    else:
+        confidence = None
+    sumber = dbc.create_purchase_source_file({
+        "client_id": management_client_id,
+        "management_client_id": management_client_id,
+        "file_name": (file_name or "file")[:255],
+        "file_type": file_type,
+        "period_label": (period_label or None) and period_label[:50],
+        "vendor_hint": vendor_hint and vendor_hint[:255],
+        "rows_detected": len(baris),
+        "rows_valid": len(valid),
+        "rows_invalid": rows_invalid,
+        "duplicate_count": sum(1 for b in baris if b["is_duplicate_candidate"]),
+        "status_ekstraksi": status,
+        "status_mapping": status,
+        "confidence_score": confidence,
+        "dpp_total": round(sum(float(b["dpp"]) for b in valid), 2),
+        "ppn_total": round(sum(float(b["ppn"]) for b in valid), 2),
+        "grand_total": round(sum(float(b["total"]) for b in valid), 2),
+        "extraction_duration_ms": durasi_ms,
+        "mapping_rules": (template or {}).get("mapping_rules"),
+        "template_id": (template or {}).get("id"),
+        "processed_by": nama_user,
+        "uploaded_by": user_id,
+    }, user_id)
+    if sumber and baris:
+        dbc.create_purchase_source_rows_bulk(baris, sumber["id"], management_client_id, user_id)
+    return sumber
+
+
 # ============================================================
 # ENDPOINT
 # ============================================================
@@ -975,6 +1020,7 @@ async def upload_purchase_import(
     management_client_id: str = Form(..., description="ID management_clients -- klien yang laporannya sedang diupload, WAJIB."),
     current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
 ):
+    t0 = time.perf_counter()
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:
         return gagal(
@@ -995,8 +1041,13 @@ async def upload_purchase_import(
         logger.warning(f"Gagal mencocokkan template Purchase Import untuk file {file.filename}: {e}")
 
     if cocok is None:
+        file_review = _catat_file_sumber(
+            management_client_id=management_client_id, user_id=client_id, nama_user=created_by_name, file_name=file.filename,
+            file_type=file_type, template=None, baris=[], status="Needs Review", period_label=None,
+            durasi_ms=int((time.perf_counter() - t0) * 1000),
+        )
         return sukses(
-            data={"template_matched": False, "transactions_detected": 0, "created": 0, "transactions": []},
+            data={**(file_review or {}), "template_matched": False, "transactions_detected": 0, "created": 0, "transactions": []},
             message=(
                 "No matching column pattern template found for this client & file format -- "
                 "no transaction was created. Create a template first (see "
@@ -1011,8 +1062,13 @@ async def upload_purchase_import(
         blok, info_periode = _saring_periode_nama_file(blok, template.get("mapping_rules") or {}, file.filename)
     except Exception as e:
         logger.error(f"Gagal ekstraksi file {file.filename} pakai template {template['id']}: {e}")
+        file_gagal = _catat_file_sumber(
+            management_client_id=management_client_id, user_id=client_id, nama_user=created_by_name, file_name=file.filename,
+            file_type=file_type, template=template, baris=[], status="Failed", period_label=None,
+            durasi_ms=int((time.perf_counter() - t0) * 1000),
+        )
         return sukses(
-            data={"template_matched": True, "transactions_detected": 0, "created": 0, "transactions": []},
+            data={**(file_gagal or {}), "template_matched": True, "transactions_detected": 0, "created": 0, "transactions": []},
             message=f"Template found but extraction failed: {e}",
             status_code=201,
         )
@@ -1032,15 +1088,36 @@ async def upload_purchase_import(
     skipped_invalid = 0
     skipped_duplicate = 0
     with_warnings = 0
+    baris_sumber: List[Dict[str, Any]] = []
+
+    def _baris_sumber(t: Dict[str, Any], valid: bool, catatan: Optional[str], duplikat: bool, transaction_id: Optional[str]) -> Dict[str, Any]:
+        return {
+            "row_no": len(baris_sumber) + 1,
+            "tanggal": t["purchase_date"],
+            "no_invoice": (t["purchase_no"] or "")[:100] or None,
+            "nama_vendor": (t["vendor_name"] or None) and t["vendor_name"][:255],
+            "vendor_code": (t["vendor_code"] or None) and t["vendor_code"][:50],
+            "cabang": (t["dept"] or None) and t["dept"][:100],
+            "dpp": round(float(t["subtotal"]) - float(t["potongan"]), 2),
+            "ppn": round(float(t["pajak"]), 2),
+            "total": round(float(t["total_akhir"]), 2),
+            "is_valid": valid,
+            "validation_notes": catatan,
+            "is_duplicate_candidate": duplikat,
+            "transaction_id": transaction_id,
+            "payload": {"line_count": len(t["lines"]), "notes": t.get("notes") or []},
+        }
 
     for t in blok:
         if t["errors"]:
             skipped_invalid += 1
             hasil_tx.append({"purchase_no": t["purchase_no"] or "-", "ok": False, "message": " ".join(t["errors"])})
+            baris_sumber.append(_baris_sumber(t, False, " ".join(t["errors"]), False, None))
             continue
         if dbc.get_purchase_transaction_by_client_and_no(client_id, t["purchase_no"]):
             skipped_duplicate += 1
             hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": "This purchase number has already been imported previously."})
+            baris_sumber.append(_baris_sumber(t, True, "This purchase number has already been imported previously.", True, None))
             continue
 
         cabang = f" ({t['dept']})" if t["dept"] else ""
@@ -1077,7 +1154,9 @@ async def upload_purchase_import(
         dibuat = dbc.create_purchase_transaction_with_lines(transaction_data, t["lines"], created_by=client_id, error_out=error_db)
         if dibuat is None:
             skipped_invalid += 1
-            hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": _pesan_gagal_simpan(error_db[0] if error_db else "", t)})
+            pesan_gagal = _pesan_gagal_simpan(error_db[0] if error_db else "", t)
+            hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": pesan_gagal})
+            baris_sumber.append(_baris_sumber(t, False, pesan_gagal, False, None))
             continue
         created += 1
         peringatan = t.get("warnings") or []
@@ -1089,11 +1168,28 @@ async def upload_purchase_import(
         if peringatan:
             pesan += " Warning: " + " ".join(peringatan)
         hasil_tx.append({"purchase_no": t["purchase_no"], "ok": True, "message": pesan})
+        baris_sumber.append(_baris_sumber(t, True, "; ".join(peringatan) or None, False, dibuat.get("id")))
 
     dbc.touch_purchase_import_template_usage(template["id"])
 
+    tanggal_ada = sorted(b["tanggal"] for b in baris_sumber if b["tanggal"])
+    if info_periode:
+        label_periode = info_periode["label"]
+    elif tanggal_ada:
+        awal_l, akhir_l = _period_label(tanggal_ada[0]), _period_label(tanggal_ada[-1])
+        label_periode = awal_l if awal_l == akhir_l else f"{awal_l} - {akhir_l}"
+    else:
+        label_periode = None
+    file_sumber = _catat_file_sumber(
+        management_client_id=management_client_id, user_id=client_id, nama_user=created_by_name, file_name=file.filename,
+        file_type=file_type, template=template, baris=baris_sumber,
+        status="Completed" if baris_sumber and all(b["is_valid"] for b in baris_sumber) else "Needs Review",
+        period_label=label_periode, durasi_ms=int((time.perf_counter() - t0) * 1000),
+    )
+
     return sukses(
         data={
+            **(file_sumber or {}),
             "template_matched": True,
             "transactions_detected": len(blok),
             "created": created,
@@ -1122,3 +1218,15 @@ def daftar_purchase_import_template(
 ):
     data = [ringkas_import_template(t) for t in dbc.list_purchase_import_templates(client_id=management_client_id, hanya_aktif=True)]
     return sukses(data=data, message="OK")
+
+
+@router.get(
+    "/import/source-files",
+    summary="Daftar file yang pernah diupload di tab Source Data Purchase (company aktif), terbaru di atas",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}},
+)
+def daftar_purchase_source_files(
+    management_client_id: str = Query(..., description="ID management_clients -- company aktif (Switch Company)."),
+    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    return sukses(data=dbc.list_purchase_source_files(management_client_id=management_client_id), message="OK")

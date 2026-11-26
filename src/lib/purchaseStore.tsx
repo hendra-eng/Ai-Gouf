@@ -375,8 +375,66 @@ export async function uploadPurchaseSourceFile(file: File, managementClientId: s
     body: form, // JANGAN set Content-Type manual -- browser yang mengisi boundary multipart-nya
   });
   const row = await baca<UploadPurchaseSourceFileResult>(res);
-  if (row.created > 0) notifyPurchaseChanged();
+  notifyPurchaseChanged(); // file baru selalu tercatat di daftar Source Data (juga yang Needs Review / Failed)
   return row;
+}
+
+/** Status ekstraksi/mapping file sumber -- label Inggris langsung dari backend. */
+export type PurchaseSourceFileStatus = 'Completed' | 'Processing' | 'Needs Review' | 'Failed';
+
+/** 1 file yang pernah diupload di tab Source Data (financial_transaction_purchase_source_files). */
+export interface BackendPurchaseSourceFile {
+  id: string;
+  management_client_id: string;
+  file_name: string;
+  file_type: string | null;
+  period_label: string | null;
+  vendor_hint: string | null;
+  /** Jumlah transaksi pembelian (blok / nomor transaksi) yang terdeteksi di file. */
+  rows_detected: number;
+  rows_valid: number;
+  rows_invalid: number;
+  duplicate_count: number;
+  status_ekstraksi: PurchaseSourceFileStatus;
+  status_mapping: PurchaseSourceFileStatus;
+  confidence_score: number | null;
+  dpp_total: number;
+  ppn_total: number;
+  grand_total: number;
+  processed_by: string | null;
+  uploaded_at: string;
+  uploaded_by: string | null;
+}
+
+/** GET /import/source-files -- daftar file upload company aktif (terbaru di atas). */
+export async function listPurchaseSourceFiles(managementClientId: string): Promise<BackendPurchaseSourceFile[]> {
+  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/import/source-files${qs({ management_client_id: managementClientId })}`);
+  return baca<BackendPurchaseSourceFile[]>(res);
+}
+
+export function usePurchaseSourceFiles(companyId: string | null | undefined): {
+  files: BackendPurchaseSourceFile[]; loading: boolean; error: string | null; refresh: () => void;
+} {
+  const [files, setFiles] = useState<BackendPurchaseSourceFile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const muatUlang = useCallback(() => {
+    if (!companyId) { setFiles([]); setLoading(false); return; }
+    setLoading(true);
+    listPurchaseSourceFiles(companyId)
+      .then(data => { setFiles(data); setError(null); })
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load source files'))
+      .finally(() => setLoading(false));
+  }, [companyId]);
+
+  useEffect(() => {
+    muatUlang();
+    window.addEventListener(PURCHASE_CHANGED_EVENT, muatUlang);
+    return () => window.removeEventListener(PURCHASE_CHANGED_EVENT, muatUlang);
+  }, [muatUlang]);
+
+  return { files, loading, error, refresh: muatUlang };
 }
 
 /** Purchase Import Template aktif milik company -- GET /import/templates
