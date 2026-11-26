@@ -35,7 +35,7 @@ const STATUS_LABELS: Record<string, string> = {
   exception: 'Exception', cancelled: 'Cancelled',
 };
 const PAYMENT_LABELS: Record<string, string> = {
-  unpaid: 'Unpaid', partially_paid: 'Partial', paid: 'Paid', overdue: 'Overdue', on_hold: 'On Hold',
+  unpaid: 'Unpaid', partially_paid: 'Partial', paid: 'Paid', overdue: 'Overdue', on_hold: 'On Hold', non_cash: 'Non-Cash',
 };
 
 /** Dipakai tombol "Export" di halaman Purchase Transaction & Posted. */

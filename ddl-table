@@ -653,7 +653,7 @@ CREATE TABLE financial_transaction_purchase_transactions (
     total                       NUMERIC(24,2) NOT NULL DEFAULT 0,
     accounts_payable             NUMERIC(24,2) NOT NULL DEFAULT 0,
     currency                     VARCHAR(10) NOT NULL DEFAULT 'IDR',
-    payment_status                VARCHAR(20) NOT NULL DEFAULT 'unpaid', -- unpaid/partially_paid/paid/overdue/on_hold (PaymentStatus)
+    payment_status                VARCHAR(20) NOT NULL DEFAULT 'unpaid', -- unpaid/partially_paid/paid/overdue/on_hold/non_cash (PaymentStatus)
     payment_terms                 VARCHAR(50),                           -- mis. "Net 30"
     due_date                      DATE,
     status                        VARCHAR(20) NOT NULL DEFAULT 'draft',  -- draft/pending_review/approved/pending_posting/posted/rejected/exception/cancelled (PurchaseStatus)

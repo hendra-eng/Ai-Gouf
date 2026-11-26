@@ -96,7 +96,7 @@ export default function PurchaseOverviewPage() {
     posted: purchaseTransactions.filter(p => p.status === 'posted').length,
     exceptions: purchaseTransactions.filter(p => p.status === 'exception').length,
     totalTax: purchaseTransactions.reduce((s, p) => s + p.taxAmount, 0),
-    totalAP: purchaseTransactions.filter(p => p.paymentStatus !== 'paid').reduce((s, p) => s + p.accountsPayable, 0),
+    totalAP: purchaseTransactions.filter(p => p.paymentStatus !== 'paid' && p.paymentStatus !== 'non_cash').reduce((s, p) => s + p.accountsPayable, 0),
     overdueAmount: purchaseTransactions.filter(p => p.paymentStatus === 'overdue').reduce((s, p) => s + p.total, 0),
     unpaidCount: purchaseTransactions.filter(p => p.paymentStatus !== 'paid').length,
     overdueCount: purchaseTransactions.filter(p => p.paymentStatus === 'overdue').length,

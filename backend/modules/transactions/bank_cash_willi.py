@@ -429,6 +429,7 @@ def _daftar_invoice(session, client_id: str, tipe: str, hanya_terbuka: bool = Fa
     else:
         rows = session.query(PT).filter(
             PT.management_client_id == client_id, PT.deleted_at.is_(None), func.lower(PT.status) == "posted",
+            func.coalesce(func.lower(PT.payment_status), "") != "non_cash",  # jurnal penyesuaian non-kas (penyusutan) bukan tagihan
         ).order_by(PT.purchase_date.desc()).all()
         alok = _alokasi_aktif(session, client_id, "purchase_transaction_id")
         asing = _alokasi_asing(session, client_id, "purchase_transaction_id")
@@ -997,6 +998,8 @@ def _terapkan_pelunasan(session, client_id: str, tx: Any, tanda: int) -> None:
     if pid:
         alok = _alokasi_aktif(session, client_id, "purchase_transaction_id", pid)
         for p in session.query(PT).filter(PT.id.in_(pid)).all():
+            if (p.payment_status or "").lower() == "non_cash":
+                continue  # jurnal non-kas: status bayar tidak dihitung dari alokasi Cash & Bank
             total = _dec(p.accounts_payable if p.accounts_payable is not None else p.total)
             dibayar = alok.get(str(p.id), {}).get("posted", NOL)
             if dibayar > total + TOLERANSI:

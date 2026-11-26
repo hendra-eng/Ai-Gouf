@@ -97,7 +97,7 @@ function matchEnum<T extends string>(raw: string | null | undefined, allowed: re
 }
 
 const PURCHASE_STATUSES: PurchaseStatus[] = ['draft', 'pending_review', 'approved', 'pending_posting', 'posted', 'rejected', 'exception', 'cancelled'];
-const PAYMENT_STATUSES: PaymentStatus[] = ['unpaid', 'partially_paid', 'paid', 'overdue', 'on_hold'];
+const PAYMENT_STATUSES: PaymentStatus[] = ['unpaid', 'partially_paid', 'paid', 'overdue', 'on_hold', 'non_cash'];
 const PURCHASE_CATEGORIES: PurchaseCategory[] = ['Inventory', 'Office Supplies', 'IT Equipment', 'Professional Services', 'Utilities', 'Maintenance', 'Marketing', 'Travel', 'Fixed Assets', 'Raw Materials', 'Logistics', 'Other'];
 const SOURCE_DOC_TYPES: SourceDocType[] = ['Purchase Order', 'Vendor Invoice', 'Goods Receipt', 'Service Receipt', 'Supplier Bill', 'Expense Claim', 'Recurring Purchase', 'Manual'];
 const EXCEPTION_SEVERITIES: ExceptionSeverity[] = ['Critical', 'High', 'Medium', 'Low'];
@@ -293,7 +293,7 @@ export function computePurchaseOverviewKPIs(purchaseTransactions: PurchaseTransa
     posted: purchaseTransactions.filter((p) => p.status === 'posted').length,
     exceptions: purchaseTransactions.filter((p) => p.status === 'exception').length,
     totalTax: purchaseTransactions.reduce((s, p) => s + p.taxAmount, 0),
-    totalAP: purchaseTransactions.filter((p) => p.paymentStatus !== 'paid').reduce((s, p) => s + p.accountsPayable, 0),
+    totalAP: purchaseTransactions.filter((p) => p.paymentStatus !== 'paid' && p.paymentStatus !== 'non_cash').reduce((s, p) => s + p.accountsPayable, 0),
     overdueAmount: purchaseTransactions.filter((p) => p.paymentStatus === 'overdue').reduce((s, p) => s + p.total, 0),
     // [FIX] Sebelumnya dibandingkan ke string bulan hardcode ("Sep 2026"),
     // jadi otomatis basi begitu bulan berganti. Sekarang dicek dari

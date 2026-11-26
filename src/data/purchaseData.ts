@@ -1,7 +1,8 @@
 // Purchase Module Data — Backend integration point: replace with API calls to your ERP/AP backend
 
 export type PurchaseStatus = 'draft' | 'pending_review' | 'approved' | 'pending_posting' | 'posted' | 'rejected' | 'exception' | 'cancelled';
-export type PaymentStatus = 'unpaid' | 'partially_paid' | 'paid' | 'overdue' | 'on_hold';
+// non_cash = jurnal penyesuaian tanpa kas keluar (penyusutan, dsb) -- tidak pernah dibayar lewat Cash & Bank.
+export type PaymentStatus = 'unpaid' | 'partially_paid' | 'paid' | 'overdue' | 'on_hold' | 'non_cash';
 export type PurchaseCategory = 'Inventory' | 'Office Supplies' | 'IT Equipment' | 'Professional Services' | 'Utilities' | 'Maintenance' | 'Marketing' | 'Travel' | 'Fixed Assets' | 'Raw Materials' | 'Logistics' | 'Other';
 export type SourceDocType = 'Purchase Order' | 'Vendor Invoice' | 'Goods Receipt' | 'Service Receipt' | 'Supplier Bill' | 'Expense Claim' | 'Recurring Purchase' | 'Manual';
 export type ExceptionType = 'Missing Invoice Number' | 'Duplicate Invoice' | 'Invalid Vendor' | 'Purchase Order Mismatch' | 'Price Mismatch' | 'Tax Mismatch' | 'Missing Approval' | 'Closed Accounting Period' | 'Missing Purchase Order' | 'Posting Failure' | 'Quantity Mismatch' | 'Missing Documentation';

@@ -917,6 +917,22 @@ def _saring_periode_nama_file(hasil: List[Dict[str, Any]], mapping_rules: Dict[s
     }
 
 
+# Status bayar awal hasil import. Transaksi yang akun lawannya (Cr) bukan hutang -- akumulasi penyusutan /
+# amortisasi (jurnal penyesuaian UBD) -- tidak pernah dibayar lewat Cash & Bank, jadi diberi 'non_cash'
+# (bukan 'unpaid') supaya tidak tampil sebagai hutang & tidak muncul di Cash Payment.
+# Resep boleh menambah kode akun eksplisit lewat "non_cash_akun_kode": ["1-10502", ...].
+_POLA_AKUN_NON_KAS = re.compile(r"accum|akumulasi|depre|penyusutan|amortis", re.IGNORECASE)
+
+
+def _status_bayar_awal(akun_ap: Dict[str, Any], recipe: Dict[str, Any]) -> str:
+    kode = str(akun_ap.get("account_code") or "").strip()
+    nama = str(akun_ap.get("account_name") or "")
+    kode_non_kas = {str(k).strip() for k in (recipe.get("non_cash_akun_kode") or [])}
+    if (kode and kode in kode_non_kas) or _POLA_AKUN_NON_KAS.search(nama):
+        return "non_cash"
+    return "unpaid"
+
+
 def _terapkan_akun_dept(lines: List[Dict[str, Any]], dept: str, recipe: Dict[str, Any]) -> None:
     """Baris yang masih memakai akun default (line_account / biaya_account)
     dipindah ke akun cabang dari line_account_by_dept, kalau ada."""
@@ -1140,7 +1156,7 @@ async def upload_purchase_import(
             "description": f"Purchase{cabang} - {t['vendor_name']}",
             "category": t.get("category") or category,  # kategori per baris (buku kas kecil AADL) menang
             "currency": currency,
-            "payment_status": "unpaid",
+            "payment_status": _status_bayar_awal(akun_ap, recipe),
             "status": "draft",
             "period_label": _period_label(t["purchase_date"]),
             "created_by_name": created_by_name,

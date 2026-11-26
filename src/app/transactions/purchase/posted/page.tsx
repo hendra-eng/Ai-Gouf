@@ -28,6 +28,7 @@ const PAYMENT_STYLE: Record<string, PillStyle> = {
   unpaid: { pill: 'bg-red-100 text-red-800 border-red-300', dot: 'bg-red-600' },
   overdue: { pill: 'bg-red-100 text-red-800 border-red-300', dot: 'bg-red-600' },
   on_hold: PILL_FALLBACK,
+  non_cash: { pill: 'bg-violet-100 text-violet-800 border-violet-300', dot: 'bg-violet-600' },
 };
 
 const paymentLabels: Record<string, string> = {
@@ -36,6 +37,7 @@ const paymentLabels: Record<string, string> = {
   paid: 'Paid',
   overdue: 'Overdue',
   on_hold: 'On Hold',
+  non_cash: 'Non-Cash',
 };
 
 function Pill({ style, label }: { style?: PillStyle; label: string }) {

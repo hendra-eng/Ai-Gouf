@@ -34,6 +34,7 @@ const PILL: Record<string, { pill: string; dot: string }> = {
   emerald: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600' },
   red: { pill: 'bg-red-100 text-red-800 border-red-300', dot: 'bg-red-600' },
   neutral: { pill: 'bg-neutral-100 text-neutral-600 border-neutral-300', dot: 'bg-neutral-400' },
+  violet: { pill: 'bg-violet-100 text-violet-800 border-violet-300', dot: 'bg-violet-600' },
 };
 
 function StatusPill({ tone, label }: { tone: keyof typeof PILL; label: string }) {
@@ -73,6 +74,7 @@ const paymentTones: Record<PaymentStatus, keyof typeof PILL> = {
   paid: 'emerald',
   overdue: 'red',
   on_hold: 'slate',
+  non_cash: 'violet',
 };
 
 const paymentLabels: Record<PaymentStatus, string> = {
@@ -81,6 +83,7 @@ const paymentLabels: Record<PaymentStatus, string> = {
   paid: 'Paid',
   overdue: 'Overdue',
   on_hold: 'On Hold',
+  non_cash: 'Non-Cash',
 };
 
 // Kolom nominal (header & isi rata kanan) & gaya tombol netral -- sama dengan Sales Transaction.

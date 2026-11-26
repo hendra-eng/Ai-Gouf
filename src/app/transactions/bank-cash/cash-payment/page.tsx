@@ -27,6 +27,7 @@ const STATUS_STYLE: Record<string, { pill: string; dot: string; label: string }>
   unpaid: { pill: 'bg-slate-200 text-slate-800 border-slate-400', dot: 'bg-slate-500', label: 'Unpaid' },
   overdue: { pill: 'bg-red-100 text-red-800 border-red-300', dot: 'bg-red-600', label: 'Overdue' },
   on_hold: { pill: 'bg-blue-100 text-blue-800 border-blue-300', dot: 'bg-blue-600', label: 'On Hold' },
+  non_cash: { pill: 'bg-violet-100 text-violet-800 border-violet-300', dot: 'bg-violet-600', label: 'Non-Cash' },
 };
 
 const NUMERIC_COLS = ['Total', 'Paid', 'Outstanding'];

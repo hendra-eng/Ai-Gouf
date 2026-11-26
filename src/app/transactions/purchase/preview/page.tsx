@@ -24,7 +24,7 @@ const fmt = (n: number) =>
 const formatAngka = (n: number) => n.toLocaleString('id-ID');
 
 // ── Pill status bergaris + titik berwarna -- sama dengan StatusPill di Sales Journal Preview ──
-type Tone = 'slate' | 'amber' | 'blue' | 'sky' | 'teal' | 'orange' | 'emerald' | 'red' | 'neutral';
+type Tone = 'slate' | 'amber' | 'blue' | 'sky' | 'teal' | 'orange' | 'emerald' | 'red' | 'neutral' | 'violet';
 const PILL: Record<Tone, { pill: string; dot: string }> = {
   slate: { pill: 'bg-slate-200 text-slate-800 border-slate-400', dot: 'bg-slate-500' },
   amber: { pill: 'bg-amber-100 text-amber-900 border-amber-300', dot: 'bg-amber-600' },
@@ -35,6 +35,7 @@ const PILL: Record<Tone, { pill: string; dot: string }> = {
   emerald: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600' },
   red: { pill: 'bg-red-100 text-red-800 border-red-300', dot: 'bg-red-600' },
   neutral: { pill: 'bg-neutral-100 text-neutral-600 border-neutral-300', dot: 'bg-neutral-400' },
+  violet: { pill: 'bg-violet-100 text-violet-800 border-violet-300', dot: 'bg-violet-600' },
 };
 
 function StatusPill({ tone, label }: { tone: Tone; label: string }) {
@@ -75,6 +76,7 @@ const paymentTones: Record<PaymentStatus, Tone> = {
   paid: 'emerald',
   overdue: 'red',
   on_hold: 'neutral',
+  non_cash: 'violet',
 };
 
 const paymentLabels: Record<PaymentStatus, string> = {
@@ -83,6 +85,7 @@ const paymentLabels: Record<PaymentStatus, string> = {
   paid: 'Paid',
   overdue: 'Overdue',
   on_hold: 'On Hold',
+  non_cash: 'Non-Cash',
 };
 
 // Kelompok status untuk filter antrian & KPI.
