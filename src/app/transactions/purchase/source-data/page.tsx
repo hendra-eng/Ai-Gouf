@@ -13,7 +13,7 @@ import {
   type BackendPurchaseSourceFile, type BackendPurchaseSourceRow,
 } from '@/lib/purchaseStore';
 import { formatTanggalWaktu, formatTanggalSingkat } from '@/lib/salesStore';
-import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight, MoreHorizontal, Trash2, FileText } from 'lucide-react';
+import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight, MoreHorizontal, Trash2, FileText, ShieldCheck } from 'lucide-react';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -111,6 +111,7 @@ const ROW_STATE_STYLE: Record<RowState, { pill: string; dot: string; label: stri
   invalid: { pill: 'bg-red-100 text-red-800 border-red-300', dot: 'bg-red-600', label: 'Invalid' },
 };
 const formatIDR = (n: number) => Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
+const formatRp = (n: number) => 'Rp ' + formatIDR(n);
 
 // Klasifikasi file untuk KPI -- 1 file masuk tepat 1 kelompok. Upload hanya mengisi staging (status_mapping 'Processing'
 // sampai baris dibuat jadi transaksi lewat Create Transaction).
@@ -164,6 +165,9 @@ export default function PurchaseSourceDataPage() {
   const pagedPreviewRows = previewRows.slice((previewPageSafe - 1) * PREVIEW_PAGE_SIZE, previewPageSafe * PREVIEW_PAGE_SIZE);
   const jumlahSiap = previewRows.filter(r => rowState(r) === 'ready').length;
   const jumlahDibuat = previewRows.filter(r => rowState(r) === 'created').length;
+  const jumlahTidakDibuat = previewRows.length - jumlahDibuat;
+  // Semua baris yang bisa dibuat sudah jadi transaksi -> tabel preview diganti panel centang hijau (tombol Create Transaction juga hilang).
+  const semuaSudahDibuat = previewRows.length > 0 && jumlahDibuat > 0 && jumlahSiap === 0;
 
   // Create Transaction: naikkan baris valid file terpilih jadi Purchase Transaction draft (aman diulang).
   const [isPromoting, setIsPromoting] = useState(false);
@@ -468,6 +472,8 @@ export default function PurchaseSourceDataPage() {
           </div>
         </div>
 
+        {/* Panel bawah: File Preview / AI Extraction Summary / Data Quality Check -- pola sama dengan Source Data Sales. */}
+        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-3">
         {/* File Preview -- baris staging file terpilih + tombol Create Transaction */}
         <SourcePanel
           title="File Preview"
@@ -500,15 +506,22 @@ export default function PurchaseSourceDataPage() {
           {selectedFile && !loadingRows && previewRows.length === 0 && (
             <p className="py-6 text-center text-xs text-neutral-500">No rows for this file.</p>
           )}
-          {selectedFile && previewRows.length > 0 && jumlahSiap === 0 && jumlahDibuat > 0 && (
-            <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
-              <CheckCircle size={14} /> All valid rows have been created as purchase transactions.
+          {selectedFile && semuaSudahDibuat && (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                <CheckCircle size={32} />
+              </span>
+              <p className="text-sm font-semibold text-emerald-700">Transactions have been created</p>
+              <p className="max-w-xs text-xs text-neutral-500">
+                {jumlahDibuat.toLocaleString('id-ID')} transactions from this file are now in the Purchase Transaction tab.
+                {jumlahTidakDibuat > 0 ? ` ${jumlahTidakDibuat.toLocaleString('id-ID')} invalid or duplicate rows were not created.` : ''}
+              </p>
             </div>
           )}
-          {selectedFile && previewRows.length > 0 && (
+          {selectedFile && previewRows.length > 0 && !semuaSudahDibuat && (
             <>
               <div className="overflow-x-auto scrollbar-thin">
-                <table className="w-full min-w-[820px] select-text border-separate border-spacing-0 text-xs">
+                <table className="w-full min-w-[720px] select-text border-separate border-spacing-0 text-xs">
                   <thead>
                     <tr className="bg-neutral-300">
                       {['No', 'Date', 'Invoice No.', 'Vendor', 'Branch', 'DPP (IDR)', 'PPN (IDR)', 'Total (IDR)', 'Status'].map(h => (
@@ -567,6 +580,156 @@ export default function PurchaseSourceDataPage() {
             </>
           )}
         </SourcePanel>
+
+        {/* AI Extraction Summary -- dari kolom rows_valid/rows_invalid/duplicate_count/dpp_total/ppn_total/grand_total file terpilih. */}
+        <SourcePanel
+          title="AI Extraction Summary"
+          leading={<span className={`${PANEL_ICON_CHIP} text-xs font-bold`}>AI</span>}
+        >
+          {!selectedFile ? (
+            <p className="py-6 text-center text-xs text-neutral-500">Select or upload a file to see the summary.</p>
+          ) : (
+            <>
+              {selectedFile.ai_model_version ? (
+                <p className="mb-3 text-xs text-neutral-600">
+                  Model: <span className="ml-1 rounded-full border border-neutral-300 bg-neutral-100 px-2 py-0.5 font-semibold text-neutral-700">{selectedFile.ai_model_version}</span>
+                </p>
+              ) : (
+                <p className="mb-3 text-xs text-neutral-500">No automatic extraction result for this file yet.</p>
+              )}
+              {(() => {
+                const totalRows = selectedFile.rows_detected || 0;
+                const validPct = totalRows > 0 ? Math.round((selectedFile.rows_valid / totalRows) * 100) : 0;
+                const stats: { label: string; value: number; cls: string }[] = [
+                  { label: 'Total Rows Detected', value: selectedFile.rows_detected, cls: 'text-neutral-900' },
+                  { label: 'Valid Rows', value: selectedFile.rows_valid, cls: 'text-neutral-900' },
+                  { label: 'Invalid Rows', value: selectedFile.rows_invalid, cls: selectedFile.rows_invalid > 0 ? 'text-red-600' : 'text-neutral-900' },
+                ];
+                const rows: [string, string][] = [
+                  ['Potential Duplicates', String(selectedFile.duplicate_count)],
+                  ['Transaction Value (Tax Base)', formatRp(selectedFile.dpp_total)],
+                  ['VAT Value', formatRp(selectedFile.ppn_total)],
+                  ['Total Value', formatRp(selectedFile.grand_total)],
+                ];
+                return (
+                  <>
+                    <div className="grid grid-cols-3 gap-2">
+                      {stats.map(st => (
+                        <div key={st.label} className="rounded-lg border border-neutral-200 bg-neutral-50 p-2.5">
+                          <p className="truncate text-[10px] font-semibold uppercase leading-tight tracking-wide text-neutral-500" title={st.label}>{st.label}</p>
+                          <p className={`mt-1.5 text-lg font-semibold leading-none tabular-nums tracking-tight ${st.cls}`}>{st.value.toLocaleString('id-ID')}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+                        <div className="h-full rounded-full bg-blue-600" style={{ width: `${selectedFile.rows_valid > 0 ? Math.max(validPct, 3) : 0}%` }} />
+                      </div>
+                      <p className="mt-1 text-[11px] font-medium text-neutral-600">{validPct}% valid rows</p>
+                    </div>
+                    <div className="mt-3 divide-y divide-neutral-200 text-xs">
+                      {rows.map(([k, v]) => (
+                        <div key={k} className="flex items-center justify-between py-2">
+                          <span className="text-neutral-500">{k}</span>
+                          <span className="text-sm font-semibold tabular-nums text-neutral-900">{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
+              {selectedFile.extraction_duration_ms != null && (
+                <div className="mt-auto border-t border-neutral-200 pt-3">
+                  <p className="text-[11px] font-medium text-neutral-500">ℹ Extraction finished in {(selectedFile.extraction_duration_ms / 1000).toFixed(1)} seconds</p>
+                </div>
+              )}
+            </>
+          )}
+        </SourcePanel>
+
+        {/* Data Quality Check -- dihitung dari baris staging asli file terpilih; "Detected Fields" = field yang terisi di baris hasil ekstraksi. */}
+        <SourcePanel
+          title="Data Quality Check"
+          leading={<span className={PANEL_ICON_CHIP}><ShieldCheck size={17} /></span>}
+        >
+          {!selectedFile || previewRows.length === 0 ? (
+            <p className="py-6 text-center text-xs text-neutral-500">No data rows to check yet.</p>
+          ) : (
+            (() => {
+              const total = previewRows.length;
+              const withDate = previewRows.filter(r => !!r.tanggal).length;
+              const withInvoice = previewRows.filter(r => !!r.no_invoice).length;
+              const withVendor = previewRows.filter(r => !!r.nama_vendor && r.nama_vendor !== '-').length;
+              const validTotal = previewRows.filter(r => r.total > 0).length;
+              const duplicates = previewRows.filter(r => r.is_duplicate_candidate).length;
+              const invalid = previewRows.filter(r => !r.is_valid).length;
+              const checks = [
+                { label: 'Valid date format', val: `${withDate} / ${total}`, ok: withDate === total },
+                { label: 'Invoice number found', val: `${withInvoice} / ${total}`, ok: withInvoice === total },
+                { label: 'Valid vendor name', val: `${withVendor} / ${total}`, ok: withVendor === total },
+                { label: 'Valid transaction value', val: `${validTotal} / ${total}`, ok: validTotal === total },
+                { label: 'Duplicate data', val: String(duplicates), ok: duplicates === 0 },
+                { label: 'Invalid rows', val: String(invalid), ok: invalid === 0 },
+              ];
+              const okCount = checks.filter(c => c.ok).length;
+              const okPct = Math.round((okCount / checks.length) * 100);
+              return (
+                <>
+                  <div className="mb-3">
+                    <div className="flex items-end justify-between">
+                      <p className="text-xs font-semibold text-neutral-600">Checks passed</p>
+                      <p className="text-lg font-semibold leading-none tabular-nums tracking-tight text-neutral-900">{okCount}<span className="text-sm font-medium text-neutral-500"> / {checks.length}</span></p>
+                    </div>
+                    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+                      <div className={`h-full rounded-full ${okCount === checks.length ? 'bg-teal-600' : 'bg-red-500'}`} style={{ width: `${okCount > 0 ? Math.max(okPct, 3) : 0}%` }} />
+                    </div>
+                  </div>
+                  <div className="divide-y divide-neutral-200 text-xs">
+                    {checks.map(item => (
+                      <div key={item.label} className={`flex items-center justify-between py-2 ${item.ok ? '' : 'rounded-lg bg-red-50 px-2'}`}>
+                        <div className="flex items-center gap-2">
+                          <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${item.ok ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-100 text-red-600'}`}>
+                            {item.ok ? <CheckCircle size={12} /> : <AlertTriangle size={12} />}
+                          </span>
+                          <span className="text-neutral-600">{item.label}</span>
+                        </div>
+                        <span className={`text-sm font-semibold tabular-nums ${item.ok ? 'text-neutral-900' : 'text-red-600'}`}>{item.val}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              );
+            })()
+          )}
+          <div className="mt-3 border-t border-neutral-200 pt-3">
+            <p className="mb-2 text-sm font-semibold text-neutral-900">Detected Fields</p>
+            {(() => {
+              const fields = [
+                { label: 'Transaction Date', ada: previewRows.some(r => !!r.tanggal) },
+                { label: 'Invoice No.', ada: previewRows.some(r => !!r.no_invoice) },
+                { label: 'Vendor Name', ada: previewRows.some(r => !!r.nama_vendor && r.nama_vendor !== '-') },
+                { label: 'Vendor Code', ada: previewRows.some(r => !!r.vendor_code) },
+                { label: 'Branch', ada: previewRows.some(r => !!r.cabang) },
+                { label: 'Tax Base (Before Tax)', ada: previewRows.some(r => r.dpp !== 0) },
+                { label: 'VAT', ada: previewRows.some(r => r.ppn !== 0) },
+                { label: 'Total Value', ada: previewRows.some(r => r.total !== 0) },
+              ].filter(f => f.ada);
+              if (fields.length === 0) {
+                return <p className="text-[11px] text-neutral-500">No fields detected for this file yet.</p>;
+              }
+              return (
+                <div className="flex flex-wrap gap-1.5">
+                  {fields.map(f => (
+                    <span key={f.label} className="flex items-center gap-1 rounded-full border border-neutral-300 bg-neutral-100 px-2.5 py-1 text-[11px] font-medium text-neutral-700">
+                      <CheckCircle size={10} /> {f.label}
+                    </span>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        </SourcePanel>
+        </div>
       </div>
 
       {showMapping && <MappingRulesModal onClose={() => setShowMapping(false)} loadTemplates={loadTemplates} />}

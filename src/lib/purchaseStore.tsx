@@ -284,6 +284,42 @@ export async function postPurchaseTransactions(ids: string[], postingDate?: stri
   return hasil;
 }
 
+// Journal Preview > Approve All / Post All: ribuan transaksi dikirim bertahap (200 per request) supaya tiap request tidak
+// terlalu lama; store di-refresh SEKALI di akhir. Pola sama dengan bulkApproveSalesInvoices / bulkPostSalesInvoicesBertahap.
+const UKURAN_BATCH_MASSAL = 200;
+
+async function jalankanAksiBertahap(
+  aksi: 'approve' | 'post',
+  ids: string[],
+  onProgress?: (selesai: number, total: number) => void,
+): Promise<PurchaseStatusActionResult> {
+  const total: PurchaseStatusActionResult = { done: [], skipped: [] };
+  let selesai = 0;
+  try {
+    for (let i = 0; i < ids.length; i += UKURAN_BATCH_MASSAL) {
+      const batch = ids.slice(i, i + UKURAN_BATCH_MASSAL);
+      const res = await post<PurchaseStatusActionResult>(`${PURCHASE_BASE_URL}/transactions/${aksi}`, { transaction_ids: batch });
+      total.done.push(...res.done);
+      total.skipped.push(...res.skipped);
+      selesai += batch.length;
+      onProgress?.(selesai, ids.length);
+    }
+  } finally {
+    notifyPurchaseChanged();
+  }
+  return total;
+}
+
+/** Approve banyak transaksi bertahap (draft -> approved / Ready to Post). */
+export function bulkApprovePurchaseTransactionsBertahap(ids: string[], onProgress?: (selesai: number, total: number) => void) {
+  return jalankanAksiBertahap('approve', ids, onProgress);
+}
+
+/** Post banyak transaksi bertahap (approved -> posted) dengan aturan yang sama dengan postPurchaseTransactions. */
+export function bulkPostPurchaseTransactionsBertahap(ids: string[], onProgress?: (selesai: number, total: number) => void) {
+  return jalankanAksiBertahap('post', ids, onProgress);
+}
+
 export interface PurchaseTransactionLineInput {
   line_no?: number;
   item_code?: string;
@@ -403,6 +439,8 @@ export interface BackendPurchaseSourceFile {
   dpp_total: number;
   ppn_total: number;
   grand_total: number;
+  extraction_duration_ms: number | null;
+  ai_model_version: string | null;
   processed_by: string | null;
   uploaded_at: string;
   uploaded_by: string | null;

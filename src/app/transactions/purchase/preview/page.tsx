@@ -12,7 +12,10 @@ import SalesLoading from '@/app/transactions/sales/components/SalesLoading';
 import { salesFont } from '@/app/transactions/sales/components/salesFont';
 import type { PurchaseStatus, PaymentStatus, PurchaseTransaction } from '@/data/purchaseData';
 import { useActiveClient } from '@/lib/activeClient';
-import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi, updatePurchaseTransaction } from '@/lib/purchaseStore';
+import {
+  usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi, updatePurchaseTransaction,
+  bulkApprovePurchaseTransactionsBertahap, bulkPostPurchaseTransactionsBertahap, type PurchaseStatusActionResult,
+} from '@/lib/purchaseStore';
 import { PickerPagination } from '@/app/transactions/components/PreviewLayout';
 import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
@@ -267,6 +270,11 @@ function getAccountingEntries(tx: PurchaseTransaction) {
   return entries;
 }
 
+// Gaya tombol aksi di baris tab -- sama dengan Approve All / Post All di Journal Preview Sales.
+const ACTION_BTN_BASE = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50';
+const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
+const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
+
 export default function PurchasePreviewPage() {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId } = useActiveClient();
@@ -319,6 +327,85 @@ export default function PurchasePreviewPage() {
   const pageStart = (safePage - 1) * ITEMS_PER_PAGE;
   const pagedItems = filtered.slice(pageStart, pageStart + ITEMS_PER_PAGE);
   const goToPage = (p: number) => setCurrentPage(Math.min(Math.max(1, p), totalPages));
+
+  // ---- Approve All / Post All (tombol di baris tab) ----
+  // Berlaku untuk SEMUA transaksi di antrian Journal Preview (tidak terpengaruh pencarian/filter di panel kiri):
+  //   Approve All -> yang masih draft / pending review;  Post All -> yang sudah Approved (Ready to Post).
+  // Tiap tombol hanya dirender kalau masih ada transaksi yang bisa diproses; kalau sudah habis, tombolnya hilang.
+  const [bulkBusy, setBulkBusy] = useState<'approve' | 'post' | null>(null);
+  const bisaDiapprove = useMemo(() => purchaseTransactions.filter(t => groupOf(t.status) === 'pending'), [purchaseTransactions]);
+  const bisaDipost = useMemo(() => purchaseTransactions.filter(t => groupOf(t.status) === 'approved'), [purchaseTransactions]);
+
+  const ringkasDilewati = (dilewati: PurchaseStatusActionResult['skipped']) =>
+    dilewati.slice(0, 3).map(s => `${s.purchase_no ?? s.id}: ${s.reason}`).join('\n') +
+    (dilewati.length > 3 ? `\n…and ${dilewati.length - 3} more` : '');
+
+  const handleApproveAll = async () => {
+    const target = bisaDiapprove;
+    if (target.length === 0 || bulkBusy) return;
+    if (!window.confirm(`Approve ${target.length} purchase transactions at once?`)) return;
+    setBulkBusy('approve');
+    const toastId = toast.loading(`Approving 0/${target.length}...`);
+    try {
+      const res = await bulkApprovePurchaseTransactionsBertahap(target.map(t => t.id), (s, total) =>
+        toast.loading(`Approving ${s}/${total}...`, { id: toastId }));
+      toast.dismiss(toastId);
+      if (res.done.length) {
+        toast.success(`${res.done.length} transactions approved`);
+      }
+      if (res.skipped.length) {
+        toast.error(`${res.skipped.length} transactions failed to approve`, { description: ringkasDilewati(res.skipped), duration: 12000 });
+      }
+      if (!res.done.length && !res.skipped.length) toast.info('No transactions need approval.');
+    } catch (err) {
+      toast.dismiss(toastId);
+      toast.error(err instanceof Error ? err.message : 'Failed to approve');
+    } finally {
+      setBulkBusy(null);
+    }
+  };
+
+  const handlePostAll = async () => {
+    const target = bisaDipost;
+    if (target.length === 0 || bulkBusy) return;
+    if (!window.confirm(`Post ${target.length} purchase transactions to the general ledger at once?`)) return;
+    setBulkBusy('post');
+    const toastId = toast.loading(`Posting 0/${target.length}...`);
+    try {
+      const res = await bulkPostPurchaseTransactionsBertahap(target.map(t => t.id), (s, total) =>
+        toast.loading(`Posting ${s}/${total}...`, { id: toastId }));
+      toast.dismiss(toastId);
+      if (res.done.length) {
+        toast.success(`${res.done.length} transactions posted`, {
+          description: 'They now appear in the Posted tab and the financial statements.',
+        });
+      }
+      if (res.skipped.length) {
+        toast.error(`${res.skipped.length} transactions failed to post`, { description: ringkasDilewati(res.skipped), duration: 12000 });
+      }
+      if (!res.done.length && !res.skipped.length) toast.info('No transactions need posting.');
+    } catch (err) {
+      toast.dismiss(toastId);
+      toast.error(err instanceof Error ? err.message : 'Failed to post journal');
+    } finally {
+      setBulkBusy(null);
+    }
+  };
+
+  const actionBar = bisaDiapprove.length === 0 && bisaDipost.length === 0 ? null : (
+    <div className={`${salesFont.className} flex flex-wrap items-center justify-end gap-2 pb-2 lg:pb-0`}>
+      {bisaDiapprove.length > 0 && (
+        <button onClick={handleApproveAll} disabled={bulkBusy !== null} className={ACTION_BTN_SECONDARY}>
+          <CheckCircle size={14} /> {bulkBusy === 'approve' ? 'Approving...' : 'Approve All'} ({bisaDiapprove.length})
+        </button>
+      )}
+      {bisaDipost.length > 0 && (
+        <button onClick={handlePostAll} disabled={bulkBusy !== null} className={ACTION_BTN_PRIMARY}>
+          <Send size={14} /> {bulkBusy === 'post' ? 'Posting...' : 'Post All'} ({bisaDipost.length})
+        </button>
+      )}
+    </div>
+  );
 
   const txHeader = purchaseTransactions.find(t => t.id === selectedId) || purchaseTransactions[0];
   const { lines: selectedLines, loading: linesLoading } = usePurchaseTransactionLines(txHeader?.id);
@@ -400,7 +487,7 @@ export default function PurchasePreviewPage() {
 
   return (
     <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-0">
-      <PurchaseTabs variant="elegant" />
+      <PurchaseTabs variant="elegant" actions={actionBar} />
 
       <div className={`${salesFont.className} pt-5 space-y-5`}>
         {/* KPI -- desain sama dengan Sales Journal Preview */}
