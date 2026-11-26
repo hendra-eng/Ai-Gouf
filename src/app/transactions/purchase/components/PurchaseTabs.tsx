@@ -1,15 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { AlertTriangle, CalendarDays, ChevronDown, CircleCheck, Database, Eye, FileText, LayoutGrid, Plus, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { useActiveClient } from '@/lib/activeClient';
-import { usePurchaseExceptions } from '@/lib/purchaseStore';
+import { uploadPurchaseSourceFile, usePurchaseExceptions } from '@/lib/purchaseStore';
 import { tabBadgeCls, tabCls, tabListCls } from '@/components/shared/moduleUi';
 import { salesFont } from '@/app/transactions/sales/components/salesFont';
-import ImportPurchaseModal from '@/app/transactions/purchase/components/ImportPurchaseModal';
 import { formatRangeLabel, usePurchaseDateRange } from '@/app/transactions/purchase/purchaseDateRange';
 
 interface Tab {
@@ -43,9 +42,10 @@ export default function PurchaseTabs({ actions, dateRangeActive = false, variant
   const [range, setRange] = usePurchaseDateRange();
   const [pickerOpen, setPickerOpen] = useState(false);
   // Upload File & Add Transaction -- tampil di header SEMUA tab Purchase (posisi sama dgn Sales):
-  // [tanggal] [Upload File] [Add Transaction]. Upload = ImportPurchaseModal (file dicocokkan ke
-  // Purchase Import Template company aktif di backend).
-  const [showImport, setShowImport] = useState(false);
+  // [tanggal] [Upload File] [Add Transaction]. Sama seperti Sales: klik tombol langsung membuka
+  // dialog pilih file; file dikirim ke backend (dicocokkan ke Purchase Import Template company aktif).
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const pathname = usePathname();
   // Badge Exceptions = jumlah exception yang belum selesai (data asli, seperti tab Sales); disembunyikan bila 0.
   const { activeClientId } = useActiveClient();
@@ -62,7 +62,53 @@ export default function PurchaseTabs({ actions, dateRangeActive = false, variant
       toast.error('Select a company in the header before uploading a file.');
       return;
     }
-    setShowImport(true);
+    fileInputRef.current?.click();
+  };
+
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    if (!activeClientId) {
+      toast.error('Select a company in the header before uploading a file.');
+      return;
+    }
+    setIsUploading(true);
+    let totalCreated = 0;
+    let totalDetected = 0;
+    let berhasil = 0;
+    let tidakCocok = 0;
+    try {
+      // 1 file = 1 cabang -- diproses berurutan.
+      for (const file of files) {
+        try {
+          const hasil = await uploadPurchaseSourceFile(file, activeClientId);
+          if (!hasil.template_matched) {
+            tidakCocok += 1;
+            toast.info('No purchase template matches', {
+              description: `${file.name}: this file format has not been set up for the active company yet.`,
+            });
+            continue;
+          }
+          berhasil += 1;
+          totalCreated += hasil.created;
+          totalDetected += hasil.transactions_detected;
+          const dilewati = hasil.transactions.filter(r => !r.ok).length;
+          toast.success('File imported', {
+            description: `${file.name}: ${hasil.created} of ${hasil.transactions_detected} purchase transactions imported as draft${dilewati ? ` (${dilewati} skipped)` : ''}.`,
+          });
+        } catch (err) {
+          toast.error(`${file.name}: ${err instanceof Error ? err.message : 'Failed to upload file'}`);
+        }
+      }
+      if (files.length > 1) {
+        toast.message('Upload finished', {
+          description: `${berhasil} imported (${totalCreated} of ${totalDetected} transactions), ${tidakCocok} not recognized.`,
+        });
+      }
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
   };
 
   const activeTab = tabs.find((tab) => isActive(tab.href)) ?? tabs[0];
@@ -138,11 +184,12 @@ export default function PurchaseTabs({ actions, dateRangeActive = false, variant
             <button
               type="button"
               onClick={handleUploadClick}
-              disabled={!activeClientId}
+              disabled={isUploading || !activeClientId}
               className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Upload size={14} /> Upload File
+              <Upload size={14} /> {isUploading ? 'Uploading...' : 'Upload File'}
             </button>
+            <input ref={fileInputRef} type="file" multiple accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFilesSelected} />
             <Link
               href="/transactions/purchase/bill/new"
               className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
@@ -151,7 +198,6 @@ export default function PurchaseTabs({ actions, dateRangeActive = false, variant
             </Link>
           </div>
         </div>
-        {showImport && <ImportPurchaseModal onClose={() => setShowImport(false)} />}
         {/* Satu baris di layar lebar (xl+); di layar sempit tombol naik ke atas tab, tanpa scrollbar. */}
         <div className={elegant ? elegantTabBarCls : 'flex flex-col gap-2 border-b border-border xl:flex-row xl:items-center xl:justify-between'}>
           <nav className={`${elegant ? `${salesFont.className} ` : ''}${tabListCls} min-w-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}>{renderTabs(true)}</nav>

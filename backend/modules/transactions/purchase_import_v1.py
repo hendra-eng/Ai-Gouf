@@ -83,6 +83,8 @@ from .sales_import_v1 import (  # algoritma baca-file & signature SAMA PERSIS, t
     _norm_label,
     _parse_angka,
     _parse_tanggal,
+    _label_periode,
+    _periode_filter_dari_nama_file,
     _pilih_sheet_bulanan,
     _template_dari_varian,
     ringkas_import_template,
@@ -477,16 +479,49 @@ def _parse_flat_grouped_purchase_report(rows: List[List[str]], recipe: Dict[str,
     def angka(row: List[str], kunci: str) -> float:
         return _parse_angka(teks(row, kunci), number_format) if kunci in cols else 0.0
 
-    # 1) kelompokkan baris per kunci transaksi (urutan kemunculan pertama dipertahankan)
-    grup: Dict[str, List[List[str]]] = {}
+    # Opsi resep (semua opsional -- tanpa opsi ini perilaku LAMA tidak berubah):
+    #   abaikan_baris_total_nol  : baris ber-total <= 0 (mis. sisi KREDIT jurnal, baris placeholder 0) tidak
+    #                              jadi item.
+    #   kunci_pisah_tanggal      : nomor transaksi yang dipakai di > 1 tanggal dipecah per tanggal
+    #                              (<no>-<YYYYMMDD>); yang hanya 1 tanggal tetap apa adanya.
+    #   akun_baris_dari_file     : akun tiap item dibaca dari kolom columns.akun_kode / akun_nama
+    #                              (menimpa line_account_by_cost).
+    #   akun_kredit_dari_baris   : akun lawan (Cr) transaksi = akun baris sisi kredit (columns.kredit,
+    #                              akun_kode, akun_nama) -- jadi blok["ap_account"] (menimpa akun hutang resep).
+    abaikan_nol = bool(recipe.get("abaikan_baris_total_nol"))
+    pisah_tanggal = bool(recipe.get("kunci_pisah_tanggal"))
+    akun_dari_file = bool(recipe.get("akun_baris_dari_file")) and "akun_kode" in cols
+    akun_kredit = bool(recipe.get("akun_kredit_dari_baris")) and "kredit" in cols and "akun_kode" in cols
+
+    # 1) kumpulkan baris per kunci transaksi (urutan kemunculan pertama dipertahankan)
+    kumpulan: List[Tuple[str, List[str], Optional[date]]] = []
     for row in rows[mulai:]:
         if _kosong(row):
             continue
         kunci = re.sub(r"\s+", "", teks(row, "purchase_no")).upper()
         if not kunci:
             continue  # baris tanpa nomor transaksi tidak bisa dikelompokkan
-        if not teks(row, "deskripsi") and not angka(row, "total"):
+        sisi_kredit = akun_kredit and angka(row, "kredit") > 0
+        if not sisi_kredit and not teks(row, "deskripsi") and not angka(row, "total"):
             continue  # baris template kosong
+        tgl_baris = _parse_tanggal(teks(row, "tanggal"), date_format) if "tanggal" in cols else None
+        kumpulan.append((kunci, row, tgl_baris))
+
+    tanggal_per_kunci: Dict[str, set] = {}
+    if pisah_tanggal:
+        for kunci, _row, tgl_baris in kumpulan:
+            if tgl_baris:
+                tanggal_per_kunci.setdefault(kunci, set()).add(tgl_baris)
+
+    grup: Dict[str, List[List[str]]] = {}
+    grup_kredit: Dict[str, List[List[str]]] = {}
+    for kunci, row, tgl_baris in kumpulan:
+        if pisah_tanggal and tgl_baris and len(tanggal_per_kunci.get(kunci, ())) > 1:
+            kunci = f"{kunci}-{tgl_baris.strftime('%Y%m%d')}"
+        if akun_kredit and angka(row, "kredit") > 0:
+            grup_kredit.setdefault(kunci, []).append(row)
+        if abaikan_nol and angka(row, "total") <= 0:
+            continue
         grup.setdefault(kunci, []).append(row)
 
     hasil: List[Dict[str, Any]] = []
@@ -539,6 +574,8 @@ def _parse_flat_grouped_purchase_report(rows: List[List[str]], recipe: Dict[str,
             })
             kategori = _norm_teks(teks(r, "kategori_cost"))
             akun = peta_akun.get(kategori)
+            if akun_dari_file and teks(r, "akun_kode"):
+                akun = {"account_code": teks(r, "akun_kode"), "account_name": teks(r, "akun_nama") or None}
             akun_item.append(akun)
             if akun is None:
                 tanpa_peta += 1
@@ -587,6 +624,19 @@ def _parse_flat_grouped_purchase_report(rows: List[List[str]], recipe: Dict[str,
             if akun:
                 baris_item["account_code"] = akun["account_code"]
                 baris_item["account_name"] = akun.get("account_name")
+        if akun_kredit:
+            sisi = grup_kredit.get(kunci, [])
+            akun_lawan = {(teks(r, "akun_kode"), teks(r, "akun_nama")) for r in sisi if teks(r, "akun_kode")}
+            total_kredit = round(sum(angka(r, "kredit") for r in sisi), 2)
+            if len({k for k, _ in akun_lawan}) == 1:
+                kode, nama = sorted(akun_lawan)[0]
+                blok["ap_account"] = {"account_code": kode, "account_name": nama or None}
+            elif akun_lawan:
+                peringatan.append("Credit side uses more than one account; the default payable account was used.")
+            else:
+                peringatan.append("No credit-side row found for this voucher; the default payable account was used.")
+            if sisi and abs(total_kredit - total_blok) > tol_nota:
+                peringatan.append(f"Credit total {total_kredit:,.2f} differs from debit total {total_blok:,.2f} (journal not balanced in the file).")
         blok["warnings"].extend(peringatan)
         blok["notes"].extend([*peringatan, *info])
         hasil.append(blok)
@@ -832,6 +882,40 @@ def _ekstrak_dengan_template(rows: Any, template: Dict[str, Any], file_name: Opt
     return hasil
 
 
+def _saring_periode_nama_file(hasil: List[Dict[str, Any]], mapping_rules: Dict[str, Any],
+                              file_name: Optional[str]) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Resep filter_periode_nama_file = true (ketat) atau "jika_ada" -- port dari Sales: hanya transaksi yang
+    tanggalnya di dalam periode NAMA FILE yang diambil (file kumulatif Jan-Des cukup di-rename per bulan).
+    Return (transaksi_terpilih, info); info None kalau filter tidak aktif.
+    ValueError (tampil apa adanya ke user): nama file tanpa periode (mode ketat) atau tidak ada transaksi di periode itu.
+    Transaksi tanpa tanggal tetap dibawa (sudah ditandai error oleh parser)."""
+    flag = (mapping_rules or {}).get("filter_periode_nama_file")
+    if not flag:
+        return hasil, None
+    jika_ada = isinstance(flag, str) and flag.strip().lower() in ("jika_ada", "jika-ada", "if_present")
+    p = _periode_filter_dari_nama_file(file_name)
+    if p is None and jika_ada:
+        return hasil, None
+    if p is None:
+        raise ValueError(
+            "The file name has no period, so nothing was imported (to avoid duplicates with other months). "
+            "Rename the file and upload again, e.g. UBD_PURCHASE_202608.xlsx (one month) or "
+            "UBD_PURCHASE_20260801-20260815.xlsx (date range)."
+        )
+    terpilih = [t for t in hasil if t.get("purchase_date") is None or p["awal"] <= t["purchase_date"] <= p["akhir"]]
+    dilewati = len(hasil) - len(terpilih)
+    label = _label_periode(p)
+    if hasil and not terpilih:
+        raise ValueError(
+            f"No transactions in period {label} (from the file name); {dilewati} transaction(s) in this file are outside "
+            "that period. Check that the month in the file name is correct."
+        )
+    return terpilih, {
+        "label": label, "awal": p["awal"].isoformat(), "akhir": p["akhir"].isoformat(),
+        "diambil": len(terpilih), "dilewati": dilewati, "total_di_file": len(hasil),
+    }
+
+
 def _terapkan_akun_dept(lines: List[Dict[str, Any]], dept: str, recipe: Dict[str, Any]) -> None:
     """Baris yang masih memakai akun default (line_account / biaya_account)
     dipindah ke akun cabang dari line_account_by_dept, kalau ada."""
@@ -924,6 +1008,7 @@ async def upload_purchase_import(
     template, rows = cocok
     try:
         blok = await run_in_threadpool(_ekstrak_dengan_template, rows, template, file.filename)
+        blok, info_periode = _saring_periode_nama_file(blok, template.get("mapping_rules") or {}, file.filename)
     except Exception as e:
         logger.error(f"Gagal ekstraksi file {file.filename} pakai template {template['id']}: {e}")
         return sukses(
@@ -960,7 +1045,7 @@ async def upload_purchase_import(
 
         cabang = f" ({t['dept']})" if t["dept"] else ""
         _terapkan_akun_dept(t["lines"], t["dept"], recipe)
-        akun_ap = recipe.get("ap_account") or {}
+        akun_ap = t.get("ap_account") or recipe.get("ap_account") or {}  # akun Cr per transaksi (resep akun_kredit_dari_baris) menang
         akun_pajak = recipe.get("tax_account") or {}
         ringkasan = (
             f"Subtotal {t['subtotal']:,.0f}; Discount {t['potongan']:,.0f}; Tax {t['pajak']:,.0f}; "
@@ -1015,9 +1100,13 @@ async def upload_purchase_import(
             "skipped_invalid": skipped_invalid,
             "skipped_duplicate": skipped_duplicate,
             "with_warnings": with_warnings,
+            "period_filter": info_periode,
             "transactions": hasil_tx,
         },
-        message=f"{created} of {len(blok)} purchase transactions imported successfully using a previously learned template.",
+        message=(
+            f"{created} of {len(blok)} purchase transactions imported successfully using a previously learned template."
+            + (f" Period {info_periode['label']} (from the file name): {info_periode['diambil']} taken, {info_periode['dilewati']} outside the period skipped." if info_periode else "")
+        ),
         status_code=201,
     )
 
