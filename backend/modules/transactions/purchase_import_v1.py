@@ -489,12 +489,15 @@ def _parse_flat_grouped_purchase_report(rows: List[List[str]], recipe: Dict[str,
     #                              (<no>-<YYYYMMDD>); yang hanya 1 tanggal tetap apa adanya.
     #   akun_baris_dari_file     : akun tiap item dibaca dari kolom columns.akun_kode / akun_nama
     #                              (menimpa line_account_by_cost).
+    #   nomor_cadangan_awalan    : baris TANPA nomor transaksi tidak dibuang; nomornya <awalan>-<YYYYMMDD>
+    #                              (baris tanpa nomor di tanggal sama digabung jadi 1 transaksi) -- BRW.
     #   akun_kredit_dari_baris   : akun lawan (Cr) transaksi = akun baris sisi kredit (columns.kredit,
     #                              akun_kode, akun_nama) -- jadi blok["ap_account"] (menimpa akun hutang resep).
     abaikan_nol = bool(recipe.get("abaikan_baris_total_nol"))
     pisah_tanggal = bool(recipe.get("kunci_pisah_tanggal"))
     akun_dari_file = bool(recipe.get("akun_baris_dari_file")) and "akun_kode" in cols
     akun_kredit = bool(recipe.get("akun_kredit_dari_baris")) and "kredit" in cols and "akun_kode" in cols
+    cadangan_awalan = re.sub(r"\s+", "", str(recipe.get("nomor_cadangan_awalan") or "")).upper()
 
     # 1) kumpulkan baris per kunci transaksi (urutan kemunculan pertama dipertahankan)
     kumpulan: List[Tuple[str, List[str], Optional[date]]] = []
@@ -502,12 +505,16 @@ def _parse_flat_grouped_purchase_report(rows: List[List[str]], recipe: Dict[str,
         if _kosong(row):
             continue
         kunci = re.sub(r"\s+", "", teks(row, "purchase_no")).upper()
+        tgl_baris = _parse_tanggal(teks(row, "tanggal"), date_format) if "tanggal" in cols else None
+        if not kunci and cadangan_awalan and tgl_baris and (angka(row, "total") > 0 or teks(row, "deskripsi")):
+            # Opsional (resep "nomor_cadangan_awalan"): baris tanpa nomor voucher tidak dibuang diam-diam,
+            # nomornya <awalan>-<YYYYMMDD> (baris tanpa voucher di tanggal sama digabung jadi 1 transaksi).
+            kunci = f"{cadangan_awalan}-{tgl_baris.strftime('%Y%m%d')}".upper()
         if not kunci:
             continue  # baris tanpa nomor transaksi tidak bisa dikelompokkan
         sisi_kredit = akun_kredit and angka(row, "kredit") > 0
         if not sisi_kredit and not teks(row, "deskripsi") and not angka(row, "total"):
             continue  # baris template kosong
-        tgl_baris = _parse_tanggal(teks(row, "tanggal"), date_format) if "tanggal" in cols else None
         kumpulan.append((kunci, row, tgl_baris))
 
     tanggal_per_kunci: Dict[str, set] = {}
