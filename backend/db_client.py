@@ -5433,6 +5433,11 @@ CRUD_FIELDS_SALES_INVOICE = [
 def _sales_invoice_ke_dict(obj: "SalesInvoice") -> Dict[str, Any]:
     data = _sales_row_ke_dict(obj, CRUD_FIELDS_SALES_INVOICE)
     data["outstanding_amount"] = obj.outstanding_amount
+    # Nomor jurnal Sales: jurnalnya TIDAK disimpan sbg Journal Entry terpisah -- GL membentuknya langsung
+    # dari invoice Posted (jurnal_id "sales:<id>"). Jadi nomor ini dihitung dari status posting, hanya
+    # untuk invoice yang benar-benar sudah masuk GL (bukan Draft/Review/Approved, bukan saldo awal).
+    sudah_masuk_gl = (obj.posting_status in ("Posted", "Partial", "Paid")) and not obj.is_opening_balance
+    data["journal_no"] = f"SJ-{obj.invoice_no}" if sudah_masuk_gl and obj.invoice_no else None
     return data
 
 def create_sales_invoice(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -5820,6 +5825,33 @@ def validasi_posting_sales(invoice_id: str) -> List[str]:
     return []
 
 
+def _hari_termin_sales(teks: Optional[str]) -> Optional[int]:
+    """Termin teks -> jumlah hari ("Net 30" -> 30, "Due on Receipt"/COD -> 0, kosong/tak terbaca -> None).
+    Aturan sama dengan modul AR/AP (receivables_payables_v1._hari_termin)."""
+    import re as _re
+    t = (teks or "").strip().lower()
+    if not t:
+        return None
+    if t in ("cod", "cash", "tunai", "cbd", "due on receipt"):
+        return 0
+    m = _re.search(r"(\d{1,3})", t)
+    return int(m.group(1)) if m else None
+
+
+def hitung_due_date_sales(tgl: Optional[date], termin: Optional[str]) -> Optional[date]:
+    """Jatuh tempo = tanggal invoice + hari termin. Tanpa tanggal / tanpa termin terbaca -> None (tidak menebak)."""
+    from datetime import timedelta as _td
+    hari = _hari_termin_sales(termin)
+    if tgl is None or hari is None:
+        return None
+    return tgl + _td(days=hari)
+
+
+def _norm_pihak_sales(s: Optional[str]) -> str:
+    import re as _re
+    return _re.sub(r"\s+", " ", (s or "").strip()).upper()
+
+
 def promote_sales_rows_bulk(source_file_id: str, management_client_id: Optional[str], user_id: Optional[str] = None,
                             chunk: int = 500) -> Dict[str, int]:
     """[BARU] Versi MASSAL dari loop promote-to-invoices (tombol "Buat Invoice"): naikkan baris valid satu file jadi
@@ -5835,6 +5867,34 @@ def promote_sales_rows_bulk(source_file_id: str, management_client_id: Optional[
             SalesSourceRow.id, SalesSourceRow.is_valid, SalesSourceRow.no_invoice, SalesSourceRow.tanggal,
             SalesSourceRow.nama_customer, SalesSourceRow.cabang, SalesSourceRow.dpp, SalesSourceRow.ppn, SalesSourceRow.total,
         ).filter(SalesSourceRow.source_file_id == source_file_id, SalesSourceRow.deleted_at.is_(None)).all()
+        # [BARU] Tipe transaksi & termin default invoice diambil dari resep template klien (mapping_rules.transaction_type
+        # / mapping_rules.default_payment_terms, diisi di seed). Resep disalin ke source file saat upload; file lama
+        # (diupload sebelum kunci ini ada) dicari di template induknya lewat varian dengan format_type yang sama.
+        tipe_transaksi = None
+        termin_default = None
+        _sf = session.query(SalesSourceFile.mapping_rules, SalesSourceFile.template_id).filter(
+            SalesSourceFile.id == source_file_id).first()
+        if _sf:
+            _resep = _sf[0] or {}
+            tipe_transaksi = _resep.get("transaction_type")
+            termin_default = _resep.get("default_payment_terms")
+            if (not tipe_transaksi or not termin_default) and _sf[1]:
+                _tpl = session.query(SalesImportTemplate.mapping_rules).filter(SalesImportTemplate.id == _sf[1]).first()
+                _tr = (_tpl[0] if _tpl else None) or {}
+                for _v in (_tr.get("variants") or [_tr]):
+                    _mr = _v.get("mapping_rules") or _v
+                    if _resep.get("format_type") and _mr.get("format_type") != _resep.get("format_type"):
+                        continue
+                    tipe_transaksi = tipe_transaksi or _mr.get("transaction_type")
+                    termin_default = termin_default or _mr.get("default_payment_terms")
+                    if tipe_transaksi and termin_default:
+                        break
+        tipe_transaksi = (str(tipe_transaksi).strip()[:50] or None) if tipe_transaksi else None
+        termin_default = (str(termin_default).strip()[:50] or None) if termin_default else None
+        # Termin per customer dari master customer AR (menimpa termin default template).
+        termin_customer = {_norm_pihak_sales(n): t for (n, t) in session.query(ArCustomer.name, ArCustomer.payment_terms).filter(
+            ArCustomer.client_id == management_client_id, ArCustomer.deleted_at.is_(None),
+            ArCustomer.payment_terms.isnot(None)).all() if (t or "").strip()}
         sudah_row = {str(r[0]) for r in session.query(SalesInvoice.source_row_id).filter(
             SalesInvoice.source_row_id.in_(session.query(SalesSourceRow.id).filter(SalesSourceRow.source_file_id == source_file_id)),
             SalesInvoice.deleted_at.is_(None)).all()}
@@ -5869,7 +5929,12 @@ def promote_sales_rows_bulk(source_file_id: str, management_client_id: Optional[
             "dpp": dpp or 0, "ppn": ppn or 0, "pph": 0, "gross_amount": total or 0, "paid_amount": 0,
             "tax_invoice_status": "Belum Terbit Faktur", "posting_status": "Draft", "reconcile_status": "Unreconciled",
             "journal_sync_status": "Pending", "is_opening_balance": False, "source_row_id": str(rid), "created_by": user_id,
+            "transaction_type": tipe_transaksi,
         })
+        # Kunci selalu ada di semua dict (INSERT multi-baris SQLAlchemy mewajibkan kunci seragam); None kalau termin tak ada.
+        _termin = termin_customer.get(_norm_pihak_sales(cust)) or termin_default
+        kandidat[-1]["term_of_payment"] = _termin
+        kandidat[-1]["due_date"] = hitung_due_date_sales(tgl, _termin)
 
     dibuat = 0
     akun_cache: Dict[tuple, Any] = {}

@@ -176,6 +176,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "multi_sheet_line_items",
+        "transaction_type": "Penjualan Barang",
+        "default_payment_terms": "Net 30",
         "filter_periode_nama_file": "jika_ada",
         "description": "Catatan penjualan manual ABE, 1 workbook = banyak sheet. 1 baris sheet = 1 item; tanggal hanya di baris pertama tiap kelompok (baris kosong di bawahnya ikut tanggal di atas); baris tersembunyi (hasil filter) dan baris bernilai 0 dilewati; baris dijumlah per (tanggal, pelanggan) -> 1 invoice. Nomor invoice dibentuk <prefix_invoice>-YYYYMMDD-<PELANGGAN> karena file tidak punya nomor invoice. ppn = 0 (file tidak punya pajak).",
         "number_format": {

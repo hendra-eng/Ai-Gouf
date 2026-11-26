@@ -66,7 +66,7 @@ function petakanDariBackend(inv: BackendSalesInvoice): TrxItem {
     dueDate: inv.due_date ? formatTanggal(inv.due_date) : '-',
     dueDateISO: inv.due_date || '',
     type: inv.transaction_type || '-',
-    journal: inv.journal_entry_id != null ? String(inv.journal_entry_id) : '',
+    journal: inv.journal_no || '',
     status: (inv.posting_status as TrxStatus) || 'Draft',
     project: inv.project_name || '-',
     taxStatus: inv.tax_invoice_status,

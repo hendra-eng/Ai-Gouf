@@ -166,6 +166,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "flat_grouped_by_key",
+        "transaction_type": "Penjualan",
+        "default_payment_terms": "Net 30",
         "filter_periode_nama_file": "jika_ada",
         "description": "Sheet DATA workbook penjualan Evita (EBA) -- 1 baris = 1 transaksi/line dengan nomor urut 4 digit (kolom tanpa judul di kanan 'Harga Setelah Diskon'). Nomor invoice dirakit dari 'Kode Transaksi' + '/' + nomor urut (sama dengan rumus kolom bantu di sheet DATA, tapi dihitung ulang sehingga tidak bergantung pada nilai hasil rumus). 1 baris source_rows = 1 nomor invoice. Cabang = kolom Kanal (EVITA SERANGAN / ANAGEN COKROAMINOTO) dipakai memilih akun pendapatan. Kolom dicari lewat NAMA header, jadi urutan/kolom tambahan tidak masalah.",
         "date_format": "DD/MM/YYYY",

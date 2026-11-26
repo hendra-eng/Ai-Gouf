@@ -250,6 +250,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "flat_grouped_by_key",
+        "transaction_type": "Penjualan POS",
+        "default_payment_terms": "Due on Receipt",
         "filter_periode_nama_file": "jika_ada",
         "description": "Laporan POS 'Sales Recapitulation Detail Report' NPI (PT Nusa Penida Investments; outlet PLAZA MARIETTA dan SIBARITA) -- 1 baris Excel = 1 item/line menu dalam bill; banyak baris berbagi 1 Bill Number. 1 baris kanonis (source_rows) = 1 BILL (Bill Number), diagregasi dengan menjumlah semua barisnya. Kolom dicari lewat NAMA di baris header (bukan posisi), jadi urutan kolom boleh berubah/ditambah. Kop laporan (judul, periode, branch, dst) ada di atas header dan jumlah barisnya boleh berubah; baris ringkasan di bawah data ('Rounding Total', 'Platform Fee Total', dst) dilewati.",
         "date_format": "DD-MM-YYYY",

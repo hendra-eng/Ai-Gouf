@@ -223,6 +223,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "flat_grouped_by_key",
+        "transaction_type": "Pendapatan Proyek",
+        "default_payment_terms": "Due on Receipt",
         "description": "Workbook 'Monitoring Project Income' UBD -- jurnal pendapatan proyek yang diekspor dari buku besar (akun 4-40101 PROJECT INCOME), tahun berjalan (Januari s/d bulan laporan, bukan 1 bulan saja). Bukan laporan invoice: 1 baris = 1 voucher penerimaan bank (OCBC IDR / OCBC CWU IDR) dan tidak ada nomor invoice/faktur, jadi No Voucher dipakai sebagai nomor invoice. 1 baris kanonis (source_rows) = 1 No Voucher; dpp = Kredit - Debit, tanpa PPN (file tidak punya kolom pajak). Kolom dicari lewat NAMA di baris header, bukan posisi. Baris subtotal di atas header dan tabel rekonsiliasi bulanan (Month / Amount GL / TB / Selisih) di bawah data dilewati.",
         "date_format": "DD/MM/YYYY",
         "filter_periode_nama_file": true,

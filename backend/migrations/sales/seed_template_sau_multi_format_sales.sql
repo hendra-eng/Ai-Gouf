@@ -251,6 +251,8 @@ BEGIN
       ],
       "mapping_rules": {
         "format_type": "grouped_invoice_report",
+        "transaction_type": "Penjualan",
+        "default_payment_terms": "Net 30",
         "filter_periode_nama_file": "jika_ada",
         "description": "Laporan Penjualan Detail (POS/kasir) SAU -- 1 baris kanonis (source_rows) = 1 TRANSAKSI/INVOICE, bukan 1 baris item. Tiap invoice = 1 blok baris CSV: header invoice, label item, N baris item, subtotal, footer (Pot./Pajak/Biaya/Total Akhir), lalu 1 baris kosong. Format SAMA untuk keempat cabang (CRS, NGY, OL, PCL); cabang dibaca dari nama file.",
         "delimiter": ";",
@@ -347,6 +349,8 @@ BEGIN
       ],
       "mapping_rules": {
         "format_type": "grouped_invoice_report_pdf",
+        "transaction_type": "Penjualan",
+        "default_payment_terms": "Net 30",
         "filter_periode_nama_file": "jika_ada",
         "description": "Laporan Penjualan Detail (POS/kasir) SAU versi PDF -- isi dan struktur blok SAMA dengan varian CSV: 1 baris kanonis (source_rows) = 1 TRANSAKSI/INVOICE, bukan 1 baris item. Tiap invoice = header invoice, band label item, N baris item, baris subtotal, footer (Pot./Pajak/Biaya/Total Akhir). Beda dengan CSV: tidak ada baris/sel, jadi resep memakai KATA + POSISI (x0, top) di text layer PDF. Format SAMA untuk keempat cabang (CRS, NGY, OL, PCL); cabang dibaca dari nama file.",
         "source_kind": "pdf_text_layer",

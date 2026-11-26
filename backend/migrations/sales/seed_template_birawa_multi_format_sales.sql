@@ -142,6 +142,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_block_invoice_register",
+        "transaction_type": "Tagihan Jasa",
+        "default_payment_terms": "Net 30",
         "description": "Register tagihan manual BRW (DETAIL INVOICE 2026 & PPN), sheet 'Sheet1': 1 sheet = 1 tahun, tiap bulan = 1 BLOK (baris header diulang di tiap blok), 1 baris = 1 invoice. Tanggal = kolom BULAN blok (tanggal 1 bulan itu). Total = NILAI INVOICE, PPN = PPN(11%), DPP = total - PPN. Pelanggan = BEBAN. Sheet lain (Sheet2, sheet, Sheet3 = pivot/rekap) tidak dibaca. Kolom dicari lewat NAMA di baris header; kolom A kosong tidak ikut di-hash (kolom_awal = 2).",
         "kolom_awal": 2,
         "header_cari_dalam_baris": 5,

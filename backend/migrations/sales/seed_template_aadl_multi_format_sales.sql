@@ -227,6 +227,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_daily_matrix",
+        "transaction_type": "Penjualan Kafe",
+        "default_payment_terms": "Due on Receipt",
         "description": "Warung Soemantri (AADL) -- rekap pendapatan HARIAN, 1 sheet per bulan. 1 invoice = 1 hari.",
         "tahun": "urutan_sheet",
         "periode_mulai": "2026-01",
@@ -267,6 +269,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_daily_matrix",
+        "transaction_type": "Penjualan Kafe",
+        "default_payment_terms": "Due on Receipt",
         "description": "Kafe Kapu Soemantri (AADL) -- rekap pendapatan HARIAN, 1 sheet per bulan. 1 invoice = 1 hari, nilai = Pendapatan Bersih (setelah Potongan Admin).",
         "tahun": "urutan_sheet",
         "periode_mulai": "2026-01",
@@ -307,6 +311,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_daily_matrix",
+        "transaction_type": "Penjualan Kafe",
+        "default_payment_terms": "Due on Receipt",
         "description": "Omah Soemantri Hotel & Kopi (AADL) -- rekap pendapatan HARIAN, 1 sheet per bulan. 1 invoice = 1 hari.",
         "tahun": "urutan_sheet",
         "periode_mulai": "2026-01",
@@ -347,6 +353,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_daily_matrix",
+        "transaction_type": "Penjualan Kafe",
+        "default_payment_terms": "Due on Receipt",
         "description": "Putu Soemantri Family Villas (AADL) -- rekap pendapatan HARIAN, 1 sheet per bulan. 1 invoice = 1 hari.",
         "tahun": "urutan_sheet",
         "periode_mulai": "2026-01",
@@ -387,6 +395,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_rent_roll",
+        "transaction_type": "Pendapatan Sewa",
+        "default_payment_terms": "Due on Receipt",
         "description": "Kost Kapu Soemantri (AADL) -- daftar sewa kamar, 1 sheet per bulan. 1 invoice = 1 bulan (total Uang Kamar).",
         "tahun": "urutan_sheet",
         "periode_mulai": "2026-01",
@@ -424,6 +434,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_rent_roll",
+        "transaction_type": "Pendapatan Sewa",
+        "default_payment_terms": "Due on Receipt",
         "description": "Kost Warung Soemantri (AADL) -- daftar sewa kamar, 1 sheet per bulan. 1 invoice = 1 bulan (total Uang Kamar).",
         "tahun": "urutan_sheet",
         "periode_mulai": "2026-01",

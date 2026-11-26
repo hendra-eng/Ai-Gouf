@@ -88,6 +88,20 @@ const paymentLabels: Record<PaymentStatus, string> = {
 
 // Kolom nominal (header & isi rata kanan) & gaya tombol netral -- sama dengan Sales Transaction.
 const NUMERIC_FIELDS = ['subtotal', 'taxAmount', 'total'];
+
+// Format tanggal sama persis dengan halaman Sales: "04 Jun 2026" (tgl 2 digit, bulan singkat, tahun).
+function formatTanggal(iso?: string): string {
+  const v = (iso || '').slice(0, 10);
+  if (!v) return '';
+  try {
+    const d = new Date(v + 'T00:00:00');
+    if (isNaN(d.getTime())) return v;
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${String(d.getDate()).padStart(2, '0')} ${names[d.getMonth()]} ${d.getFullYear()}`;
+  } catch {
+    return v;
+  }
+}
 const PRINT_BTN = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50';
 const BTN_SECONDARY = 'border border-neutral-300 bg-white rounded-lg text-xs font-semibold text-neutral-800 shadow-sm hover:border-neutral-700 hover:bg-neutral-50 transition-colors';
 const BTN_PRIMARY = 'border border-blue-600 bg-blue-600 text-white rounded-lg text-xs font-semibold shadow-sm hover:bg-blue-700 transition-colors';
@@ -178,7 +192,7 @@ export default function PurchaseTransactionPage() {
   const [dateEnd, setDateEnd] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [sortField, setSortField] = useState('purchaseDate');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [selectedRow, setSelectedRow] = useState<typeof purchaseTransactions[0] | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState<'approve' | 'post' | null>(null);
@@ -211,7 +225,19 @@ export default function PurchaseTransactionPage() {
     // purchaseDate = 'YYYY-MM-DD' (bisa kosong untuk transaksi tanpa tanggal -> ikut tersaring kalau periode diisi).
     if (dateStart) data = data.filter(r => !!r.purchaseDate && r.purchaseDate.slice(0, 10) >= dateStart);
     if (dateEnd) data = data.filter(r => !!r.purchaseDate && r.purchaseDate.slice(0, 10) <= dateEnd);
+    const byId = (a: { purchaseId: string }, b: { purchaseId: string }) =>
+      a.purchaseId.localeCompare(b.purchaseId, undefined, { numeric: true });
     data.sort((a, b) => {
+      if (sortField === 'purchaseDate') {
+        const da = (a.purchaseDate || '').slice(0, 10);
+        const db = (b.purchaseDate || '').slice(0, 10);
+        if (da !== db) {
+          if (!da) return 1; // tanpa tanggal selalu paling bawah
+          if (!db) return -1;
+          return (da < db ? -1 : 1) * (sortDir === 'asc' ? 1 : -1);
+        }
+        return byId(a, b);
+      }
       const av = (a as unknown as Record<string, unknown>)[sortField] as string | number;
       const bv = (b as unknown as Record<string, unknown>)[sortField] as string | number;
       if (av < bv) return sortDir === 'asc' ? -1 : 1;
@@ -232,7 +258,7 @@ export default function PurchaseTransactionPage() {
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortDir('desc'); }
+    else { setSortField(field); setSortDir(field === 'purchaseDate' ? 'asc' : 'desc'); }
   };
 
   const companyName = clients.find(c => c.id === activeClientId)?.companyName || activeClientName || undefined;
@@ -298,8 +324,8 @@ export default function PurchaseTransactionPage() {
   // (Print All dipindah ke header tabel, seperti di Sales.)
 
   const columns = [
-    { label: 'Purchase ID', field: 'purchaseId' },
     { label: 'Date', field: 'purchaseDate' },
+    { label: 'Purchase ID', field: 'purchaseId' },
     { label: 'Invoice No.', field: 'invoiceNumber' },
     { label: 'PO Number', field: 'poNumber' },
     { label: 'Vendor', field: 'vendor' },
@@ -513,8 +539,8 @@ export default function PurchaseTransactionPage() {
                       <td className="py-2 px-3" onClick={e => { e.stopPropagation(); toggleSelect(row.id); }}>
                         <input type="checkbox" className="rounded border-neutral-400 accent-neutral-800" checked={selectedIds.has(row.id)} onChange={() => {}} />
                       </td>
+                      <td className="py-2 px-2 whitespace-nowrap text-neutral-900">{formatTanggal(row.purchaseDate)}</td>
                       <td className="py-2 px-2 whitespace-nowrap font-medium text-blue-700">{row.purchaseId}</td>
-                      <td className="py-2 px-2 whitespace-nowrap text-neutral-900">{row.purchaseDate}</td>
                       <td className="py-2 px-2 whitespace-nowrap text-neutral-900">{row.invoiceNumber || <span className="text-neutral-600">—</span>}</td>
                       <td className="py-2 px-2 whitespace-nowrap text-neutral-900">{row.poNumber || <span className="text-neutral-600">—</span>}</td>
                       <td className="py-2 px-2 whitespace-nowrap font-medium text-neutral-900 max-w-[160px] truncate">{row.vendor}</td>
@@ -525,7 +551,7 @@ export default function PurchaseTransactionPage() {
                       <td className="py-2 px-2 whitespace-nowrap">
                         <StatusPill tone={paymentTones[row.paymentStatus]} label={paymentLabels[row.paymentStatus]} />
                       </td>
-                      <td className={`py-2 px-2 whitespace-nowrap ${row.paymentStatus === 'overdue' ? 'font-semibold text-red-600' : 'text-neutral-600'}`}>{row.dueDate}</td>
+                      <td className={`py-2 px-2 whitespace-nowrap ${row.paymentStatus === 'overdue' ? 'font-semibold text-red-600' : 'text-neutral-600'}`}>{formatTanggal(row.dueDate)}</td>
                       <td className="py-2 px-2 whitespace-nowrap">
                         <StatusPill tone={statusTones[row.status]} label={statusLabels[row.status]} />
                       </td>

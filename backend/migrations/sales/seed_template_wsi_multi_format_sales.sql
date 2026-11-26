@@ -213,6 +213,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "daily_channel_recap",
+        "transaction_type": "Pendapatan Hotel (OTA)",
+        "default_payment_terms": "Due on Receipt",
         "filter_periode_nama_file": "jika_ada",
         "description": "Rekap penjualan hotel PT Well Star Indonesia per channel OTA. 1 file = 1 properti (nama properti HANYA ada di nama file: 'HOTEL SALES RECAP - August Lime villa.xlsx'); 1 sheet = 1 channel (AIRBNB, BOOKING.COM, sheet channel baru otomatis ikut terbaca); 1 baris = 1 hari. 1 baris kanonis (source_rows) = 1 HARI x 1 CHANNEL x 1 PROPERTI dengan INCOME BEFORE TAX tidak 0. Kolom dicari lewat NAMA header (bukan posisi) di 15 baris teratas tiap sheet, jadi urutan kolom/kop yang bergeser tetap terbaca.",
         "prefix_invoice": "WSI",

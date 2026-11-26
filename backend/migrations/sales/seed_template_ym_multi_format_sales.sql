@@ -224,6 +224,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_income_list",
+        "transaction_type": "Pendapatan Hotel & Diving",
+        "default_payment_terms": "Net 30",
         "filter_periode_nama_file": "jika_ada",
         "description": "Varian xlsx 'INCOME LIST' PT YONISO MASIKARA (North Bali Beach Cottages & Spa + North Bali Divecenter): 1 sheet per bulan (0126, 0826, '0826 YANG DI PAKAI'), 1 baris = 1 tamu = 1 invoice. Nilai = kolom Total (Part Diving + Part R&B&S + Extra income) dalam Rupiah.",
         "prefix_invoice": "YM",
@@ -293,6 +295,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_income_list",
+        "transaction_type": "Pendapatan Hotel & Diving",
+        "default_payment_terms": "Net 30",
         "filter_periode_nama_file": "jika_ada",
         "description": "Varian xls 'Pemasukan' PT YONISO MASIKARA (daftar dari pihak hotel): 1 sheet per bulan ('Jan 26', 'Maret 26'), 1 baris = 1 tamu = 1 invoice. Nilai = kolom 'Total Rp'; pembayaran cash hanya berisi 'total €' -- tanpa kurs di template baris itu INVALID (tidak ditebak).",
         "prefix_invoice": "YM",

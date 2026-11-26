@@ -159,6 +159,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "category_summary",
+        "transaction_type": "Penjualan POS",
+        "default_payment_terms": "Due on Receipt",
         "filter_periode_nama_file": "jika_ada",
         "description": "Laporan POS 'Report Category Sales' MM (Excel, sheet Sheet1): 1 baris = 1 KATEGORI untuk 1 periode & 1 outlet. File TIDAK memuat nomor invoice maupun tanggal, jadi periode dan outlet diambil dari NAMA FILE (mis. 'Report Category Sales - 01-08-2026 - 31-08-2026 - Outlet 1.xlsx'). 1 baris source_rows = 1 kategori; tanggal invoice = akhir periode; nomor invoice = MM-POS-<awal>-<akhir>-<OUTLET>-<KATEGORI>; cabang = nama kategori (dipakai memilih akun pendapatan). dpp = Net Sales. Kolom dicari lewat NAMA header; baris Total dan kolom catatan manual di kanan tabel diabaikan.",
         "number_format": {
@@ -241,6 +243,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "category_summary",
+        "transaction_type": "Penjualan POS",
+        "default_payment_terms": "Due on Receipt",
         "filter_periode_nama_file": "jika_ada",
         "description": "Laporan POS PER TRANSAKSI MM (sheet Sheet1, header baris 2, ada kolom MONTH): 1 baris = 1 item struk. File bisa KUMULATIF (202606 berisi Jan-Jun), jadi hanya baris yang kolom Date-nya di periode NAMA FILE yang dijumlah per Category (Net Sales). Hasilnya sama bentuknya dengan varian Agustus: 1 invoice = 1 kategori sebulan.",
         "number_format": {
@@ -325,6 +329,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "category_summary",
+        "transaction_type": "Penjualan POS",
+        "default_payment_terms": "Due on Receipt",
         "filter_periode_nama_file": "jika_ada",
         "description": "Laporan POS PER TRANSAKSI MM (sheet 'Report Item Details - dd-mm-yyy', header baris 2, baris 1 berisi subtotal, sheet pivot lain diabaikan): hanya baris yang kolom Date-nya di periode NAMA FILE yang dijumlah per Category (Net Sales).",
         "number_format": {

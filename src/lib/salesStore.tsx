@@ -327,6 +327,7 @@ export interface BackendSalesInvoice {
   reconcile_status: string;
   journal_sync_status: string;
   journal_entry_id: number | null;
+  journal_no?: string | null; // nomor jurnal Sales (terisi hanya jika invoice sudah Posted/masuk GL)
   source_row_id: string | null;
   posted_at: string | null;
   posted_by: string | null;

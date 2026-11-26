@@ -311,6 +311,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "flat_grouped_by_key",
+        "transaction_type": "Penjualan POS",
+        "default_payment_terms": "Due on Receipt",
         "filter_periode_nama_file": true,
         "description": "Export POS 'Report Item Details' (semua outlet NBM) -- 1 baris CSV = 1 item/line dalam struk; banyak baris berbagi 1 Receipt Number. 1 baris kanonis (source_rows) = 1 STRUK (Receipt Number), diagregasi dengan menjumlah semua barisnya, termasuk baris Event Type = Refund yang bernilai NEGATIF (refund otomatis mengurangi total struk asalnya). Kolom dicari lewat NAMA di baris header, bukan posisi; tetapi urutan+isi header harus sama persis dengan file contoh agar signature cocok.",
         "encoding": "utf-8-sig",
@@ -365,6 +367,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "sectioned_by_customer_header",
+        "transaction_type": "Penjualan",
+        "default_payment_terms": "Net 30",
         "filter_periode_nama_file": true,
         "description": "Laporan 'Penjualan per Pelanggan' NBM (wholesale, nomor invoice INV/WS/...) -- tiap pelanggan = 1 SEKSI: 1 baris judul (nama pelanggan di kolom A, kolom lain kosong), N baris line (1 invoice bisa punya banyak line produk, termasuk line 'Diskon' bernilai negatif), 1 baris 'Total Penjualan'. Line dijumlah per nomor invoice -> 1 baris kanonis (source_rows) = 1 INVOICE. Yang dijumlah kolom 'Jumlah Tagihan' (I); kolom 'Total' (J) adalah total berjalan per pelanggan dan TIDAK dipakai. Posisi kolom (1-based) dari resep, bukan nama, karena kolom A dipakai ganda untuk nama pelanggan & tanggal.",
         "date_format": "DD/MM/YYYY",
@@ -430,6 +434,8 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "flat_grouped_by_key",
+        "transaction_type": "Penjualan POS",
+        "default_payment_terms": "Due on Receipt",
         "filter_periode_nama_file": true,
         "description": "Export POS 'Report Transaction' (semua outlet NBM) -- ringkasan PER STRUK: 1 baris CSV = 1 struk (Event Type = Payment), plus baris Event Type = Refund yang memakai Receipt Number struk asalnya dengan nilai NEGATIF. Dijumlah per Receipt Number -> 1 baris kanonis (source_rows) = 1 struk, refund otomatis mengurangi struk asalnya. Rumus SAMA dengan varian 'Report Item Details' (dpp = Net Sales + Gratuity, ppn = Tax) supaya angka antar bulan konsisten apa pun jenis export-nya. Kolom dicari lewat NAMA di baris header; urutan+isi header harus sama persis dengan file contoh agar signature cocok.",
         "encoding": "utf-8-sig",
