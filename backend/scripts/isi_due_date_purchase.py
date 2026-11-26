@@ -20,7 +20,13 @@ import os
 import sys
 from datetime import date, timedelta
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _BACKEND)
+try:  # db_client membaca DATABASE_URL dari environment; di main.py .env dimuat dulu, di skrip ini kita muat sendiri
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=os.path.join(_BACKEND, ".env"))
+except ImportError:
+    pass
 import db_client as dbc  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
