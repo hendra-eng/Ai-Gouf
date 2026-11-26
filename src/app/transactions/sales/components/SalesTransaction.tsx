@@ -732,7 +732,7 @@ export default function SalesTransaction() {
                     <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="block rounded border-neutral-400 accent-neutral-800" />
                   </th>
                   {[
-                    'Tanggal', 'Invoice', 'Customer', 'Cabang', 'Deskripsi', 'DPP', 'PPN',
+                    'Tanggal', 'Invoice', 'Customer', 'Cabang', 'DPP', 'PPN',
                     ...(visibleCols.pph ? ['PPh'] : []),
                     'Gross', 'Paid', 'Outstanding',
                     ...(visibleCols.dueDate ? ['Due Date'] : []),
@@ -746,7 +746,7 @@ export default function SalesTransaction() {
               </thead>
               <tbody>
                 {!loading && paginated.length === 0 && (
-                  <tr><td colSpan={16} className="py-2 px-2 text-center text-xs text-neutral-500"><span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-xs">{t('Tidak ada transaksi yang cocok dengan filter.')}</span></td></tr>
+                  <tr><td colSpan={15} className="py-2 px-2 text-center text-xs text-neutral-500"><span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-xs">{t('Tidak ada transaksi yang cocok dengan filter.')}</span></td></tr>
                 )}
                 {paginated.map(row => (
                   <tr
@@ -761,7 +761,6 @@ export default function SalesTransaction() {
                     <td className="py-2 px-2 whitespace-nowrap font-medium text-blue-700">{row.id}</td>
                     <td className="py-2 px-2 whitespace-nowrap font-medium text-neutral-900">{row.customer}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-neutral-600">{row.cabang}</td>
-                    <td className="py-2 px-2 max-w-[120px] truncate text-neutral-600">{row.desc}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-right tabular-nums">{formatIDR(row.dpp)}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-right tabular-nums">{formatIDR(row.ppn)}</td>
                     {visibleCols.pph && <td className="py-2 px-2 whitespace-nowrap text-right tabular-nums">{formatIDR(row.pph)}</td>}
@@ -807,7 +806,7 @@ export default function SalesTransaction() {
                 {/* Baris kosong pengisi: tinggi tabel selalu = "Baris per halaman", supaya layar tidak bergeser. */}
                 {Array.from({ length: Math.max(0, pageSize - (paginated.length > 0 ? paginated.length : (!loading ? 1 : 0))) }).map((_, i) => (
                   <tr key={`pad-${i}`} aria-hidden="true" className="invisible text-xs">
-                    <td colSpan={16} className="py-2 px-2 whitespace-nowrap">
+                    <td colSpan={15} className="py-2 px-2 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-[11px] font-medium">&nbsp;</span>
                     </td>
                   </tr>

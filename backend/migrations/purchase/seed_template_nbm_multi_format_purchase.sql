@@ -130,6 +130,13 @@
 --     perjalanan dinas, akomodasi        -> 6-60204 | seragam -> 6-60007 | bensin, patrol -> 6-60202
 --     perawatan, material                -> 6-60203 | vegetables -> 1-10200
 --
+-- NAMA FILE = PERIODE (opsional, seperti Sales/UBD): resep memakai "filter_periode_nama_file": "jika_ada".
+--   NBM_PURCHASE_202601.xlsx -> hanya transaksi bertanggal Januari 2026 yang diimpor (file DETAIL boleh berisi
+--   Jan 2025 - Apr 2026; cukup di-rename per bulan). NBM_PURCHASE_20260101-20260115.xlsx -> rentang tanggal.
+--   Nama file TANPA periode (mis. AP_FAF_2025.xlsx) -> SEMUA transaksi di file diimpor (perilaku lama).
+--   Mau wajib periode (nama file tanpa periode ditolak): ganti "jika_ada" jadi true. Nomor transaksi unik per
+--   klien: upload ulang bulan yang sama dilewati ("already imported").
+--
 -- KLIEN: dicari lewat client_code = 'NBM' (bukan nama klien) dan GAGAL dengan pesan jelas
 -- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
@@ -139,54 +146,26 @@
 --   cd backend
 --   venv\Scripts\python migrations\run_seed.py migrations\purchase\seed_template_nbm_multi_format_purchase.sql
 --
--- Idempotensi: tanpa ON CONFLICT (run-2x gagal di uq_purchase_import_templates_signature).
--- Kalau resep direvisi:
---   DELETE FROM financial_transaction_purchase_import_templates t
---    USING management_clients c
---    WHERE t.client_id = c.id AND upper(trim(c.client_code)) = 'NBM'
---      AND t.file_type = 'Multi'
---      AND t.column_signature_hash = 'c589f6f8cd9fcd1173c95919a642ddc3715f46fb8cbc04cfdf8db2f9d0ff370e';
+-- Idempotensi / upgrade di tempat: AMAN dijalankan berkali-kali (pola seed Purchase UBD). Baris Multi klien dicari
+-- lewat hash baris seed ini (v_hash_baru) atau versi lamanya (v_hash_lama), termasuk yang soft-delete ->
+-- UPDATE resep di tempat (id, usage_count, riwayat file tetap); tidak ada -> INSERT. Menjalankan ulang MENIMPA
+-- resep dengan isi file ini. Pengaman: ada baris Multi AKTIF lain milik klien dengan varian Excel header sama ->
+-- seed berhenti dengan pesan jelas (nonaktifkan baris itu dulu:
+--   UPDATE financial_transaction_purchase_import_templates
+--      SET is_active = false, deleted_at = now(), edited_at = now() WHERE id = '<id>';).
 --
--- Menambah varian (CSV/PDF/Excel lain): tambah 1 objek di array "variants", hitung ulang hash
--- level baris. Jika seed sudah dijalankan, UPDATE baris yang ada atau hapus lalu jalankan ulang.
+-- Menambah varian (CSV/PDF/Excel lain): tambah 1 objek di array "variants", hitung ulang hash baris =
+-- SHA-256("<hash1>:<hash2>"), pindahkan hash lama ke v_hash_lama, jalankan ulang.
 
 DO $do$
 DECLARE
     v_client_id   UUID;
     v_client_code VARCHAR(50);
-BEGIN
-    SELECT id, client_code INTO v_client_id, v_client_code
-    FROM management_clients
-    WHERE deleted_at IS NULL
-      AND upper(trim(client_code)) = 'NBM'
-    ORDER BY created_at
-    LIMIT 1;
-
-    IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien NBM belum ada di management_clients (dicari client_code = ''NBM''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
-    END IF;
-
-    INSERT INTO financial_transaction_purchase_import_templates (
-        client_id,
-        client_code,
-        file_type,
-        header_row_index,
-        data_start_row_index,
-        column_signature_hash,
-        header_columns,
-        mapping_rules,
-        detected_by,
-        is_active,
-        usage_count
-    ) VALUES (
-        v_client_id,
-        v_client_code,
-        'Multi',
-        1,
-        2,
-        'c589f6f8cd9fcd1173c95919a642ddc3715f46fb8cbc04cfdf8db2f9d0ff370e',
-        '[]'::jsonb,
-        $json${
+    v_id          UUID;
+    v_bentrok     INTEGER;
+    v_hash_baru   CONSTANT TEXT := 'c589f6f8cd9fcd1173c95919a642ddc3715f46fb8cbc04cfdf8db2f9d0ff370e';
+    v_hash_lama   TEXT[] := ARRAY[]::TEXT[];
+    v_rules       JSONB := $json${
   "format_type": "multi_format",
   "description": "1 setting klien NBM untuk file pembelian/AP. Saat ini varian Excel (sheet DETAIL workbook AP_FAF); varian CSV/PDF ditambahkan kemudian ke array variants. Tiap varian membawa file_type, sheet, posisi header, signature & resep sendiri; backend memilih varian yang tipe file dan signature header-nya cocok.",
   "variants": [
@@ -218,6 +197,7 @@ BEGIN
         "sheet_name": "DETAIL",
         "date_format": "YYYY-MM-DD",
         "tanggal_wajib": false,
+        "filter_periode_nama_file": "jika_ada",
         "number_format": {
           "thousands_separator": ",",
           "decimal_separator": "."
@@ -384,11 +364,68 @@ BEGIN
     }
   ]
 }
-$json$::jsonb,
-        'manual',
-        true,
-        0
-    );
+$json$::jsonb;
+BEGIN
+    SELECT id, client_code INTO v_client_id, v_client_code
+    FROM management_clients
+    WHERE deleted_at IS NULL
+      AND upper(trim(client_code)) = 'NBM'
+    ORDER BY created_at
+    LIMIT 1;
+
+    IF v_client_id IS NULL THEN
+        RAISE EXCEPTION 'Klien NBM belum ada di management_clients (dicari client_code = ''NBM''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+    END IF;
+    RAISE NOTICE 'Klien terpilih: % (client_code %)', v_client_id, v_client_code;
+
+    SELECT t.id INTO v_id
+    FROM financial_transaction_purchase_import_templates t
+    WHERE t.client_id = v_client_id
+      AND t.file_type = 'Multi'
+      AND (t.column_signature_hash = v_hash_baru OR t.column_signature_hash = ANY (v_hash_lama))
+    ORDER BY (t.column_signature_hash = v_hash_baru) DESC, t.created_at
+    LIMIT 1;
+
+    SELECT count(*) INTO v_bentrok
+    FROM financial_transaction_purchase_import_templates t
+    WHERE t.client_id = v_client_id
+      AND t.deleted_at IS NULL
+      AND t.is_active
+      AND t.file_type = 'Multi'
+      AND t.id IS DISTINCT FROM v_id
+      AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(t.mapping_rules->'variants', '[]'::jsonb)) AS v
+          WHERE v->>'file_type' = 'Excel' AND v->>'column_signature_hash' = 'ec4beb61ff3bac110fa6b6dd2d50dffa3ad6113a28268b9aff2fce6413f54253'
+      );
+
+    IF v_bentrok > 0 THEN
+        RAISE EXCEPTION 'Klien NBM sudah punya template Multi AKTIF lain dengan varian Excel yang sama. Singkirkan baris yang tidak dipakai (lihat bagian Idempotensi di kepala file ini), lalu jalankan ulang seed ini.';
+    END IF;
+
+    IF v_id IS NULL THEN
+        INSERT INTO financial_transaction_purchase_import_templates (
+            client_id, client_code, file_type, header_row_index, data_start_row_index,
+            column_signature_hash, header_columns, mapping_rules, detected_by, is_active, usage_count
+        ) VALUES (
+            v_client_id, v_client_code, 'Multi', 1, 2,
+            v_hash_baru, '[]'::jsonb, v_rules, 'manual', true, 0
+        );
+        RAISE NOTICE 'Template Multi NBM dibuat (baris baru).';
+    ELSE
+        UPDATE financial_transaction_purchase_import_templates
+           SET header_row_index = 1,
+               data_start_row_index = 2,
+               column_signature_hash = v_hash_baru,
+               header_columns = '[]'::jsonb,
+               mapping_rules = v_rules,
+               is_active = true,
+               deleted_at = NULL,
+               deleted_by = NULL,
+               edited_at = now()
+         WHERE id = v_id;
+        RAISE NOTICE 'Template Multi NBM sudah ada: hash dan resep diperbarui di tempat (usage_count dan riwayat file tetap).';
+    END IF;
 END
 $do$;
 
