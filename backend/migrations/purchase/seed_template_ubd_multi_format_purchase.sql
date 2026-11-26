@@ -110,6 +110,8 @@ DECLARE
         "header_row_index": 1,
         "data_start_row_index": 2,
         "filter_periode_nama_file": true,
+        "jatuh_tempo_hari": 30,
+        "header_kolom": [1, 18],
         "currency_default": "IDR",
         "category_default": "Other",
         "columns": {

@@ -60,7 +60,7 @@ from __future__ import annotations
 
 import re
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -609,6 +609,14 @@ def _parse_flat_grouped_purchase_report(rows: List[List[str]], recipe: Dict[str,
         if catatan_sumber:
             info.append("Note: " + " | ".join(catatan_sumber))
 
+        # kolom opsional (hanya ada kalau resep / header file memilikinya): nilai terisi pertama per transaksi
+        no_invoice = next((teks(r, "invoice_number") for r in baris if teks(r, "invoice_number")), "")
+        no_po = next((teks(r, "po_number") for r in baris if teks(r, "po_number")), "")
+        teks_jt = next((teks(r, "due_date") for r in baris if teks(r, "due_date")), "")
+        jatuh_tempo = _parse_tanggal(teks_jt, date_format) if teks_jt else None
+        if teks_jt and jatuh_tempo is None:
+            peringatan.append(f"Due date '{teks_jt}' could not be read; it was calculated automatically instead.")
+
         blok = _selesaikan_blok(
             purchase_no=kunci,
             tanggal=tanggal,
@@ -640,6 +648,9 @@ def _parse_flat_grouped_purchase_report(rows: List[List[str]], recipe: Dict[str,
                 peringatan.append("No credit-side row found for this voucher; the default payable account was used.")
             if sisi and abs(total_kredit - total_blok) > tol_nota:
                 peringatan.append(f"Credit total {total_kredit:,.2f} differs from debit total {total_blok:,.2f} (journal not balanced in the file).")
+        blok["invoice_number"] = no_invoice or None
+        blok["po_number"] = no_po or None
+        blok["due_date"] = jatuh_tempo
         blok["warnings"].extend(peringatan)
         blok["notes"].extend([*peringatan, *info])
         hasil.append(blok)
@@ -867,13 +878,64 @@ def _parse_monthly_petty_cash_ledger(sumber: "_LedgerSumber", recipe: Dict[str, 
     return hasil
 
 
+# Kolom OPSIONAL tabel flat: kalau header file punya salah satu judul ini (dan resep belum memetakan kuncinya
+# secara eksplisit di "columns"), posisinya dipakai otomatis. Tidak ada kolomnya -> nilai kosong (Invoice No./PO
+# tampil "-", Due Date dihitung otomatis dari tanggal + jatuh_tempo_hari). Pencocokan = judul PERSIS (setelah
+# huruf kecil + rapikan spasi), jadi "Invoice Date" / "Total Inv" tidak pernah salah terbaca sebagai No. Invoice.
+_ALIAS_KOLOM_OPSIONAL: Dict[str, set] = {
+    "invoice_number": {
+        "no invoice", "no. invoice", "nomor invoice", "invoice no", "invoice no.", "invoice number",
+        "no faktur", "no. faktur", "nomor faktur", "vendor invoice", "vendor invoice no", "vendor invoice number",
+    },
+    "po_number": {
+        "no po", "no. po", "nomor po", "po no", "po no.", "po number", "po #",
+        "purchase order", "purchase order no", "purchase order number", "no purchase order",
+    },
+    "due_date": {"due date", "jatuh tempo", "tgl jatuh tempo", "tgl. jatuh tempo", "tanggal jatuh tempo"},
+}
+
+# Jatuh tempo otomatis (tanggal transaksi + N hari) kalau file tidak punya kolom Due Date. Resep boleh mengubah
+# lewat "jatuh_tempo_hari": 45; nilai 0 / null mematikannya (Due Date dibiarkan kosong).
+_JATUH_TEMPO_HARI_DEFAULT = 30
+
+
+def _hari_jatuh_tempo(recipe: Dict[str, Any]) -> Optional[int]:
+    try:
+        n = int(recipe.get("jatuh_tempo_hari", _JATUH_TEMPO_HARI_DEFAULT))
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def _tambah_kolom_opsional(rows: Any, template: Dict[str, Any], recipe: Dict[str, Any]) -> Dict[str, Any]:
+    """Salinan resep + posisi kolom opsional (invoice_number / po_number / due_date) yang ditemukan di baris header
+    file. Resep yang memetakan kunci itu secara eksplisit di "columns" tidak ditimpa."""
+    try:
+        header = rows[int(template.get("header_row_index") or 1) - 1]
+    except (IndexError, TypeError, ValueError):
+        return recipe
+    cols = dict(recipe.get("columns") or {})
+    for kunci, alias in _ALIAS_KOLOM_OPSIONAL.items():
+        if kunci in cols:
+            continue
+        for pos, sel in enumerate(header, start=1):
+            if _norm_label(sel).rstrip(":").strip() in alias:
+                cols[kunci] = pos
+                break
+    if cols == (recipe.get("columns") or {}):
+        return recipe
+    baru = dict(recipe)
+    baru["columns"] = cols
+    return baru
+
+
 def _ekstrak_dengan_template(rows: Any, template: Dict[str, Any], file_name: Optional[str] = None) -> List[Dict[str, Any]]:
     mapping_rules = template.get("mapping_rules") or {}
     format_type = mapping_rules.get("format_type")
     if format_type == "grouped_purchase_report":
         hasil = _parse_grouped_purchase_report(rows, mapping_rules)
     elif format_type == "flat_grouped_purchase_report":
-        hasil = _parse_flat_grouped_purchase_report(rows, mapping_rules)
+        hasil = _parse_flat_grouped_purchase_report(rows, _tambah_kolom_opsional(rows, template, mapping_rules))
     elif format_type == FORMAT_EXCEL_LEDGER:
         hasil = _parse_monthly_petty_cash_ledger(rows, mapping_rules)
     else:
@@ -1004,6 +1066,14 @@ def _siapkan_data_transaksi(
         f"Subtotal {t['subtotal']:,.0f}; Discount {t['potongan']:,.0f}; Tax {t['pajak']:,.0f}; "
         f"Other Costs {t['biaya']:,.0f}; Grand Total {t['total_akhir']:,.0f}"
     )
+    status_bayar = _status_bayar_awal(akun_ap, recipe)
+    # Jatuh tempo: nilai dari file menang; kalau kosong dihitung tanggal transaksi + jatuh_tempo_hari. Transaksi
+    # non_cash (penyusutan/amortisasi) tidak punya jatuh tempo, dan tanpa tanggal transaksi tidak menebak.
+    jatuh_tempo = t.get("due_date")
+    if jatuh_tempo is None and status_bayar != "non_cash" and t.get("purchase_date"):
+        hari = _hari_jatuh_tempo(recipe)
+        if hari:
+            jatuh_tempo = t["purchase_date"] + timedelta(days=hari)
     return {
         "client_id": client_id,
         "management_client_id": management_client_id,
@@ -1016,7 +1086,10 @@ def _siapkan_data_transaksi(
         "description": f"Purchase{cabang} - {t['vendor_name']}",
         "category": t.get("category") or category,  # kategori per baris (buku kas kecil AADL) menang
         "currency": currency,
-        "payment_status": _status_bayar_awal(akun_ap, recipe),
+        "payment_status": status_bayar,
+        "invoice_number": (t.get("invoice_number") or None) and str(t["invoice_number"])[:100],
+        "po_number": (t.get("po_number") or None) and str(t["po_number"])[:100],
+        "due_date": jatuh_tempo,
         "status": "draft",
         "period_label": _period_label(t["purchase_date"]),
         "created_by_name": created_by_name,

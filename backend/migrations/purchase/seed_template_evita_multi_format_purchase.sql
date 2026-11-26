@@ -109,6 +109,16 @@
 --   "Butuh Review". Migration purchase/34-allow_null_purchase_date.py tidak wajib untuk file ini
 --   (semua baris valid punya tanggal).
 --
+--
+-- NAMA FILE = PERIODE (opsional, seperti Sales/UBD/NBM): resep tiap varian memakai
+--   "filter_periode_nama_file": "jika_ada".
+--   * Nama file memuat bulan+tahun (mis. EVITA_BIAYA_202601.xlsx) atau rentang tanggal -> hanya transaksi
+--     bertanggal di periode itu yang diimpor (file kumulatif cukup di-rename per bulan).
+--   * Nama file TANPA periode -> SEMUA transaksi di file diimpor (perilaku lama, tidak ditolak).
+--   * Mau wajib periode (nama file tanpa periode ditolak, seperti UBD): ganti "jika_ada" jadi true.
+--   Transaksi tanpa tanggal tetap dibawa (ditandai parser). Nomor transaksi unik per klien:
+--   upload ulang periode yang sama dilewati ("already imported").
+--
 -- KLIEN: dicari lewat client_code = 'EVITA' (bukan nama klien) dan GAGAL dengan pesan jelas
 -- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
@@ -157,6 +167,8 @@ DECLARE
         "format_type": "flat_expense_ledger",
         "description": "Buku biaya Evita (EBA), sheet 'Biaya Lainnya' -- tabel TabelBiaya (kolom I:O, header baris 6): 1 baris 'Uang Keluar' > 0 = 1 transaksi pembelian/biaya (1 baris item); Kode Transaksi hanya keterangan bebas (sering ganda) sehingga tidak dipakai sebagai nomor. Vendor generik per Akun Bank, nomor EBA-BY-<YYYYMM>-<urut>. Uang Masuk (bunga bank), jumlah negatif dan nol ditandai tidak valid (tidak jadi transaksi). Signature = hash header HANYA kolom I:O (kolom A:D berisi menu dan angka rumus yang berubah).",
         "source_kind": "excel_sheet",
+        "filter_periode_nama_file": "jika_ada",
+        "jatuh_tempo_hari": 30,
         "sheet_name": "Biaya Lainnya",
         "date_format": "YYYY-MM-DD",
         "number_format": {

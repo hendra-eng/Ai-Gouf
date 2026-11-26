@@ -117,6 +117,16 @@
 --  seed sales AADL untuk cabang yang berjudul sama.) header_row_index/data_start_row_index
 -- level baris hanya pengisi kolom NOT NULL untuk template Multi.
 --
+--
+-- NAMA FILE = PERIODE (opsional, seperti Sales/UBD/NBM): resep tiap varian memakai
+--   "filter_periode_nama_file": "jika_ada".
+--   * Nama file memuat bulan+tahun (mis. Rekapan_Pembayaran_Pattycash_Warung_Soemantri_202601.xlsx) atau rentang tanggal -> hanya transaksi
+--     bertanggal di periode itu yang diimpor (file kumulatif cukup di-rename per bulan).
+--   * Nama file TANPA periode -> SEMUA transaksi di file diimpor (perilaku lama, tidak ditolak).
+--   * Mau wajib periode (nama file tanpa periode ditolak, seperti UBD): ganti "jika_ada" jadi true.
+--   Transaksi tanpa tanggal tetap dibawa (ditandai parser). Nomor transaksi unik per klien:
+--   upload ulang periode yang sama dilewati ("already imported").
+--
 -- KLIEN: dicari lewat client_code = 'AADL' (bukan nama klien) dan GAGAL dengan pesan jelas
 -- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
@@ -182,6 +192,8 @@ BEGIN
         "format_type": "monthly_petty_cash_ledger",
         "description": "Buku kas kecil (rekap pembayaran patty cash) WARUNG SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 3: Warung Soemantri.",
         "source_kind": "excel_workbook_monthly",
+        "filter_periode_nama_file": "jika_ada",
+        "jatuh_tempo_hari": 30,
         "cabang_tetap": "WARUNG SOEMANTRI",
         "nomor_prefix": "PC-WRG",
         "vendor_default": "Petty Cash Warung Soemantri",
@@ -311,6 +323,8 @@ BEGIN
         "format_type": "monthly_petty_cash_ledger",
         "description": "Buku kas kecil (rekap pembayaran patty cash) KOST WARUNG SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 3: Kost Warung Soemantri.",
         "source_kind": "excel_workbook_monthly",
+        "filter_periode_nama_file": "jika_ada",
+        "jatuh_tempo_hari": 30,
         "cabang_tetap": "KOST WARUNG SOEMANTRI",
         "nomor_prefix": "PC-KWS",
         "vendor_default": "Petty Cash Kost Warung Soemantri",
@@ -440,6 +454,8 @@ BEGIN
         "format_type": "monthly_petty_cash_ledger",
         "description": "Buku kas kecil (rekap pembayaran patty cash) KAPU SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 3: Kost Kapu Soemantri.",
         "source_kind": "excel_workbook_monthly",
+        "filter_periode_nama_file": "jika_ada",
+        "jatuh_tempo_hari": 30,
         "cabang_tetap": "KAPU SOEMANTRI",
         "nomor_prefix": "PC-KPS",
         "vendor_default": "Petty Cash Kapu Soemantri",
@@ -569,6 +585,8 @@ BEGIN
         "format_type": "monthly_petty_cash_ledger",
         "description": "Buku kas kecil (rekap pembayaran patty cash) VILLA PUTU SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 2: PUTU SOEMANTRI FAMILY VILLAS - DENPASAR.",
         "source_kind": "excel_workbook_monthly",
+        "filter_periode_nama_file": "jika_ada",
+        "jatuh_tempo_hari": 30,
         "cabang_tetap": "VILLA PUTU SOEMANTRI",
         "nomor_prefix": "PC-VPS",
         "vendor_default": "Petty Cash Villa Putu Soemantri",
@@ -698,6 +716,8 @@ BEGIN
         "format_type": "monthly_petty_cash_ledger",
         "description": "Buku kas kecil (rekap pembayaran patty cash) OMAH & KOPI SOEMANTRI: 1 sheet per bulan; 1 baris CREDIT = 1 transaksi pembelian. Judul sheet baris 3: OMAH SOEMANTRI.",
         "source_kind": "excel_workbook_monthly",
+        "filter_periode_nama_file": "jika_ada",
+        "jatuh_tempo_hari": 30,
         "cabang_tetap": "OMAH & KOPI SOEMANTRI",
         "nomor_prefix": "PC-OMH",
         "vendor_default": "Petty Cash Omah & Kopi Soemantri",

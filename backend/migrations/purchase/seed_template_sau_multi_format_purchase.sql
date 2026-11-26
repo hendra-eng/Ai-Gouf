@@ -261,6 +261,18 @@
 -- dalam tiap varian. Setiap varian ditambah/dihapus, hitung ulang hash level baris dari
 -- gabungan hash varian (urutan = urutan array "variants").
 --
+--
+-- NAMA FILE = PERIODE (opsional, seperti Sales/UBD/NBM): resep tiap varian memakai
+--   "filter_periode_nama_file": "jika_ada".
+--   * Nama file memuat bulan+tahun (mis. Data_Pembelian_Detail_Agustus_2026_CRS.csv) atau rentang tanggal -> hanya transaksi
+--     bertanggal di periode itu yang diimpor (file kumulatif cukup di-rename per bulan).
+--   * Nama file TANPA periode -> SEMUA transaksi di file diimpor (perilaku lama, tidak ditolak).
+--   * Mau wajib periode (nama file tanpa periode ditolak, seperti UBD): ganti "jika_ada" jadi true.
+--   Transaksi tanpa tanggal tetap dibawa (ditandai parser). Nomor transaksi unik per klien:
+--   upload ulang periode yang sama dilewati ("already imported").
+--   Nama file asli SAU ("...01-30_Agustus_2026_CRS.csv") terbaca sebagai 1 bulan penuh (01-31 Agustus),
+--   jadi transaksi tanggal 31 tetap ikut.
+--
 -- KLIEN: dicari lewat client_code = 'SAU' (bukan nama klien) dan GAGAL dengan pesan jelas
 -- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
@@ -271,22 +283,13 @@
 --   cd backend
 --   venv\Scripts\python migrations\run_seed.py migrations\purchase\seed_template_sau_multi_format_purchase.sql
 --
--- Idempotensi: TIDAK pakai ON CONFLICT supaya run-2x kelihatan (gagal karena UNIQUE
--- uq_purchase_import_templates_signature). Kalau resep direvisi dan perlu dijalankan
--- ulang, hapus dulu:
---   DELETE FROM financial_transaction_purchase_import_templates t
---    USING management_clients c
---    WHERE t.client_id = c.id AND upper(trim(c.client_code)) = 'SAU'
---      AND t.file_type = 'Multi'
---      AND t.column_signature_hash = '83b3ce13b0ecce8cf1bc7581b5c39d8834608f3db04191d2d24b99ec823d9765';
--- Kalau yang ada di database masih baris Multi versi CSV-saja (hash lama), hapus yang itu
--- sebelum menjalankan seed ini -- kalau tidak, hasilnya 2 baris Multi untuk SAU (UNIQUE tidak
--- menolak karena hash level barisnya beda):
---   DELETE FROM financial_transaction_purchase_import_templates t
---    USING management_clients c
---    WHERE t.client_id = c.id AND upper(trim(c.client_code)) = 'SAU'
---      AND t.file_type = 'Multi'
---      AND t.column_signature_hash = '38ba284a93b8d55b8c00257d05a4c00c6d7b9ad3585984d07198c97ce56d1e2f';
+-- Idempotensi / upgrade di tempat: AMAN dijalankan berkali-kali (pola seed Purchase UBD/NBM). Baris Multi klien
+-- dicari lewat hash baris seed ini (v_hash_baru) atau versi lamanya (v_hash_lama = hash versi CSV-saja),
+-- termasuk yang soft-delete -> UPDATE resep di tempat (id, usage_count, riwayat file tetap); tidak ada -> INSERT.
+-- Menjalankan ulang MENIMPA resep dengan isi file ini. Pengaman: ada baris Multi AKTIF lain milik klien dengan
+-- varian CSV/PDF berhash sama -> seed berhenti dengan pesan jelas (nonaktifkan baris itu dulu:
+--   UPDATE financial_transaction_purchase_import_templates
+--      SET is_active = false, deleted_at = now(), edited_at = now() WHERE id = '<id>';).
 --
 -- Menonaktifkan template lama SAU bertipe CSV (HANYA setelah upload lewat template Multi terbukti jalan):
 --   UPDATE financial_transaction_purchase_import_templates t
@@ -312,39 +315,11 @@ DO $do$
 DECLARE
     v_client_id   UUID;
     v_client_code VARCHAR(50);
-BEGIN
-    SELECT id, client_code INTO v_client_id, v_client_code
-    FROM management_clients
-    WHERE deleted_at IS NULL
-      AND upper(trim(client_code)) = 'SAU'
-    ORDER BY created_at
-    LIMIT 1;
-
-    IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien SAU belum ada di management_clients (dicari client_code = ''SAU''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
-    END IF;
-
-    INSERT INTO financial_transaction_purchase_import_templates (
-        client_id,
-        client_code,
-        file_type,
-        header_row_index,
-        data_start_row_index,
-        column_signature_hash,
-        header_columns,
-        mapping_rules,
-        detected_by,
-        is_active,
-        usage_count
-    ) VALUES (
-        v_client_id,
-        v_client_code,
-        'Multi',
-        1,
-        2,
-        '83b3ce13b0ecce8cf1bc7581b5c39d8834608f3db04191d2d24b99ec823d9765',
-        '[]'::jsonb,
-        $json${
+    v_id          UUID;
+    v_bentrok     INTEGER;
+    v_hash_baru   CONSTANT TEXT := '83b3ce13b0ecce8cf1bc7581b5c39d8834608f3db04191d2d24b99ec823d9765';
+    v_hash_lama   TEXT[] := ARRAY['38ba284a93b8d55b8c00257d05a4c00c6d7b9ad3585984d07198c97ce56d1e2f']::TEXT[];
+    v_rules       JSONB := $json${
   "format_type": "multi_format",
   "description": "1 setting klien SAU untuk laporan pembelian semua cabang (CRS, NGY, OL, PCL). Saat ini varian CSV dan PDF (format SAMA untuk keempat cabang di masing-masing tipe file); varian Excel ditambahkan kemudian ke array variants. Tiap varian membawa file_type, sheet, posisi header, signature & resep parsing sendiri; backend memilih varian yang tipe file dan signature header-nya cocok. Varian PDF baru berfungsi setelah parser PDF Purchase dibuat di backend.",
   "variants": [
@@ -371,6 +346,8 @@ BEGIN
       ],
       "mapping_rules": {
         "format_type": "grouped_purchase_report",
+        "filter_periode_nama_file": "jika_ada",
+        "jatuh_tempo_hari": 30,
         "description": "Laporan Pembelian Detail (POS/kasir) SAU -- 1 transaksi pembelian (blok) = 1 Purchase Transaction draft + baris itemnya. Tiap blok CSV: header transaksi (No Transaksi, Tanggal, Dept., Kode Supp., Nama Supplier), label item, N baris item, baris subtotal, footer (Pot./Pajak/Biaya/Total Akhir), lalu 1 baris kosong. Format SAMA untuk keempat cabang (CRS, NGY, OL, PCL); cabang dibaca dari kolom Dept. di isi file (cadangan: nama file).",
         "delimiter": ";",
         "quoted_fields": true,
@@ -513,6 +490,8 @@ BEGIN
       ],
       "mapping_rules": {
         "format_type": "grouped_purchase_report_pdf",
+        "filter_periode_nama_file": "jika_ada",
+        "jatuh_tempo_hari": 30,
         "description": "Laporan Pembelian Detail (POS/kasir) SAU versi PDF -- isi dan struktur blok SAMA dengan varian CSV: 1 transaksi pembelian (blok) = 1 Purchase Transaction draft + baris itemnya. Tiap blok = header transaksi (No Transaksi, Tanggal, Dept., Kode Supp., Nama Supplier), band label item, N baris item, baris subtotal, footer (Pot./Pajak/Biaya/Total Akhir). Beda dengan CSV: tidak ada baris/sel, jadi resep memakai KATA + POSISI (x0, x1, top) di text layer PDF. Format SAMA untuk keempat cabang (CRS, NGY, OL, PCL); cabang dibaca dari kolom Dept. di tiap blok (cadangan: nama file).",
         "source_kind": "pdf_text_layer",
         "pdf_reader": {
@@ -826,11 +805,69 @@ BEGIN
     }
   ]
 }
-$json$::jsonb,
-        'manual',
-        true,
-        0
-    );
+$json$::jsonb;
+BEGIN
+    SELECT id, client_code INTO v_client_id, v_client_code
+    FROM management_clients
+    WHERE deleted_at IS NULL
+      AND upper(trim(client_code)) = 'SAU'
+    ORDER BY created_at
+    LIMIT 1;
+
+    IF v_client_id IS NULL THEN
+        RAISE EXCEPTION 'Klien SAU belum ada di management_clients (dicari client_code = ''SAU''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+    END IF;
+    RAISE NOTICE 'Klien terpilih: % (client_code %)', v_client_id, v_client_code;
+
+    SELECT t.id INTO v_id
+    FROM financial_transaction_purchase_import_templates t
+    WHERE t.client_id = v_client_id
+      AND t.file_type = 'Multi'
+      AND (t.column_signature_hash = v_hash_baru OR t.column_signature_hash = ANY (v_hash_lama))
+    ORDER BY (t.column_signature_hash = v_hash_baru) DESC, t.created_at
+    LIMIT 1;
+
+    SELECT count(*) INTO v_bentrok
+    FROM financial_transaction_purchase_import_templates t
+    WHERE t.client_id = v_client_id
+      AND t.deleted_at IS NULL
+      AND t.is_active
+      AND t.file_type = 'Multi'
+      AND t.id IS DISTINCT FROM v_id
+      AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(t.mapping_rules->'variants', '[]'::jsonb)) AS v
+          WHERE (v->>'file_type' = 'CSV' AND v->>'column_signature_hash' = 'f5b9fc4d1e289233f6f2d71a9c1f07c16b88db8f4ee99f53ca70bba71f89ef64')
+             OR (v->>'file_type' = 'PDF' AND v->>'column_signature_hash' = 'cc03ab080f3911a706f5a3edec20be4cd805fc953da3a948b37d8ba122a54fa0')
+      );
+
+    IF v_bentrok > 0 THEN
+        RAISE EXCEPTION 'Klien SAU sudah punya template Multi AKTIF lain dengan varian CSV/PDF yang sama. Singkirkan baris yang tidak dipakai (lihat bagian Idempotensi di kepala file ini), lalu jalankan ulang seed ini.';
+    END IF;
+
+    IF v_id IS NULL THEN
+        INSERT INTO financial_transaction_purchase_import_templates (
+            client_id, client_code, file_type, header_row_index, data_start_row_index,
+            column_signature_hash, header_columns, mapping_rules, detected_by, is_active, usage_count
+        ) VALUES (
+            v_client_id, v_client_code, 'Multi', 1, 2,
+            v_hash_baru, '[]'::jsonb, v_rules, 'manual', true, 0
+        );
+        RAISE NOTICE 'Template Multi SAU dibuat (baris baru).';
+    ELSE
+        UPDATE financial_transaction_purchase_import_templates
+           SET header_row_index = 1,
+               data_start_row_index = 2,
+               column_signature_hash = v_hash_baru,
+               header_columns = '[]'::jsonb,
+               mapping_rules = v_rules,
+               is_active = true,
+               deleted_at = NULL,
+               deleted_by = NULL,
+               edited_at = now()
+         WHERE id = v_id;
+        RAISE NOTICE 'Template Multi SAU sudah ada: hash dan resep diperbarui di tempat (usage_count dan riwayat file tetap).';
+    END IF;
 END
 $do$;
 

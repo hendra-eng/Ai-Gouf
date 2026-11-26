@@ -198,6 +198,8 @@ DECLARE
         "date_format": "YYYY-MM-DD",
         "tanggal_wajib": false,
         "filter_periode_nama_file": "jika_ada",
+        "header_kolom": [1, 13],
+        "jatuh_tempo_hari": 30,
         "number_format": {
           "thousands_separator": ",",
           "decimal_separator": "."

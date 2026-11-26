@@ -7595,6 +7595,7 @@ def promote_purchase_rows(source_file_id: str, user_id: Optional[str] = None) ->
             continue
         data = dict(header)
         data["purchase_date"] = _tanggal(data.get("purchase_date"))
+        data["due_date"] = _tanggal(data.get("due_date"))  # payload JSON menyimpan tanggal sebagai teks ISO
         # Cek ulang bentrok no. pembelian (client_id = pemilik transaksi, sama dengan cek saat upload).
         if get_purchase_transaction_by_client_and_no(data.get("client_id"), data["purchase_no"]):
             hasil["dilewati_no_bentrok"] += 1
