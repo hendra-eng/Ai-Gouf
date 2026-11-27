@@ -54,10 +54,10 @@ function StatementList() {
   if (statements.length === 0) return null;
 
   const hapus = async (id: string, nama: string) => {
-    if (!window.confirm(`Delete bank statement "${nama}" and all of its unmatched lines?`)) return;
+    if (!window.confirm(`Permanently delete bank statement "${nama}" and all of its lines? This cannot be undone.`)) return;
     try {
       await removeStatement(id);
-      toast.success('Bank statement deleted.');
+      toast.success('Bank statement permanently deleted.');
     } catch (e: any) {
       toast.error(e?.message || 'Failed to delete the bank statement.');
     }
@@ -134,7 +134,7 @@ function StatementList() {
                     onClick={() => hapus(s.id, s.file_name)}
                     disabled={s.matched_count > 0}
                     className={ICON_BTN_DANGER}
-                    title={s.matched_count > 0 ? 'Some lines are already matched — unmatch them first in the Reconciliation tab' : 'Delete file & its lines'}
+                    title={s.matched_count > 0 ? 'Some lines are already matched — unmatch them first in the Reconciliation tab' : 'Permanently delete file & all its lines'}
                     aria-label="Delete file"
                   >
                     <Trash2 size={14} />

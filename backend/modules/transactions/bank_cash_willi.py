@@ -114,6 +114,7 @@ RULE = dbc.BankCashAutoRule   # migration 52: aturan otomatis mutasi tanpa invoi
 MAP_AKUN = dbc.ManagementSettingAccountMapping
 SI = dbc.SalesInvoice
 PT = dbc.PurchaseTransaction
+EX = dbc.FinanceTransactionBankCashException   # catatan penanganan tab Exceptions (kunci: bank_mutation_ref = id mutasi)
 
 # Jenis akun kas/bank dari standard_account_code COA klien.
 _JENIS_KAS = {
@@ -1898,25 +1899,53 @@ def hapus_mapping_bank(mapping_id: UUID, client_id: UUID = Query(...),
     return _respon(aksi, "Bank mapping deleted.")
 
 
-@router.delete("/statements/{statement_id}", summary="Hapus 1 file rekening koran beserta mutasinya (hanya kalau belum ada yang dicocokkan)")
+def _potong(daftar: List[Any], n: int = 1000):
+    """Pecah daftar id jadi potongan <= n supaya klausa IN (...) tetap ringan untuk file besar."""
+    for i in range(0, len(daftar), n):
+        yield daftar[i:i + n]
+
+
+@router.delete("/statements/{statement_id}", summary="Hapus PERMANEN 1 file rekening koran beserta semua data turunannya (ditolak kalau masih ada mutasi yang dicocokkan)")
 def hapus_statement(statement_id: UUID, client_id: UUID = Query(...),
                     current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_INPUT))):
+    """Hard delete (sama seperti hapus source file Sales/Purchase): file + SEMUA baris mutasinya + catatan Exceptions
+    yang menunjuk mutasi itu hilang total dari aplikasi dan database. Mutasi yang masih dicocokkan ke transaksi
+    (status 'matched' / transaksi aktif) DITOLAK -- unmatch dulu di tab Reconciliation supaya transaksi & jurnal
+    tidak kehilangan sumbernya. Transaksi lama yang sudah dihapus / di-reverse hanya dilepas dari mutasi
+    (mutation_id = NULL), bukan ikut dihapus, karena itu riwayat buku besar."""
     kid = str(client_id)
 
     def aksi(session):
         st = session.get(ST, str(statement_id))
-        if st is None or st.deleted_at is not None or str(st.client_id) != kid:
+        # deleted_at sengaja tidak dicek: file sisa soft-delete versi lama pun bisa dibersihkan permanen lewat endpoint ini.
+        if st is None or str(st.client_id) != kid:
             raise _Gagal("Bank statement not found.", kode="NOT_FOUND", status_code=404)
+        id_mut = [r[0] for r in session.query(MU.id).filter(MU.statement_id == st.id).all()]
+
         cocok = session.query(func.count()).select_from(MU).filter(
             MU.statement_id == st.id, MU.deleted_at.is_(None), MU.status == "matched").scalar()
         if cocok:
             raise _Gagal(f"{cocok} row(s) of this statement are already matched. Unmatch them first.", kode="IN_USE", status_code=409)
-        waktu = _sekarang()
-        session.query(MU).filter(MU.statement_id == st.id, MU.deleted_at.is_(None)).update(
-            {"deleted_at": waktu, "deleted_by": current_user.get("id")}, synchronize_session=False)
-        st.deleted_at, st.deleted_by = waktu, current_user.get("id")
-        return {"id": st.id}
-    return _respon(aksi, "Bank statement deleted.")
+        aktif = 0
+        for bagian in _potong(id_mut):
+            aktif += session.query(func.count()).select_from(TX).filter(
+                TX.mutation_id.in_(bagian), TX.deleted_at.is_(None), TX.status != "reversed").scalar() or 0
+        if aktif:
+            raise _Gagal(f"{aktif} transaction(s) are still linked to lines of this statement. Delete or unmatch them first.",
+                         kode="IN_USE", status_code=409)
+
+        n_exc = 0
+        for bagian in _potong(id_mut):
+            # transaksi lama (sudah dihapus / di-reverse) dilepas dulu supaya FK transactions.mutation_id tidak menghalangi
+            session.query(TX).filter(TX.mutation_id.in_(bagian)).update({TX.mutation_id: None}, synchronize_session=False)
+            n_exc += session.query(EX).filter(
+                EX.client_id == kid, EX.bank_mutation_ref.in_([str(i) for i in bagian])).delete(synchronize_session=False)
+        n_mut = 0
+        for bagian in _potong(id_mut):
+            n_mut += session.query(MU).filter(MU.id.in_(bagian)).delete(synchronize_session=False)
+        session.query(ST).filter(ST.id == st.id).delete(synchronize_session=False)
+        return {"id": st.id, "mutations_deleted": n_mut, "exceptions_deleted": n_exc}
+    return _respon(aksi, "Bank statement permanently deleted.")
 
 
 @router.get("/mutations", summary="Mutasi Bank Feed (filter status / akun bank / statement)")
