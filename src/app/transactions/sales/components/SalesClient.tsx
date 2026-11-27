@@ -14,7 +14,9 @@ import { salesFont } from './salesFont';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
-import { useSalesExceptions, uploadSalesSourceFile } from '@/lib/salesStore';
+import { useSalesExceptions } from '@/lib/salesStore';
+import { mulaiBatch, useProgresBatch } from '@/lib/uploadBatch';
+import { buatHandlerSales } from '@/lib/uploadBatchHandlers';
 
 const TABS: { key: string; label: string; icon: React.ElementType }[] = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -51,7 +53,9 @@ export default function SalesClient() {
   // sungguhan ke backend lewat uploadSalesSourceFile(); store otomatis refresh
   // (notifySalesChanged), jadi tab Source Data langsung menampilkan hasilnya.
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  // Progres batch (berhasil/total) dibaca dari store global, bukan state lokal -> tidak reset saat pindah tab/halaman.
+  const uploadProgres = useProgresBatch('sales', activeClientId ?? null);
+  const isUploading = !!uploadProgres;
 
   const handleUploadClick = () => {
     if (!activeClientId) {
@@ -63,6 +67,7 @@ export default function SalesClient() {
 
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
     if (files.length === 0) return;
     if (!user?.id) {
       toast.error(t('Sesi login tidak ditemukan, silakan login ulang.'));
@@ -72,37 +77,9 @@ export default function SalesClient() {
       toast.error(t('Select a company in the header before uploading a file.'));
       return;
     }
-    setIsUploading(true);
-    let berhasil = 0;
-    let butuhReview = 0;
-    try {
-      for (const file of files) {
-        try {
-          const hasil = await uploadSalesSourceFile(file, activeClientId);
-          if (hasil.template_matched) {
-            berhasil += 1;
-            toast.success(t('File berhasil diekstrak'), {
-              description: `${file.name}: ${hasil.rows_extracted} ${t('baris ditemukan.')}`,
-            });
-          } else {
-            butuhReview += 1;
-            toast.info(t('Belum ada template yang cocok'), {
-              description: `${file.name} ${t('ditandai "Butuh Review" -- perlu template baru untuk klien/format ini.')}`,
-            });
-          }
-        } catch (err) {
-          toast.error(`${file.name}: ${err instanceof Error ? err.message : t('Gagal mengunggah file')}`);
-        }
-      }
-      if (files.length > 1) {
-        toast.message(t('Upload selesai'), {
-          description: `${berhasil} ${t('berhasil diekstrak')}, ${butuhReview} ${t('butuh review')}.`,
-        });
-      }
-    } finally {
-      setIsUploading(false);
-      e.target.value = '';
-    }
+    // Loop upload berjalan di engine global (lib/uploadBatch.ts), bukan di komponen ini -> tetap jalan &
+    // angka di tombol tetap benar walau user pindah tab / halaman / refresh.
+    mulaiBatch('sales', activeClientId, files, buatHandlerSales(activeClientId, t));
   };
 
   // Badge di tab "Exceptions" -- jumlah exception yang BELUM selesai
@@ -138,7 +115,7 @@ export default function SalesClient() {
             disabled={isUploading || !activeClientId}
             className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Upload size={14} /> {isUploading ? t('Mengunggah...') : t('Upload File')}
+            <Upload size={14} /> {isUploading ? (uploadProgres ? `${t('Mengunggah')} ${uploadProgres.berhasil}/${uploadProgres.total}...` : t('Mengunggah...')) : t('Upload File')}
           </button>
           <Link
             href="/transactions/sales/invoice/new"

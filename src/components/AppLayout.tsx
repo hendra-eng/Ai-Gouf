@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import ChatWidget from './ChatWidget';
+import UploadBatchResumer from './UploadBatchResumer';
 import { CurrencyProvider } from '@/lib/currency';
 import { LanguageProvider } from '@/lib/language';
 import { ActiveClientProvider } from '@/lib/activeClient';
@@ -100,6 +101,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </div>
         {/* Bubble chat AI di pojok kanan bawah (pengganti halaman /zafeb-ai) */}
         <ChatWidget />
+        {/* Melanjutkan batch upload (Sales/Purchase/Cash & Bank) yang terputus karena refresh */}
+        <UploadBatchResumer />
       </TransactionsProvider>
       </ActivePeriodProvider>
       </AccountCodeProvider>

@@ -94,7 +94,7 @@ export default function CashBankTabs({ actions }: { actions?: React.ReactNode } 
 
   const activeTab = tabs.find((tab) => isActive(tab.href)) ?? tabs[0];
   const [formBaru, setFormBaru] = useState(false);
-  const { openPicker, importing, canUpload, ui: uploadUi } = useStatementUpload();
+  const { openPicker, importing, progressLabel, canUpload, ui: uploadUi } = useStatementUpload();
 
   return (
     <div className="mb-4">
@@ -116,7 +116,7 @@ export default function CashBankTabs({ actions }: { actions?: React.ReactNode } 
             disabled={importing || !canUpload}
             className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} {importing ? 'Reading...' : 'Upload File'}
+            {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} {importing ? (progressLabel ?? 'Reading...') : 'Upload File'}
           </button>
           <button
             type="button"

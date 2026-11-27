@@ -6,7 +6,9 @@ import { usePathname } from 'next/navigation';
 import { AlertTriangle, CalendarDays, ChevronDown, CircleCheck, Database, Eye, FileText, LayoutGrid, Plus, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { useActiveClient } from '@/lib/activeClient';
-import { uploadPurchaseSourceFile, usePurchaseExceptions } from '@/lib/purchaseStore';
+import { usePurchaseExceptions } from '@/lib/purchaseStore';
+import { mulaiBatch, useProgresBatch } from '@/lib/uploadBatch';
+import { buatHandlerPurchase } from '@/lib/uploadBatchHandlers';
 import { tabBadgeCls, tabCls, tabListCls } from '@/components/shared/moduleUi';
 import { salesFont } from '@/app/transactions/sales/components/salesFont';
 import { formatRangeLabel, usePurchaseDateRange } from '@/app/transactions/purchase/purchaseDateRange';
@@ -45,10 +47,12 @@ export default function PurchaseTabs({ actions, dateRangeActive = false, variant
   // [tanggal] [Upload File] [Add Transaction]. Sama seperti Sales: klik tombol langsung membuka
   // dialog pilih file; file dikirim ke backend (dicocokkan ke Purchase Import Template company aktif).
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
   const pathname = usePathname();
   // Badge Exceptions = jumlah exception yang belum selesai (data asli, seperti tab Sales); disembunyikan bila 0.
   const { activeClientId } = useActiveClient();
+  // Progres batch (berhasil/total) dibaca dari store global, bukan state lokal -> tidak reset saat pindah tab/halaman.
+  const uploadProgres = useProgresBatch('purchase', activeClientId ?? null);
+  const isUploading = !!uploadProgres;
   const { exceptions } = usePurchaseExceptions(activeClientId ?? null);
   const openExceptionCount = exceptions.filter(e => e.status !== 'Resolved' && e.status !== 'Ignored').length;
 
@@ -67,49 +71,15 @@ export default function PurchaseTabs({ actions, dateRangeActive = false, variant
 
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
     if (files.length === 0) return;
     if (!activeClientId) {
       toast.error('Select a company in the header before uploading a file.');
       return;
     }
-    setIsUploading(true);
-    let totalCreated = 0;
-    let totalDetected = 0;
-    let berhasil = 0;
-    let tidakCocok = 0;
-    try {
-      // 1 file = 1 cabang -- diproses berurutan.
-      for (const file of files) {
-        try {
-          const hasil = await uploadPurchaseSourceFile(file, activeClientId);
-          if (!hasil.template_matched) {
-            tidakCocok += 1;
-            toast.info('No purchase template matches', {
-              description: `${file.name}: this file format has not been set up for the active company yet.`,
-            });
-            continue;
-          }
-          berhasil += 1;
-          const tersimpan = hasil.staged ?? hasil.created;
-          totalCreated += tersimpan;
-          totalDetected += hasil.transactions_detected;
-          const dilewati = hasil.transactions.filter(r => !r.ok).length;
-          toast.success('File imported', {
-            description: `${file.name}: ${tersimpan} of ${hasil.transactions_detected} purchase transactions saved to Source Data${dilewati ? ` (${dilewati} skipped)` : ''}.`,
-          });
-        } catch (err) {
-          toast.error(`${file.name}: ${err instanceof Error ? err.message : 'Failed to upload file'}`);
-        }
-      }
-      if (files.length > 1) {
-        toast.message('Upload finished', {
-          description: `${berhasil} imported (${totalCreated} of ${totalDetected} transactions), ${tidakCocok} not recognized.`,
-        });
-      }
-    } finally {
-      setIsUploading(false);
-      e.target.value = '';
-    }
+    // Loop upload berjalan di engine global (lib/uploadBatch.ts), bukan di komponen ini -> tetap jalan &
+    // angka di tombol tetap benar walau user pindah tab / halaman / refresh.
+    mulaiBatch('purchase', activeClientId, files, buatHandlerPurchase(activeClientId));
   };
 
   const activeTab = tabs.find((tab) => isActive(tab.href)) ?? tabs[0];
@@ -188,7 +158,7 @@ export default function PurchaseTabs({ actions, dateRangeActive = false, variant
               disabled={isUploading || !activeClientId}
               className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Upload size={14} /> {isUploading ? 'Uploading...' : 'Upload File'}
+              <Upload size={14} /> {isUploading ? (uploadProgres ? `Uploading ${uploadProgres.berhasil}/${uploadProgres.total}...` : 'Uploading...') : 'Upload File'}
             </button>
             <input ref={fileInputRef} type="file" multiple accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFilesSelected} />
             <Link

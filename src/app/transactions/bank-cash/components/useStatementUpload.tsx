@@ -1,55 +1,55 @@
 'use client';
 
 // Upload File untuk Cash & Bank -- dipakai tombol di header (CashBankTabs), tampil di SEMUA tab.
-// Alur sama dengan panel "Import Bank Statement" lama di Source Data: akun tujuan Auto-detect
-// (bank mapping) -> preview -> bila pola sudah dikenal & saldo cocok langsung import, selain itu
-// tampil StatementReviewModal. Bila akun tidak bisa dideteksi (BANK_ACCOUNT_REQUIRED), muncul
-// dialog kecil untuk memilih akun tujuan lalu upload dilanjutkan dengan file yang sama.
+// Alur: akun tujuan Auto-detect (bank mapping) -> preview -> bila pola sudah dikenal & saldo cocok
+// langsung import, selain itu tampil StatementReviewModal. Bila akun tidak bisa dideteksi
+// (BANK_ACCOUNT_REQUIRED), muncul dialog kecil untuk memilih akun tujuan.
+//
+// [MULTI-FILE + TAHAN PINDAH HALAMAN] Bisa memilih banyak file sekaligus. File diproses berurutan oleh
+// engine global (lib/uploadBatch.ts) -- BUKAN oleh state komponen ini -- jadi progres di tombol
+// ("Uploading 2/5...") tetap benar walau user pindah tab / halaman, dan batch dilanjutkan otomatis
+// setelah refresh (lihat <UploadBatchResumer /> di AppLayout). File yang butuh review / pilih akun
+// masuk ANTRIAN global (bank-cash/lib/bankUploadBatch.ts) dan dibuka satu per satu setelah batch selesai.
 
 import React, { useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import StatementReviewModal from './StatementReviewModal';
 import { useBankFeed } from '../context/BankFeedContext';
 import { useActiveClient } from '@/lib/activeClient';
-import { useBcAccounts, type BcPreview, type BcUploadResult } from '@/lib/bankCashStore';
+import { useBcAccounts } from '@/lib/bankCashStore';
 import { kodeAkun } from '@/lib/accountCode';
+import { mulaiBatch, useProgresBatch } from '@/lib/uploadBatch';
+import {
+  buatHandlerBank,
+  cobaFileBank,
+  gantiKepala,
+  lanjutAntrian,
+  toastImport,
+  useAntrianReview,
+  type ItemAntrian,
+} from '../lib/bankUploadBatch';
 
-/** Pilihan akun "Auto-detect": akun tujuan dari mapping bank (nomor rekening / judul dokumen / template). */
-const AUTO = '';
-
-export function toastImport({ data, message }: { data: BcUploadResult; message: string }) {
-  const tpl = data.template
-    ? data.template.action === 'used'
-      ? ` Read with template “${data.template.name}”.`
-      : ` Saved as extraction template “${data.template.name}”.`
-    : '';
-  const map = data.bank_mapping
-    ? data.bank_mapping.action === 'created'
-      ? ` Bank mapping saved: ${data.bank_mapping.bank_name}${data.bank_mapping.account_number ? ` ${data.bank_mapping.account_number}` : ''} → ${kodeAkun(data.bank_account_code)}.`
-      : ''
-    : '';
-  const auto = data.auto_match;
-  const arahan = auto
-    ? `Auto-match: ${auto.matched} matched to invoices, ${auto.rule_matched} recorded by auto rules (saved as DRAFT, review in Journal Preview). ${auto.skipped} line(s) still need matching in the Reconciliation tab.`
-      + (data.confidence?.low ? ' Lines marked “Needs review” are skipped until you review them in Source Data.' : '')
-    : data.confidence?.low
-      ? 'Lines marked “Needs review” are skipped by auto-match until you review them in Source Data.'
-      : 'Match the imported lines in the Reconciliation tab.';
-  toast.success(`${message} Posted to ${kodeAkun(data.bank_account_code)} - ${data.bank_account_name}.`, {
-    description: arahan + tpl + map,
-  });
-  if (data.warnings.length) toast.warning(data.warnings.join(' '));
-}
+export { toastImport };
 
 export function useStatementUpload() {
-  const { previewFile, importFile, importing } = useBankFeed();
+  const { importing } = useBankFeed();
   const { activeClientId } = useActiveClient();
-  const { accounts } = useBcAccounts(activeClientId ? String(activeClientId) : null);
+  const clientId = activeClientId ? String(activeClientId) : null;
+  const { accounts } = useBcAccounts(clientId);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [review, setReview] = useState<{ file: File; preview: BcPreview } | null>(null);
-  // File yang akunnya tidak terdeteksi -> user memilih akun tujuan (fallback, bukan alur utama).
-  const [pilihAkun, setPilihAkun] = useState<{ file: File; pesan: string } | null>(null);
   const [akunId, setAkunId] = useState('');
+  const [lanjutBusy, setLanjutBusy] = useState(false);
+
+  // Progres batch & antrian review dibaca dari store global -> sama persis walau komponen ini di-mount ulang.
+  const progres = useProgresBatch('bankcash', clientId);
+  const antrian = useAntrianReview(clientId);
+  const sibuk = importing || !!progres || lanjutBusy;
+
+  // Modal baru muncul setelah seluruh file selesai dibaca (tidak menimpa layar selagi batch berjalan).
+  const aktif: ItemAntrian | null = progres ? null : antrian[0] ?? null;
+  const review = aktif?.jenis === 'review' ? aktif : null;
+  const pilihAkun = aktif?.jenis === 'akun' ? aktif : null;
+  const sisaAntrian = antrian.length;
 
   const akunBank = useMemo(() => accounts.filter((a) => a.cash_type === 'bank' && a.is_active), [accounts]);
   const akunKas = useMemo(
@@ -57,51 +57,54 @@ export function useStatementUpload() {
     [accounts],
   );
 
-  const prosesFile = async (file: File, bankCoaId: string) => {
+  /** Lanjutan dari dialog "Select target account" untuk item pertama antrian. */
+  const lanjutDenganAkun = async (item: Extract<ItemAntrian, { jenis: 'akun' }>, bankCoaId: string) => {
+    if (!clientId) return;
+    setLanjutBusy(true);
     try {
-      const preview = await previewFile(file, bankCoaId);
-      // Pola sudah dikenal (template) & seluruh saldo cocok & akun tidak bentrok dengan mapping
-      // -> langsung import tanpa modal, ke akun hasil mapping / pilihan user.
-      if (preview.template_matched && preview.validation.status === 'verified' && !preview.already_uploaded_on
-          && !preview.bank_mapping?.conflict) {
-        toastImport(await importFile(file, preview.bank_coa_id));
+      const r = await cobaFileBank(clientId, item.file, bankCoaId);
+      if (r.status === 'imported') {
+        toastImport(r.hasil);
+        lanjutAntrian(clientId);
       } else {
-        setReview({ file, preview });
+        gantiKepala(clientId, r.item); // mis. jadi modal review untuk file yang sama
       }
     } catch (e: any) {
-      if (e?.code === 'BANK_ACCOUNT_REQUIRED') {
-        setAkunId('');
-        setPilihAkun({ file, pesan: e.message });
-      } else {
-        toast.error(e?.message || 'Failed to import the bank statement.');
-      }
+      toast.error(e?.message || 'Failed to import the bank statement.');
+      lanjutAntrian(clientId);
+    } finally {
+      setLanjutBusy(false);
     }
   };
 
   const openPicker = () => {
-    if (!activeClientId) {
+    if (!clientId) {
       toast.error('Select a company in the header before uploading a file.');
       return;
     }
     inputRef.current?.click();
   };
 
-  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
     e.target.value = '';
-    if (file) await prosesFile(file, AUTO);
+    if (!files.length || !clientId) return;
+    mulaiBatch('bankcash', clientId, files, buatHandlerBank(clientId));
   };
 
   const ui = (
     <>
-      <input ref={inputRef} type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" disabled={importing} onChange={onFileChange} />
+      <input ref={inputRef} type="file" multiple accept=".pdf,.xlsx,.xls,.csv" className="hidden" disabled={sibuk} onChange={onFileChange} />
 
-      {pilihAkun && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={() => setPilihAkun(null)}>
+      {pilihAkun && clientId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={() => lanjutAntrian(clientId)}>
           <div className="w-full max-w-md rounded-xl border border-neutral-300 bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-base font-semibold text-neutral-900">Select target account</h3>
             <p className="mt-1 text-xs font-medium text-neutral-500">{pilihAkun.pesan}</p>
             <p className="mt-2 truncate text-xs font-semibold text-neutral-800">{pilihAkun.file.name}</p>
+            {sisaAntrian > 1 && (
+              <p className="mt-1 text-xs font-medium text-neutral-500">{sisaAntrian - 1} more file(s) waiting after this one.</p>
+            )}
             <select
               value={akunId}
               onChange={(e) => setAkunId(e.target.value)}
@@ -121,11 +124,11 @@ export function useStatementUpload() {
               )}
             </select>
             <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => setPilihAkun(null)} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50">Cancel</button>
+              <button type="button" onClick={() => lanjutAntrian(clientId)} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50">{sisaAntrian > 1 ? 'Skip' : 'Cancel'}</button>
               <button
                 type="button"
-                disabled={!akunId || importing}
-                onClick={() => { const f = pilihAkun.file; setPilihAkun(null); void prosesFile(f, akunId); }}
+                disabled={!akunId || sibuk}
+                onClick={() => { const id = akunId; setAkunId(''); void lanjutDenganAkun(pilihAkun, id); }}
                 className="rounded-lg border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Upload
@@ -135,15 +138,17 @@ export function useStatementUpload() {
         </div>
       )}
 
-      {review && (
+      {review && clientId && (
         <StatementReviewModal
+          // key = file ini, supaya state modal (koreksi kolom dll) ter-reset saat pindah ke file berikutnya.
+          key={`${review.file.name}-${review.file.size}-${review.file.lastModified}`}
           file={review.file}
           bankCoaId={review.preview.bank_coa_id}
-          bankLabel={`${kodeAkun(review.preview.bank_account_code)} - ${review.preview.bank_account_name}`}
+          bankLabel={`${kodeAkun(review.preview.bank_account_code)} - ${review.preview.bank_account_name}${sisaAntrian > 1 ? ` · ${sisaAntrian - 1} more file(s) waiting` : ''}`}
           initial={review.preview}
-          onClose={() => setReview(null)}
+          onClose={() => lanjutAntrian(clientId)}
           onImported={(hasil) => {
-            setReview(null);
+            lanjutAntrian(clientId);
             toastImport(hasil);
           }}
         />
@@ -151,5 +156,7 @@ export function useStatementUpload() {
     </>
   );
 
-  return { openPicker, importing, canUpload: !!activeClientId, ui };
+  const progressLabel = progres ? `Uploading ${progres.berhasil}/${progres.total}...` : null;
+
+  return { openPicker, importing: sibuk, progressLabel, canUpload: !!clientId, ui };
 }
