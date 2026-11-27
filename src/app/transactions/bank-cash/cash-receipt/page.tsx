@@ -6,7 +6,8 @@ import { formatIDR } from '../lib/formatMoney';
 import { useLanguage } from '@/lib/language';
 import { formatTanggalSingkat } from '@/lib/salesStore';
 import CashBankTabs from '../components/CashBankTabs';
-import { MutasiBankCell, JurnalCell, DalamProsesBadge } from '../components/RekonInfoCells';
+import CashBankTransactionModal, { type BcPreset } from '../components/CashBankTransactionModal';
+import { MutasiBankCell, JurnalCell, DalamProsesBadge, PaidNote } from '../components/RekonInfoCells';
 import CashReceiptTrendChart from '../components/CashReceiptTrendChart';
 import {
   OverviewKpiTile, FilterSelect, BreakdownDonutCard, TopPartyCard,
@@ -29,7 +30,7 @@ const STATUS_STYLE: Record<string, { pill: string; dot: string; label: string }>
 };
 
 const NUMERIC_COLS = ['Total', 'Received', 'Outstanding'];
-const HEADERS = ['Date', 'Invoice No.', 'Customer', 'Description', 'Type', 'Due Date', 'Total', 'Received', 'Outstanding', 'Bank Line', 'Journal', 'Status'];
+const HEADERS = ['Date', 'Invoice No.', 'Customer', 'Description', 'Type', 'Due Date', 'Total', 'Received', 'Outstanding', 'Bank Line', 'Journal', 'Status', 'Action'];
 
 // Cash Receipt = penerimaan pembayaran dari customer. Sumber data: invoice Sales
 // (lihat lib/useSalesCashReceipts.ts) -- TIDAK membaca tabel Cash & Bank lagi.
@@ -42,6 +43,7 @@ export default function CashReceiptPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [preset, setPreset] = useState<BcPreset | null>(null);
 
   const totalInvoiced = useMemo(() => rows.reduce((s, r) => s + r.total, 0), [rows]);
   const totalReceived = useMemo(() => rows.reduce((s, r) => s + r.received, 0), [rows]);
@@ -81,6 +83,7 @@ export default function CashReceiptPage() {
   return (
     <div className="space-y-6">
       <CashBankTabs />
+      <CashBankTransactionModal open={!!preset} onClose={() => setPreset(null)} preset={preset} onSaved={() => { setPreset(null); refresh(); }} />
 
       {error && (
         <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">
@@ -233,7 +236,7 @@ export default function CashReceiptPage() {
                     <td className="whitespace-nowrap px-2 py-2 text-neutral-600">{r.category}</td>
                     <td className="whitespace-nowrap px-2 py-2 text-neutral-600">{r.dueDate ? formatTanggalSingkat(r.dueDate) : '—'}</td>
                     <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{formatIDR(r.total)}</td>
-                    <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums font-semibold">{r.received ? formatIDR(r.received) : '—'}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums font-semibold">{r.received ? formatIDR(r.received) : '—'}<PaidNote outside={r.paidOutside} mismatch={r.paidMismatch} /></td>
                     <td className={`whitespace-nowrap px-2 py-2 text-right tabular-nums ${r.outstanding > 0 ? 'font-semibold' : ''}`}>{r.outstanding ? formatIDR(r.outstanding) : '—'}</td>
                     <td className="px-2 py-2"><MutasiBankCell items={r.rekon} /></td>
                     <td className="px-2 py-2"><JurnalCell items={r.rekon} /></td>
@@ -242,6 +245,19 @@ export default function CashReceiptPage() {
                         <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{t(st.label)}
                       </span>
                       <DalamProsesBadge nominal={r.dalamProses} />
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2">
+                      {(() => {
+                        const sisa = Math.max(r.outstanding - r.dalamProses, 0);
+                        return sisa > 0.005 ? (
+                          <button
+                            onClick={() => setPreset({ direction: 'receipt', invoiceId: r.id, amount: sisa, party: r.customer })}
+                            className="rounded-lg border border-neutral-800 bg-white px-2 py-1 text-[11px] font-semibold text-neutral-900 transition-colors hover:bg-neutral-900 hover:text-white"
+                          >
+                            {t('Record Receipt')}
+                          </button>
+                        ) : null;
+                      })()}
                     </td>
                   </tr>
                 );

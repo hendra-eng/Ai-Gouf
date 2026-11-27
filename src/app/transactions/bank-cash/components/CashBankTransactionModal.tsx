@@ -49,9 +49,21 @@ const barisKosong = (d: Direction, type: Baris['type'] = 'invoice'): Baris => ({
   key: ++seq, type, invoiceId: '', coaId: '', side: sisiLawan(d), amount: '', description: '', cari: '',
 });
 
-export default function CashBankTransactionModal({ open, onClose, initial, onSaved }: {
+/** Isian awal dari tombol "Record Payment/Receipt" di tab Payables/Receivables. */
+export interface BcPreset {
+  direction: Direction;
+  invoiceId: string;
+  /** Sisa yang bisa dibayar (sudah dikurangi pembayaran dalam proses). */
+  amount: number;
+  /** Vendor / customer. */
+  party?: string;
+}
+
+export default function CashBankTransactionModal({ open, onClose, initial, preset, onSaved }: {
   open: boolean;
   onClose: () => void;
+  /** Transaksi baru dengan invoice, arah, dan nominal sudah terisi (abaikan kalau `initial` ada). */
+  preset?: BcPreset | null;
   /** Transaksi DRAFT yang diedit; kosong = transaksi baru. */
   initial?: BcTransaction | null;
   onSaved?: (tx: BcTransaction) => void;
@@ -99,6 +111,14 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
         description: l.description || '',
         cari: '',
       })));
+    } else if (preset) {
+      setDirection(preset.direction);
+      setTanggal(hariIni());
+      setKategori(preset.direction === 'receipt' ? 'Customer Payment' : 'Vendor Payment');
+      setPihak(preset.party || '');
+      setReferensi('');
+      setKeterangan('');
+      setBaris([{ ...barisKosong(preset.direction), invoiceId: preset.invoiceId, amount: String(Math.round(preset.amount * 100) / 100) }]);
     } else {
       setDirection('receipt');
       setTanggal(hariIni());
@@ -108,7 +128,7 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
       setKeterangan('');
       setBaris([barisKosong('receipt')]);
     }
-  }, [open, initial]);
+  }, [open, initial, preset]);
 
   const akunKas = useMemo(() => accounts.filter((a) => a.cash_type && a.is_active), [accounts]);
   const akunLawan = useMemo(() => accounts.filter((a) => a.is_active && a.id !== bankCoaId), [accounts, bankCoaId]);

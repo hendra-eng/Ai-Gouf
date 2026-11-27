@@ -13,6 +13,7 @@ import { useActiveClient } from '@/lib/activeClient';
 import { useBcOpenInvoices } from '@/lib/bankCashStore';
 import type { PaymentStatus } from '@/data/purchaseData';
 import { usePembayaranRekon, kelompokkanPerInvoice, sudahDiterapkan, type PembayaranRekon } from './useBankCashRekon';
+import { hariIniLokal } from './hariIni';
 
 export interface CashPaymentRow {
   id: string;
@@ -29,6 +30,10 @@ export interface CashPaymentRow {
   outstanding: number;
   paymentStatus: PaymentStatus;
   isOverdue: boolean;
+  /** Bagian `paid` yang tidak berasal dari transaksi Cash & Bank (saldo awal, ditandai lunas manual). */
+  paidOutside: number;
+  /** Cache pembayaran tertinggal dari transaksi yang sudah diposting (hanya relevan untuk Sales; Purchase selalu false). */
+  paidMismatch: boolean;
   /** Pembayaran Cash & Bank untuk invoice ini (mutasi bank + transaksi). */
   rekon: PembayaranRekon[];
   /** Nominal yang sudah dicocokkan/diinput tetapi transaksinya belum diposting. */
@@ -50,12 +55,12 @@ export function useCashPaymentsFromPurchase(): {
   const perInvoice = useMemo(() => kelompokkanPerInvoice(payments), [payments]);
 
   const rows = useMemo<CashPaymentRow[]>(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = hariIniLokal(); // hanya cadangan; status overdue utama dari backend (is_overdue)
     return invoices
       .map(i => {
         const outstanding = Math.max(i.total - i.paid, 0);
         const dueDate = i.due_date || '';
-        const isOverdue = outstanding > 0.005 && !!dueDate && dueDate < today;
+        const isOverdue = i.is_overdue ?? (outstanding > 0.005 && !!dueDate && dueDate < today);
         const asal = (i.payment_status || 'unpaid') as PaymentStatus;
         const paymentStatus: PaymentStatus =
           outstanding <= 0.005 ? 'paid'
@@ -76,6 +81,8 @@ export function useCashPaymentsFromPurchase(): {
           outstanding,
           paymentStatus,
           isOverdue,
+          paidOutside: i.paid_outside_cash_bank ?? 0,
+          paidMismatch: !!i.paid_cache_mismatch,
           rekon: perInvoice.get(i.id) || [],
           dalamProses: i.in_process,
         };

@@ -100,6 +100,8 @@ export interface BackendSalesSourceFile {
   rows_detected: number;
   rows_valid: number;
   rows_invalid: number;
+  /** Baris yang masih bisa dijadikan invoice (dihitung backend). 0 di semua file = tombol Buat Semua Invoice disembunyikan. */
+  rows_pending?: number;
   duplicate_count: number;
   status_ekstraksi: string;
   status_mapping: string;

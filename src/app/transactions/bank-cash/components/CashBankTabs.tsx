@@ -38,16 +38,16 @@ const tabs: Tab[] = [
   {
     id: 'tab-cash-payment',
     icon: ArrowUpRight,
-    label: 'Cash Payment',
+    label: 'Payables',
     href: '/transactions/bank-cash/cash-payment',
-    description: 'Posted Purchase bills & their payment status',
+    description: 'Vendor bills from Purchase (payables) and how much of each has been paid',
   },
   {
     id: 'tab-cash-receipt',
     icon: ArrowDownLeft,
-    label: 'Cash Receipt',
+    label: 'Receivables',
     href: '/transactions/bank-cash/cash-receipt',
-    description: 'Posted Sales invoices & their receipt status',
+    description: 'Customer invoices from Sales (receivables) and how much of each has been collected',
   },
   {
     id: 'tab-reconciliation',

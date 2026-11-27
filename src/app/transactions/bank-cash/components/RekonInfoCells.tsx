@@ -55,6 +55,37 @@ export function JurnalCell({ items }: { items: PembayaranRekon[] }) {
   );
 }
 
+/**
+ * Catatan kecil di bawah angka Paid/Received:
+ *  - `outside` > 0: sebagian nominal tercatat sudah dibayar TANPA transaksi Cash & Bank (saldo awal, tunai saat import,
+ *    atau ditandai lunas manual), jadi tidak punya mutasi bank/jurnal di kolom sebelah.
+ *  - `mismatch`: catatan paid_amount di invoice tertinggal dari pembayaran yang sudah diposting. Angkanya tetap benar
+ *    (mengikuti pembayaran yang diposting); ini hanya penanda supaya data lamanya bisa dirapikan.
+ */
+export function PaidNote({ outside, mismatch }: { outside: number; mismatch: boolean }) {
+  if (outside <= 0.005 && !mismatch) return null;
+  return (
+    <span className="mt-1 block space-y-0.5 text-[10px] font-normal leading-tight text-neutral-500">
+      {outside > 0.005 ? (
+        <span
+          className="block"
+          title="Counted as paid but not through a Cash & Bank transaction (opening balance, cash sale at import, or marked paid manually), so there is no bank line or journal for it."
+        >
+          incl. {formatIDR(outside, true)} outside Cash & Bank
+        </span>
+      ) : null}
+      {mismatch ? (
+        <span
+          className="block text-amber-700"
+          title="The paid amount stored on the invoice is behind the posted payments. The figures shown follow the posted payments."
+        >
+          stored paid record is behind
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 /** Badge "Dalam proses" kalau ada pembayaran yang sudah dicocokkan tetapi jurnalnya belum diposting. */
 export function DalamProsesBadge({ nominal }: { nominal: number }) {
   if (nominal <= 0) return null;

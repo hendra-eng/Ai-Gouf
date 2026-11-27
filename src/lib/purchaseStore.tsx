@@ -432,6 +432,8 @@ export interface BackendPurchaseSourceFile {
   rows_detected: number;
   rows_valid: number;
   rows_invalid: number;
+  /** Baris yang masih bisa dibuat jadi transaksi (dihitung backend). 0 di semua file = tombol Create All disembunyikan. */
+  rows_pending?: number;
   duplicate_count: number;
   status_ekstraksi: PurchaseSourceFileStatus;
   status_mapping: PurchaseSourceFileStatus;

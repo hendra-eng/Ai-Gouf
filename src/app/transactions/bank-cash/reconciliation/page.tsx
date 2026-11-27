@@ -1034,10 +1034,10 @@ export default function ReconciliationPage() {
               <SalesCardHeader
                 neutral
                 icon={FileText}
-                title="Posted Invoices — Cash Payment & Cash Receipt"
+                title="Posted Invoices — Payables & Receivables"
                 subtitle={sisiInvoice === 'payment'
-                  ? 'Posted Purchase invoices (same as the Cash Payment tab)'
-                  : 'Posted Sales invoices (same as the Cash Receipt tab)'}
+                  ? 'Posted Purchase invoices (same as the Payables tab)'
+                  : 'Posted Sales invoices (same as the Receivables tab)'}
               />
               <div className="flex items-start gap-2 rounded-lg border border-neutral-300 border-l-[3px] border-l-neutral-800 bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
                 <Info size={14} className="mt-px shrink-0 text-neutral-700" />
@@ -1070,8 +1070,8 @@ export default function ReconciliationPage() {
               )}
               <div className="mt-3 flex w-fit items-center gap-1 rounded-lg border border-neutral-300 bg-neutral-100 p-1">
                 {([
-                  ['payment', `Cash Payment (${purchase.rows.filter((x) => x.outstanding > 0.005).length})`],
-                  ['receipt', `Cash Receipt (${sales.rows.filter((x) => x.outstanding > 0.005).length})`],
+                  ['payment', `Payables (${purchase.rows.filter((x) => x.outstanding > 0.005).length})`],
+                  ['receipt', `Receivables (${sales.rows.filter((x) => x.outstanding > 0.005).length})`],
                 ] as const).map(([k, label]) => (
                   <button
                     key={k}
@@ -1158,7 +1158,7 @@ export default function ReconciliationPage() {
                   const alasan = !mutasiTerpilih
                     ? ''
                     : !sisiSesuai
-                      ? mutasiTerpilih.credit ? 'Incoming line: pick an invoice in the Cash Receipt tab' : 'Outgoing line: pick an invoice in the Cash Payment tab'
+                      ? mutasiTerpilih.credit ? 'Incoming line: pick an invoice in the Receivables tab' : 'Outgoing line: pick an invoice in the Payables tab'
                       : lewatAdj
                         ? `Click to match — the ${rp(lewatAdj.amount)} difference is booked as an adjustment`
                         : adjRow && !adjSiap

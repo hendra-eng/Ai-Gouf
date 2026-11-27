@@ -171,6 +171,8 @@ export default function PurchaseSourceDataPage() {
   const jumlahTidakDibuat = previewRows.length - jumlahDibuat;
   // Semua baris yang bisa dibuat sudah jadi transaksi -> tabel preview diganti panel centang hijau (tombol Create Transaction juga hilang).
   const semuaSudahDibuat = previewRows.length > 0 && jumlahDibuat > 0 && jumlahSiap === 0;
+  // Create All hanya tampil selama masih ada file dengan baris yang bisa dibuat (nilai dari backend, mengikuti semua file company).
+  const masihAdaYangBisaDibuat = sourceFiles.some(f => (f.rows_pending ?? 0) > 0);
 
   // Create Transaction: naikkan baris valid file terpilih jadi Purchase Transaction draft (aman diulang).
   const [isPromoting, setIsPromoting] = useState(false);
@@ -546,6 +548,7 @@ export default function PurchaseSourceDataPage() {
                   {isPromoting ? 'Processing...' : `Create Transaction (${jumlahSiap.toLocaleString('id-ID')})`}
                 </button>
               )}
+              {(masihAdaYangBisaDibuat || isBulkPromoting) && (
               <button
                 onClick={handleCreateAllTransactions}
                 disabled={isPromoting || isBulkPromoting}
@@ -555,6 +558,7 @@ export default function PurchaseSourceDataPage() {
                 {isBulkPromoting ? <Loader2 size={13} className="animate-spin" /> : <Layers size={13} />}
                 {isBulkPromoting ? `Processing ${bulkProgress!.done}/${bulkProgress!.total}` : 'Create All Transactions'}
               </button>
+              )}
             </div>
           ) : undefined}
         >

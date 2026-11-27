@@ -12,10 +12,15 @@
 // backend FK ke management_users(id_user) -- pola sama persis dengan Sales.
 // client_id yang dikirim/dipakai untuk filter di SELURUH fungsi di bawah
 // adalah id_user milik akun yang SEDANG LOGIN (`useAuth().user.id`).
+//
+// [FIX 2026-11-26] client_id = id AKUN user, BUKAN perusahaan, jadi daftar jurnal yang dimuat dengan
+// client_id saja berisi jurnal SEMUA perusahaan milik akun itu. useJeDrafts & useJeActivityLogs kini
+// menyaring hasilnya ke perusahaan aktif ("Switch Company") lewat management_client_id.
 
 import { useEffect, useState, useCallback } from 'react';
 import { swrClear, swrGet, swrSet } from './swrCache';
 import type { ImportTemplateSummary } from '@/lib/importTemplates';
+import { useActiveClient } from '@/lib/activeClient';
 
 const JE_CHANGED_EVENT = 'gouf-journal-entry-changed';
 
@@ -459,20 +464,25 @@ export function useJeSourceRows(sourceFileId: string | null | undefined): {
 export function useJeDrafts(clientId: string | null | undefined, status?: string): {
   drafts: BackendJeDraft[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const cacheKey = `je:useJeDrafts:${clientId ?? ''}:${status ?? ''}`;
+  // Perusahaan aktif (Switch Company): jurnal HANYA yang management_client_id-nya sama.
+  const { activeClientId } = useActiveClient();
+  const cacheKey = `je:useJeDrafts:${clientId ?? ''}:${activeClientId ?? ''}:${status ?? ''}`;
   const [drafts, setDrafts] = useState<BackendJeDraft[]>(() => swrGet<BackendJeDraft[]>(cacheKey) ?? []);
   const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
-    if (!clientId) { setDrafts([]); setLoading(false); return; }
-    const hit = swrGet<typeof drafts>(cacheKey);
+    if (!clientId || !activeClientId) { setDrafts([]); setLoading(false); return; }
+    const hit = swrGet<BackendJeDraft[]>(cacheKey);
     if (hit !== undefined) { setDrafts(hit); setLoading(false); } else { setLoading(true); }
     listJeDrafts(clientId, status)
-      .then(data => { const value = data; swrSet(cacheKey, value); setDrafts(value); setError(null); })
+      .then(data => {
+        const value = data.filter(d => d.management_client_id === activeClientId);
+        swrSet(cacheKey, value); setDrafts(value); setError(null);
+      })
       .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat journal entry'))
       .finally(() => setLoading(false));
-  }, [clientId, status, cacheKey]);
+  }, [clientId, activeClientId, status, cacheKey]);
 
   useEffect(() => {
     muatUlang();
@@ -644,20 +654,26 @@ export async function createJeActivityLog(payload: Partial<BackendJeActivityLog>
 export function useJeActivityLogs(clientId: string | null | undefined): {
   logs: BackendJeActivityLog[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const cacheKey = `je:useJeActivityLogs:${clientId ?? ''}`;
+  // Log tidak punya kolom perusahaan: ikut perusahaan aktif lewat draft_id jurnal miliknya.
+  const { activeClientId } = useActiveClient();
+  const cacheKey = `je:useJeActivityLogs:${clientId ?? ''}:${activeClientId ?? ''}`;
   const [logs, setLogs] = useState<BackendJeActivityLog[]>(() => swrGet<BackendJeActivityLog[]>(cacheKey) ?? []);
   const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
-    if (!clientId) { setLogs([]); setLoading(false); return; }
-    const hit = swrGet<typeof logs>(cacheKey);
+    if (!clientId || !activeClientId) { setLogs([]); setLoading(false); return; }
+    const hit = swrGet<BackendJeActivityLog[]>(cacheKey);
     if (hit !== undefined) { setLogs(hit); setLoading(false); } else { setLoading(true); }
-    listJeActivityLogs(clientId)
-      .then(data => { const value = data; swrSet(cacheKey, value); setLogs(value); setError(null); })
+    Promise.all([listJeActivityLogs(clientId), listJeDrafts(clientId)])
+      .then(([semuaLog, semuaDraft]) => {
+        const idDraft = new Set(semuaDraft.filter(d => d.management_client_id === activeClientId).map(d => d.id));
+        const value = semuaLog.filter(l => l.draft_id != null && idDraft.has(l.draft_id));
+        swrSet(cacheKey, value); setLogs(value); setError(null);
+      })
       .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat activity log'))
       .finally(() => setLoading(false));
-  }, [clientId, cacheKey]);
+  }, [clientId, activeClientId, cacheKey]);
 
   useEffect(() => {
     muatUlang();

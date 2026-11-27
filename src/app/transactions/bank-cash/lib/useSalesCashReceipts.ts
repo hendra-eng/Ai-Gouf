@@ -11,6 +11,7 @@ import { useMemo } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
 import { useBcOpenInvoices } from '@/lib/bankCashStore';
 import { usePembayaranRekon, kelompokkanPerInvoice, sudahDiterapkan, type PembayaranRekon } from './useBankCashRekon';
+import { hariIniLokal } from './hariIni';
 
 export type ReceiptStatus = 'paid' | 'partial' | 'unpaid';
 
@@ -28,6 +29,10 @@ export interface CashReceiptRow {
   outstanding: number;
   receiptStatus: ReceiptStatus;
   isOverdue: boolean;
+  /** Bagian `received` yang tidak berasal dari transaksi Cash & Bank (saldo awal, tunai saat import). */
+  paidOutside: number;
+  /** Cache paid_amount invoice tertinggal dari penerimaan yang sudah diposting (angka received tetap benar). */
+  paidMismatch: boolean;
   /** Penerimaan Cash & Bank untuk invoice ini (mutasi bank + transaksi). */
   rekon: PembayaranRekon[];
   /** Nominal yang sudah dicocokkan/diinput tetapi transaksinya belum diposting. */
@@ -49,7 +54,7 @@ export function useCashReceiptsFromSales(): {
   const perInvoice = useMemo(() => kelompokkanPerInvoice(payments), [payments]);
 
   const rows = useMemo<CashReceiptRow[]>(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = hariIniLokal(); // hanya cadangan; status overdue utama dari backend (is_overdue)
     return invoices
       .map(i => {
         const received = Math.min(Math.max(i.paid, 0), i.total);
@@ -67,7 +72,9 @@ export function useCashReceiptsFromSales(): {
           received,
           outstanding,
           receiptStatus: (outstanding <= 0.005 ? 'paid' : received > 0.005 ? 'partial' : 'unpaid') as ReceiptStatus,
-          isOverdue: outstanding > 0.005 && !!dueDate && dueDate < today,
+          isOverdue: i.is_overdue ?? (outstanding > 0.005 && !!dueDate && dueDate < today),
+          paidOutside: i.paid_outside_cash_bank ?? 0,
+          paidMismatch: !!i.paid_cache_mismatch,
           rekon: perInvoice.get(i.id) || [],
           dalamProses: i.in_process,
         };

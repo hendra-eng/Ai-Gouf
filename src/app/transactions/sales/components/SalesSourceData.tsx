@@ -222,6 +222,8 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
   const jumlahSudahInvoice = previewRows.filter(r => r.invoice_dibuat).length;
   const jumlahTidakValid = previewRows.filter(r => !r.is_valid).length;
   const semuaSudahInvoice = previewRows.length > 0 && jumlahSudahInvoice > 0 && previewRows.every(r => r.invoice_dibuat || !r.is_valid);
+  // Buat Semua Invoice hanya tampil selama masih ada file dengan baris yang bisa dijadikan invoice (nilai dari backend, semua file company).
+  const masihAdaYangBisaDibuat = sourceFiles.some(f => (f.rows_pending ?? 0) > 0);
   const handlePromoteToInvoices = async () => {
     if (!selectedFile) return;
     setIsPromoting(true);
@@ -614,6 +616,7 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
                   {isPromoting ? t('Memproses...') : t('Buat Invoice')}
                 </button>
               )}
+              {(masihAdaYangBisaDibuat || isBulkPromoting) && (
               <button
                 onClick={handlePromoteAllToInvoices}
                 disabled={isPromoting || isBulkPromoting}
@@ -623,6 +626,7 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
                 {isBulkPromoting ? <Loader2 size={13} className="animate-spin" /> : <Layers size={13} />}
                 {isBulkPromoting ? `${t('Memproses')} ${bulkProgress!.done}/${bulkProgress!.total}` : t('Buat Semua Invoice')}
               </button>
+              )}
             </div>
           ) : undefined}
         >

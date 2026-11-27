@@ -205,11 +205,20 @@ export interface BcInvoice {
   description: string | null;
   category: string | null;
   total: number;
-  /** Sudah dibayar/diterima (posted). */
+  /** Sudah dibayar/diterima = alokasi Cash & Bank posted + pelunasan di luar Cash & Bank (maks. total). */
   paid: number;
+  /** Bagian `paid` yang berasal dari transaksi Cash & Bank yang sudah diposting. */
+  paid_via_cash_bank?: number;
+  /** Bagian `paid` tanpa transaksi Cash & Bank (saldo awal, tunai saat import, ditandai lunas manual). */
+  paid_outside_cash_bank?: number;
+  /** Sales: cache paid_amount lebih kecil dari alokasi posted (cache tertinggal; angka `paid` tetap benar). */
+  paid_cache_mismatch?: boolean;
   /** Sudah dicocokkan/diinput tapi transaksinya belum diposting. */
   in_process: number;
   outstanding: number;
+  /** Lewat jatuh tempo dan masih ada sisa (dihitung backend menurut zona waktu bisnis, env APP_TIMEZONE). */
+  is_overdue?: boolean;
+  days_overdue?: number;
   status: string;
   payment_status?: string;
 }
