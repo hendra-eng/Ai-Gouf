@@ -1544,7 +1544,7 @@ class ManagementClientFiscalClosingLog(Base):
 
 # ============================================================
 # CASH & BANK (Transactions > Cash & Bank) -- migrations/34-*.py,
-# router modules/transactions/bank_cash_v1.py
+# router AKTIF: modules/transactions/bank_cash_willi.py (bank_cash_v1.py = versi Fase 1 lama, tidak dipasang)
 # ============================================================
 
 SOURCE_TYPE_KAS_BANK = "Cash & Bank"
@@ -5409,6 +5409,28 @@ def sales_source_row_id_sudah_jadi_invoice(source_file_id: str) -> set:
 def get_sales_source_row_by_id(source_row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
     return _sales_crud_get_by_id(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, source_row_id, termasuk_nonaktif)
 
+def hitung_sales_baris_siap_invoice(source_file_ids: List[str]) -> Dict[str, int]:
+    """Jumlah baris staging per file yang MASIH bisa dijadikan invoice (valid, punya no. invoice & tanggal, belum ada
+    invoice aktif dari baris itu) -- aturan sama dengan promote_sales_rows_bulk. Dipakai tombol Buat Semua Invoice:
+    kalau semua file bernilai 0, tombolnya disembunyikan. 1 query untuk semua file."""
+    if not source_file_ids:
+        return {}
+    session = SessionLocal()
+    try:
+        sudah = session.query(SalesInvoice.id).filter(
+            SalesInvoice.source_row_id == SalesSourceRow.id, SalesInvoice.deleted_at.is_(None)).exists()
+        q = session.query(SalesSourceRow.source_file_id, func.count(SalesSourceRow.id)).filter(
+            SalesSourceRow.source_file_id.in_(source_file_ids),
+            SalesSourceRow.deleted_at.is_(None),
+            SalesSourceRow.is_valid.is_(True),
+            SalesSourceRow.no_invoice.isnot(None), SalesSourceRow.no_invoice != "",
+            SalesSourceRow.tanggal.isnot(None),
+            ~sudah,
+        ).group_by(SalesSourceRow.source_file_id)
+        return {str(fid): int(n) for fid, n in q.all()}
+    finally:
+        session.close()
+
 def list_sales_source_rows(source_file_id: Optional[str] = None, client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
     return _sales_crud_list(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, {"source_file_id": source_file_id, "client_id": client_id}, termasuk_nonaktif)
 
@@ -7524,6 +7546,25 @@ def create_purchase_source_rows_bulk(rows: List[Dict[str, Any]], source_file_id:
 
 def get_purchase_source_row_by_id(source_row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
     return _purchase_crud_get_by_id(PurchaseSourceRow, CRUD_FIELDS_PURCHASE_SOURCE_ROW, source_row_id, termasuk_nonaktif)
+
+def hitung_purchase_baris_siap_dibuat(source_file_ids: List[str]) -> Dict[str, int]:
+    """Jumlah baris staging per file yang MASIH bisa dibuat jadi transaksi (valid, bukan duplikat, belum punya
+    transaction_id) -- aturan sama dengan promote_purchase_rows. Dipakai tombol Create All Transactions: kalau semua
+    file bernilai 0, tombolnya disembunyikan. 1 query untuk semua file."""
+    if not source_file_ids:
+        return {}
+    session = SessionLocal()
+    try:
+        q = session.query(PurchaseSourceRow.source_file_id, func.count(PurchaseSourceRow.id)).filter(
+            PurchaseSourceRow.source_file_id.in_(source_file_ids),
+            PurchaseSourceRow.deleted_at.is_(None),
+            PurchaseSourceRow.transaction_id.is_(None),
+            PurchaseSourceRow.is_valid.is_(True),
+            or_(PurchaseSourceRow.is_duplicate_candidate.is_(False), PurchaseSourceRow.is_duplicate_candidate.is_(None)),
+        ).group_by(PurchaseSourceRow.source_file_id)
+        return {str(fid): int(n) for fid, n in q.all()}
+    finally:
+        session.close()
 
 def list_purchase_source_rows(source_file_id: Optional[str] = None, termasuk_nonaktif: bool = False, dengan_payload: bool = True) -> List[Dict[str, Any]]:
     """Urut row_no naik (bukan created_at desc seperti list lain) supaya File Preview

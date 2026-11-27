@@ -36,7 +36,8 @@ Alur:
      pelunasan invoice dikembalikan, mutasi bank kembali 'unmatched'.
 
 Sales.posting_status SENGAJA tidak diubah (GL hanya membaca invoice
-'posted'); status bayar Sales dibaca dari paid_amount/outstanding_amount.
+'posted'); status bayar Sales dibaca dari alokasi Cash & Bank posted + sisa paid_amount di luar Cash & Bank
+(lihat "Aturan tunggal sudah dibayar" di bawah; paid_amount = cache).
 Purchase.accounts_payable juga tidak diubah (nilai kredit Hutang di GL).
 
 Kunci periode Year-End Closing berlaku lewat trigger DB (migration 34).
@@ -50,11 +51,17 @@ import io
 import itertools
 import json
 import math
+import os
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
+
+try:
+    from zoneinfo import ZoneInfo
+except Exception:  # pragma: no cover -- tanpa zoneinfo, _zona_bisnis memakai offset tetap
+    ZoneInfo = None  # type: ignore
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import StreamingResponse
@@ -380,32 +387,138 @@ def _info_fx_dict(fx: Optional[Tuple[str, Decimal, Decimal]], asing_alok: Dict[s
             "foreign_in_process": _f(pend), "foreign_outstanding": _f(sisa_asing)}
 
 
+# ------------------------------------------------------------
+# Aturan tunggal "sudah dibayar" (Sales & Purchase)
+# ------------------------------------------------------------
+# SUMBER UTAMA = alokasi transaksi Cash & Bank berstatus POSTED (baris bank_cash_transaction_lines): itu yang
+# punya jurnal & tanggal, dan bisa di-reverse. Sales.paid_amount hanyalah CACHE-nya (ditulis _terapkan_pelunasan).
+# Bagian yang tercatat sudah dibayar TANPA transaksi Cash & Bank disebut "di luar Cash & Bank":
+#   Sales    : sisa paid_amount yang tidak dijelaskan alokasi (penjualan tunai saat import, Opening AR).
+#   Purchase : bill yang ditandai lunas manual (payment_status 'paid') dan bagian bill saldo awal yang sudah
+#              dibayar sebelum cut-off (total = nilai bill awal, accounts_payable = SISA per cut-off).
+#   dibayar  = alokasi posted + di luar Cash & Bank, tidak pernah melebihi total.
+# Aturan ini SAMA dengan modules/finance/receivables_payables_v1.py::_muat_dokumen (halaman AR/AP): kalau diubah,
+# ubah keduanya bersama-sama supaya tab Cash Payment/Receipt, Reconciliation, dan AR/AP selalu menampilkan angka yang sama.
+
+def _dibayar_gabungan(total: Decimal, via_kas: Decimal, di_luar: Decimal) -> Decimal:
+    """dibayar = alokasi Cash & Bank posted + pelunasan di luar Cash & Bank, dibatasi 0..total."""
+    return max(min(max(_dec(via_kas), NOL) + max(_dec(di_luar), NOL), _dec(total)), NOL)
+
+
+def _di_luar_sales(paid_amount: Any, via_kas: Decimal, total: Decimal) -> Decimal:
+    """Bagian Sales.paid_amount yang TIDAK berasal dari alokasi Cash & Bank posted (selisih di bawah toleransi diabaikan)."""
+    lain = _dec(paid_amount) - max(_dec(via_kas), NOL)
+    return min(lain, _dec(total)) if lain > TOLERANSI else NOL
+
+
+def _total_dan_awal_purchase(tx: Any) -> Tuple[Decimal, Decimal]:
+    """(total tagihan, bagian yang sudah dibayar sebelum cut-off). Bill biasa: total = accounts_payable (fallback total).
+    Bill saldo awal: total = nilai bill awal; selisihnya dengan accounts_payable (sisa per cut-off) = sudah dibayar."""
+    total = _dec(tx.accounts_payable if tx.accounts_payable is not None else tx.total)
+    if getattr(tx, "is_opening_balance", False) and tx.total is not None and tx.accounts_payable is not None:
+        awal = _dec(tx.total) - _dec(tx.accounts_payable)
+        if awal > TOLERANSI:
+            return _dec(tx.total), awal
+    return total, NOL
+
+
+def _di_luar_purchase(total: Decimal, via_kas: Decimal, payment_status: Optional[str], bayar_awal: Decimal = NOL) -> Decimal:
+    """Pelunasan Purchase di luar Cash & Bank: ditandai lunas manual dan/atau bagian saldo awal yang sudah dibayar."""
+    via_kas = max(_dec(via_kas), NOL)
+    di_luar = NOL
+    if (payment_status or "").lower() == "paid" and via_kas < _dec(total) - TOLERANSI:
+        di_luar = _dec(total) - via_kas
+    if bayar_awal > di_luar:
+        di_luar = min(bayar_awal, _dec(total))
+    return di_luar
+
+
+def _hitung_dibayar_sales(inv: Any, alok: Dict[str, Decimal]) -> Tuple[Decimal, Decimal, Decimal]:
+    """(dibayar, via_kas, di_luar) untuk 1 invoice Sales."""
+    total = _dec(inv.gross_amount)
+    via_kas = max(alok.get("posted", NOL), NOL)
+    di_luar = _di_luar_sales(inv.paid_amount, via_kas, total)
+    return _dibayar_gabungan(total, via_kas, di_luar), via_kas, di_luar
+
+
+def _hitung_dibayar_purchase(tx: Any, alok: Dict[str, Decimal]) -> Tuple[Decimal, Decimal, Decimal, Decimal]:
+    """(total, dibayar, via_kas, di_luar) untuk 1 bill Purchase."""
+    total, awal = _total_dan_awal_purchase(tx)
+    via_kas = max(alok.get("posted", NOL), NOL)
+    di_luar = _di_luar_purchase(total, via_kas, tx.payment_status, awal)
+    return total, _dibayar_gabungan(total, via_kas, di_luar), via_kas, di_luar
+
+
+# ------------------------------------------------------------
+# Jatuh tempo (overdue)
+# ------------------------------------------------------------
+# Dihitung di backend dengan tanggal menurut ZONA BISNIS (bukan UTC browser/server), supaya satu aturan untuk semua
+# tampilan dan invoice yang jatuh tempo hari ini tidak ditandai overdue terlambat. Zona diatur lewat env APP_TIMEZONE
+# (default Asia/Jakarta, sama dengan scheduler di main.py; Bali = Asia/Makassar). Dasar sisa = total - dibayar
+# (belum dikurangi pembayaran "dalam proses"), sama seperti tampilan sebelumnya.
+
+_OFFSET_CADANGAN_JAM = {"Asia/Jakarta": 7, "Asia/Pontianak": 7, "Asia/Makassar": 8, "Asia/Jayapura": 9}
+_SISA_MIN_OVERDUE = Decimal("0.005")
+
+
+def _zona_bisnis():
+    nama = (os.getenv("APP_TIMEZONE") or "Asia/Jakarta").strip()
+    try:
+        return ZoneInfo(nama)
+    except Exception:  # database zona waktu tidak ada (mis. Windows tanpa paket tzdata) atau nama salah
+        return timezone(timedelta(hours=_OFFSET_CADANGAN_JAM.get(nama, 7)))
+
+
+def _hari_ini() -> date:
+    return datetime.now(_zona_bisnis()).date()
+
+
+def _ke_tanggal(v: Any) -> Optional[date]:
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    if isinstance(v, str) and v.strip():
+        try:
+            return date.fromisoformat(v.strip()[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _info_jatuh_tempo(due_date: Any, belum_dibayar: Decimal) -> Dict[str, Any]:
+    """{'is_overdue', 'days_overdue'}: lewat jatuh tempo dan masih ada sisa yang belum dibayar."""
+    tempo = _ke_tanggal(due_date)
+    hari_ini = _hari_ini()
+    telat = tempo is not None and belum_dibayar > _SISA_MIN_OVERDUE and tempo < hari_ini
+    return {"is_overdue": bool(telat), "days_overdue": (hari_ini - tempo).days if telat else 0}
+
+
 def _invoice_sales_dict(inv: Any, alok: Dict[str, Decimal], asing: Optional[Dict[str, Decimal]] = None) -> Dict[str, Any]:
     total = _dec(inv.gross_amount)
-    dibayar = _dec(inv.paid_amount)
+    dibayar, via_kas, di_luar = _hitung_dibayar_sales(inv, alok)
     pending = alok.get("pending", NOL)
     return {
         "type": "sales", "id": inv.id, "no": inv.invoice_no, "party": inv.customer_name,
         "date": inv.invoice_date, "due_date": inv.due_date, "description": inv.description,
         "category": inv.transaction_type, "total": _f(total), "paid": _f(dibayar), "in_process": _f(pending),
         "outstanding": _f(max(total - dibayar - pending, NOL)), "status": inv.posting_status,
+        # Rincian "paid" (aturan tunggal di atas). paid_cache_mismatch = cache paid_amount LEBIH KECIL dari alokasi posted
+        # (cache tertinggal); angka paid/outstanding tetap benar karena mengikuti alokasi.
+        "paid_via_cash_bank": _f(via_kas), "paid_outside_cash_bank": _f(di_luar),
+        "paid_cache_mismatch": bool(_dec(inv.paid_amount) + TOLERANSI < via_kas),
+        **_info_jatuh_tempo(inv.due_date, max(total - dibayar, NOL)),
         **_info_fx_dict(_fx_sales(inv), asing or {}, total, dibayar, pending),
     }
 
 
 def _dibayar_purchase(tx: Any, alok: Dict[str, Decimal]) -> Decimal:
-    """Purchase tidak punya kolom 'paid': dibayar = alokasi Cash & Bank yang posted.
-    Transaksi lama yang ditandai lunas manual (payment_status 'paid') dianggap lunas."""
-    total = _dec(tx.accounts_payable if tx.accounts_payable is not None else tx.total)
-    dibayar = alok.get("posted", NOL)
-    if (tx.payment_status or "").lower() == "paid" and dibayar < total:
-        return total
-    return min(dibayar, total)
+    """Nilai dibayar 1 bill Purchase (aturan tunggal; dipertahankan sebagai pembungkus untuk pemanggil lama)."""
+    return _hitung_dibayar_purchase(tx, alok)[1]
 
 
 def _invoice_purchase_dict(tx: Any, alok: Dict[str, Decimal], asing: Optional[Dict[str, Decimal]] = None) -> Dict[str, Any]:
-    total = _dec(tx.accounts_payable if tx.accounts_payable is not None else tx.total)
-    dibayar = _dibayar_purchase(tx, alok)
+    total, dibayar, via_kas, di_luar = _hitung_dibayar_purchase(tx, alok)
     pending = alok.get("pending", NOL)
     return {
         **_info_fx_dict(_fx_purchase(tx), asing or {}, total, dibayar, pending),
@@ -415,6 +528,8 @@ def _invoice_purchase_dict(tx: Any, alok: Dict[str, Decimal], asing: Optional[Di
         "category": tx.category, "total": _f(total), "paid": _f(dibayar), "in_process": _f(pending),
         "outstanding": _f(max(total - dibayar - pending, NOL)), "status": tx.status,
         "payment_status": tx.payment_status,
+        "paid_via_cash_bank": _f(via_kas), "paid_outside_cash_bank": _f(di_luar), "paid_cache_mismatch": False,
+        **_info_jatuh_tempo(tx.due_date, max(total - dibayar, NOL)),
     }
 
 
@@ -611,7 +726,8 @@ def _susun_baris(session, client_id: str, arah: str, baris: List[BarisIn], kecua
                 raise _Gagal(f"Sales invoice {inv.invoice_no} is not posted yet.")
             alok = _alokasi_aktif(session, client_id, "sales_invoice_id", [inv.id], kecuali_tx).get(str(inv.id), {})
             asing_alok = _alokasi_asing(session, client_id, "sales_invoice_id", [inv.id], kecuali_tx).get(str(inv.id), {})
-            sisa = _dec(inv.gross_amount) - _dec(inv.paid_amount) - alok.get("pending", NOL) - dipakai.get(inv.id, NOL)
+            dibayar_inv = _hitung_dibayar_sales(inv, alok)[0]  # aturan yang sama dengan tampilan tab (bukan paid_amount mentah)
+            sisa = _dec(inv.gross_amount) - dibayar_inv - alok.get("pending", NOL) - dipakai.get(inv.id, NOL)
             fx = _fx_sales(inv)
             jumlah, asing, kurs_p, selisih = _pelunasan_valas(
                 session, arah, b, label=f"invoice {inv.invoice_no}", fx=fx, sisa_idr=sisa, asing_alok=asing_alok,
@@ -642,8 +758,8 @@ def _susun_baris(session, client_id: str, arah: str, baris: List[BarisIn], kecua
                 raise _Gagal(f"Purchase {tx.purchase_no} is not posted yet.")
             alok = _alokasi_aktif(session, client_id, "purchase_transaction_id", [tx.id], kecuali_tx).get(str(tx.id), {})
             asing_alok = _alokasi_asing(session, client_id, "purchase_transaction_id", [tx.id], kecuali_tx).get(str(tx.id), {})
-            total = _dec(tx.accounts_payable if tx.accounts_payable is not None else tx.total)
-            sisa = total - _dibayar_purchase(tx, alok) - alok.get("pending", NOL) - dipakai.get(tx.id, NOL)
+            total, dibayar_tx, _via, _luar = _hitung_dibayar_purchase(tx, alok)
+            sisa = total - dibayar_tx - alok.get("pending", NOL) - dipakai.get(tx.id, NOL)
             no = tx.invoice_number or tx.purchase_no
             fx = _fx_purchase(tx)
             jumlah, asing, kurs_p, selisih = _pelunasan_valas(

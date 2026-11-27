@@ -1490,7 +1490,12 @@ def daftar_purchase_source_files(
     management_client_id: str = Query(..., description="ID management_clients -- company aktif (Switch Company)."),
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
-    return sukses(data=dbc.list_purchase_source_files(management_client_id=management_client_id), message="OK")
+    files = dbc.list_purchase_source_files(management_client_id=management_client_id)
+    # rows_pending = baris yang masih bisa dibuat jadi transaksi; frontend menyembunyikan Create All kalau semuanya 0.
+    pending = dbc.hitung_purchase_baris_siap_dibuat([str(f["id"]) for f in files])
+    for f in files:
+        f["rows_pending"] = pending.get(str(f["id"]), 0)
+    return sukses(data=files, message="OK")
 
 
 

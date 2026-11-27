@@ -1,7 +1,14 @@
 """
 modules/transactions/bank_cash_v1.py
 ====================================
-Backend Cash & Bank: /api/v1/transactions/bank-cash/...
+!! TIDAK AKTIF -- JANGAN EDIT FILE INI UNTUK MENGUBAH PERILAKU APLIKASI !!
+Router yang dipasang di main.py adalah modules/transactions/bank_cash_willi.py
+(diimpor sebagai `transactions_bank_cash_v1`), yang berisi implementasi lengkap (termasuk
+/open-invoices, transaksi, approve/post). File ini versi FASE 1 lama; endpoint Fase 2-nya
+(mis. /open-invoices) hanya stub yang mengembalikan list kosong. File dipertahankan karena
+migrations/bank_cash/37-*.py masih meng-import-nya.
+
+Backend Cash & Bank (versi lama): /api/v1/transactions/bank-cash/...
 
 Frontend (src/lib/bankCashStore.ts) memanggil prefix ini; tanpa router ini semua
 request jadi 404 ("Not Found" di halaman Source Data).

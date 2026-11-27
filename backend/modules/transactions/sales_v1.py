@@ -363,6 +363,10 @@ def daftar_source_file(
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
     data = dbc.list_sales_source_files(client_id=client_id, termasuk_nonaktif=termasuk_nonaktif)
+    # rows_pending = baris yang masih bisa dijadikan invoice; frontend menyembunyikan Buat Semua Invoice kalau semuanya 0.
+    pending = dbc.hitung_sales_baris_siap_invoice([str(r["id"]) for r in data])
+    for r in data:
+        r["rows_pending"] = pending.get(str(r["id"]), 0)
     return sukses(data=[_isi_period_dari_nama_file(r) for r in data], message="OK")
 
 

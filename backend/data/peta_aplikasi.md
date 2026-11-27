@@ -1,11 +1,11 @@
 # PETA APLIKASI DASHBOARDORI (dibuat otomatis dari kode)
-Dibuat: 2026-11-24T02:33:06. Jangan diedit manual; jalankan `python scripts/buat_peta_aplikasi.py`.
+Dibuat: 2026-11-27T02:18:18. Jangan diedit manual; jalankan `python scripts/buat_peta_aplikasi.py`.
 
 ## Ringkasan angka (dihitung dari kode)
 - Total halaman (URL): 86, terdiri dari 0 halaman yang ada di menu sidebar dan 86 halaman tambahan (form baru, pratinjau, exceptions, posted, dst.) yang dibuka dari tombol/tab di halaman lain.
 - Entri menu sidebar: 0 dalam 0 grup.
-- File komponen UI (.tsx): 406.
-- Tag <button> di source code: 1283. Entri tombol berlabel yang tercatat per halaman: 1720 (komponen bersama seperti tabel/modal dihitung di tiap halaman yang memakainya); link antarhalaman: 186.
+- File komponen UI (.tsx): 417.
+- Tag <button> di source code: 1312. Entri tombol berlabel yang tercatat per halaman: 1749 (komponen bersama seperti tabel/modal dihitung di tiap halaman yang memakainya); link antarhalaman: 186.
 
 ## Menu sidebar (urutan tampil)
 
@@ -422,17 +422,17 @@ Isian/filter: text:Search analyses...; text:e.g. What is causing our operating e
 ### `/assets` — Fixed Assets
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Fixed Assets; Asset Register; Draft Assets
-Tab di halaman (termasuk tab di panel detail): Overview; Asset Register; Draft; Depreciation; Disposal; Reports; Posted
-Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Total Fixed Assets; Accumulated Depreciation; Net Book Value; Additions This Year; Total Assets; Active Assets; Under Construction; Assets Near End of Useful Life; Current Month Depreciation; YTD Depreciation; Pending Depreciation Batches; Posted Depreciation Entries; Pending Disposals; Disposed This Year; Disposal Proceeds; Gain / Loss on Disposal; Assets by Category; Monthly Depreciation; Disposals in Period; Posted Entries; Posted This Month; Total Posted Depreciation; Total Posted Disposals; Column & Line; Line
-Komponen (22): FixedAssetsWorkspace, arapUi, moduleUi, PageHeading, OverviewTab, RegisterTab, DepreciationTab, DisposalTab, ReportsTab, PostedTab, DraftTab, AssetFormDrawer, CategoriesDrawer, AssetDetailDrawer, RunDepreciationModal, DisposalFormDrawer, FaKpi, FaTable, FaTrendChart, BsMono, DownloadMenu, BsToolbar
-Tombol/aksi (57):
+Tab di halaman (termasuk tab di panel detail): Overview; Asset Register; Draft; Depreciation; Disposal; Reports; Posted; Journal; Top assets; Categories
+Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Total Fixed Assets; Accumulated Depreciation; Net Book Value; Additions This Year; Total Assets; Active Assets; Under Construction; Assets Near End of Useful Life; Current Month Depreciation; YTD Depreciation; Pending Depreciation Batches; Posted Depreciation Entries; Pending Disposals; Disposed This Year; Disposal Proceeds; Gain / Loss on Disposal; PDF; Excel; CSV; Assets by Category; Monthly Depreciation; Disposals in Period; This Month; This Quarter; This Year; Reversed; Posted Entries; Posted This Month; Total Posted Depreciation; Total Posted Disposals; Column & Line; Line
+Komponen (30): FixedAssetsWorkspace, arapUi, moduleUi, PageHeading, OverviewTab, RegisterTab, DepreciationTab, DisposalTab, ReportsTab, PostedTab, DraftTab, AssetFormDrawer, CategoriesDrawer, AssetDetailDrawer, RunDepreciationModal, DisposalFormDrawer, FaKpi, FaTable, FaTrendChart, FaCategoryInsights, FaDonut, FilterSelect, DepreciationReviewPanel, NextRunPreview, FaReportArt, BsMono, InteractiveDonutChart, salesStyleKit, DownloadMenu, BsToolbar
+Tombol/aksi (67):
 - Run Depreciation (bisa nonaktif sesuai kondisi)
 - New Disposal (bisa nonaktif sesuai kondisi)
 - Export PDF (bisa nonaktif sesuai kondisi)
 - Add Asset (bisa nonaktif sesuai kondisi)
-- [label dari data: t.label]
 - Today
 - Refresh
+- [label dari data: t.label]
 - [label dari data: label]
 - Previous page (bisa nonaktif sesuai kondisi)
 - Next page (bisa nonaktif sesuai kondisi)
@@ -459,6 +459,8 @@ Tombol/aksi (57):
 - [label dari data: FORMAT_LABEL[f]] (bisa nonaktif sesuai kondisi)
 - Open Journal
 - Asset
+- Reset
+- Registering... / Register All (bisa nonaktif sesuai kondisi)
 - Save Draft / Save Asset (bisa nonaktif sesuai kondisi)
 - Manage categories
 - Accounts Category defaults: / /
@@ -478,13 +480,21 @@ Tombol/aksi (57):
 - Submit for Approval (bisa nonaktif sesuai kondisi)
 - Halaman sebelumnya (bisa nonaktif sesuai kondisi)
 - Halaman berikutnya (bisa nonaktif sesuai kondisi)
-- [label dari data: current?.label]
+- [label dari data: body]
+- [ikon Chevron Down] (bisa nonaktif sesuai kondisi)
 - [label dari data: o.label]
+- Run now
+- All issues · <review.length>
+- [label dari data: issue, n]
+- <r.asset_code> · <r.name> <r.issues.length> issue · Book value
+- Show less / Show all … assets
+- <l.asset_code> · <l.name> Uncategorized · <METHOD_LABEL[l.method]>
+- [label dari data: current?.label]
 - Print
 - Download (bisa nonaktif sesuai kondisi)
 - [label dari data: it.label]
 Link ke halaman lain: View Journal → /reports/general-ledger; ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
-Isian/filter: date; label:As of; select; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason; textarea; label:⟨label⟩ ⟨children⟩; input:Search assets by code, name, or keyword...; label:Filters All Draft Pending Approved Rejected Posted Reversed; label:Period –; label:Branch All Branches; label:Category All Categories; label:Location All Locations; label:Format PDF Excel CSV; input:Search by journal no., asset code, asset name, or reference...; label:Posting Date All Dates This Month This Quarter This Year; label:Transaction Type All Types; label:Asset Category All Categories; label:Status All Statuses Posted Reversed; input:Search drafts by code, name, category...; checkbox; input:Auto; input:e.g. Toyota Innova B 1234 CD; number; number:0; input:e.g. Jakarta HQ; input; label:Draft
+Isian/filter: date; label:As of; select; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason; textarea; label:⟨label⟩ ⟨children⟩; input:Search assets by code, name, or keyword...; label:Filters All Draft Pending Approved Rejected Posted Reversed; text:Search journal no., asset code, asset name, reference...; input:Search drafts by code, name, category...; checkbox; input:Auto; input:e.g. Toyota Innova B 1234 CD; number; number:0; input:e.g. Jakarta HQ; input; label:Draft; input:e.g. Vehicles; label:Depreciable (untick for land or construction in progress); input:ADJ-0001; month; label:Baris per halaman; label:Chart Type; input:Cari...
 
 ### `/audit` — Risk Matrix
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
@@ -999,13 +1009,14 @@ Isian/filter: date; input; input:0.00; select; input:master rate; textarea:e.g. 
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Inventory
 Tab di halaman (termasuk tab di panel detail): Overview; Item List; Stock Movement; Adjustments; Transfer; Reports
-Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Total Items; Total Stock Value; Low Stock Items; Out of Stock
-Komponen (14): InventoryWorkspace, arapUi, moduleUi, PageHeading, OverviewTab, ItemListTab, MovementTab, DocumentsTab, ReportsTab, ItemFormDrawer, ItemDetailDrawer, SetupDrawer, DocumentFormDrawer, DocumentDrawer
-Tombol/aksi (53):
+Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Total Items; Total Stock Value; Low Stock Items; Out of Stock; Column & Line; Line
+Komponen (28): InventoryWorkspace, arapUi, invUi, moduleUi, PageHeading, OverviewTab, ItemListTab, MovementTab, DocumentsTab, ReportsTab, ItemFormDrawer, ItemDetailDrawer, SetupDrawer, DocumentFormDrawer, DocumentDrawer, FilterSelect, FaTrendChart, FaDonut, InvKpi, InvCategoryInsights, InvTopTreemap, InvTable, BsMono, InteractiveDonutChart, salesStyleKit, FaTable, DownloadMenu, BsToolbar
+Tombol/aksi (65):
 - Warehouses & Categories (bisa nonaktif sesuai kondisi)
+- Create transfer / Transfer / Adjustment (bisa nonaktif sesuai kondisi)
+- Record Stock (bisa nonaktif sesuai kondisi)
 - New Document (bisa nonaktif sesuai kondisi)
 - [label dari data: t.label]
-- Refresh
 - [label dari data: label]
 - Previous page (bisa nonaktif sesuai kondisi)
 - Next page (bisa nonaktif sesuai kondisi)
@@ -1013,9 +1024,12 @@ Tombol/aksi (53):
 - Close
 - Cancel
 - Reverse (bisa nonaktif sesuai kondisi)
+- [label dari data: label, text]
+- Reset
+- Apply
 - [label dari data: confirmLabel] (bisa nonaktif sesuai kondisi)
 - Open setup
-- Reset
+- Categories
 - Import
 - Export
 - Add Item
@@ -1026,9 +1040,7 @@ Tombol/aksi (53):
 - Import Items (bisa nonaktif sesuai kondisi)
 - Choose a file
 - [label dari data: l]
-- Record Stock
 - Open document
-- Create Transfer / Adjustment
 - [label dari data: r.label]
 - Generate (bisa nonaktif sesuai kondisi)
 - Export PDF (bisa nonaktif sesuai kondisi)
@@ -1055,8 +1067,18 @@ Tombol/aksi (53):
 - Delete (bisa nonaktif sesuai kondisi)
 - Post (bisa nonaktif sesuai kondisi)
 - Void
+- [ikon Chevron Down] (bisa nonaktif sesuai kondisi)
+- [label dari data: o.label]
+- [label dari data: body]
+- [label dari data: it.name]
+- [label dari data: current?.label]
+- Print
+- Halaman sebelumnya (bisa nonaktif sesuai kondisi)
+- Halaman berikutnya (bisa nonaktif sesuai kondisi)
+- Download (bisa nonaktif sesuai kondisi)
+- [label dari data: it.label]
 Link ke halaman lain: ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
-Isian/filter: date; label:Per; select; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason; textarea; label:⟨label⟩ ⟨children⟩; input:Search item code, name, barcode...; file; checkbox; label:Category All; label:Status All; label:Location All; label:Update items whose code already exists; label:Period –; label:Item All; label:Transaction Type All; input:Search reference no, item, remark...; label:From Location / Location All; label:To Location All; label:Per Date; label:Item Select item; input:Auto; input; number; input:e.g. Main Warehouse; input:e.g. Raw Materials; label:Active
+Isian/filter: select; date; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason; text; label:From; label:Date / To; textarea; label:⟨label⟩ ⟨children⟩; file; checkbox; label:Update items whose code already exists; input:Auto; input; number; input:e.g. Main Warehouse; input:e.g. Raw Materials; label:Active; input:PO / SO / delivery note no.; label:Chart Type; input:Cari...; label:Baris per halaman
 
 ### `/liabilities` — Liabilities
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
@@ -1343,72 +1365,74 @@ Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 
 ### `/transactions/bank-cash/cash-payment` — Vendor Bills (from Purchase)
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
-Judul/seksi di halaman: Vendor Bills (from Purchase); Cash & Bank; Select target account; Edit … / New Cash & Bank Transaction
-Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Cash Payment; Cash Receipt; Reconciliation; Journal Preview; Exceptions; Posted
+Judul/seksi di halaman: Vendor Bills (from Purchase); Cash & Bank; Edit … / New Cash & Bank Transaction; Select target account
+Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Payables; Receivables; Reconciliation; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): All statuses; Unpaid; Partially Paid; Overdue; On Hold; Paid; Auto; Area; Line; Column; Candle; OHLC Bar; 1,234,567.89; 1.234.567,89; Day / Month; Month / Day; Money in; Money out
-Komponen (14): CashBankTabs, RekonInfoCells, CashReceiptTrendChart, salesStyleKit, useStatementUpload, CashBankTransactionModal, StatusBadge, SalesChartCrosshair, SalesCandleLayer, InteractiveDonutChart, StatementReviewModal, BankFeedContext, ConfidenceBadge, sourceUi
-Tombol/aksi (23):
+Komponen (14): CashBankTabs, CashBankTransactionModal, RekonInfoCells, CashReceiptTrendChart, salesStyleKit, useStatementUpload, StatusBadge, SalesChartCrosshair, SalesCandleLayer, InteractiveDonutChart, StatementReviewModal, BankFeedContext, ConfidenceBadge, sourceUi
+Tombol/aksi (24):
 - Retry
+- Record Payment
 - Previous page (bisa nonaktif sesuai kondisi)
 - [label dari data: p]
 - Next page (bisa nonaktif sesuai kondisi)
 - 01 Jan … – 31 Dec …
 - Reading... / Upload File (bisa nonaktif sesuai kondisi)
 - Add Cash/Bank Transaction
-- Reset
-- [ikon Chevron Down]
-- [label dari data: o.label]
-- Cancel
-- Upload (bisa nonaktif sesuai kondisi)
 - receipt / Cash Receipt (money in) / Cash Payment (money out) (bisa nonaktif sesuai kondisi)
 - Delete line
 - Add invoice
 - Add account (e.g. bank charges)
+- Cancel
 - Saving… / Save changes / Save as Draft (bisa nonaktif sesuai kondisi)
+- Reset
+- [ikon Chevron Down]
+- [label dari data: o.label]
+- Upload (bisa nonaktif sesuai kondisi)
 - import / Importing… (bisa nonaktif sesuai kondisi)
 - reread / Re-reading… / Re-read with these settings (bisa nonaktif sesuai kondisi)
 - all / All lines / Not verified (…)
 - Select... (bisa nonaktif sesuai kondisi)
 - [label dari data: heading]
 - Close (bisa nonaktif sesuai kondisi)
-Isian/filter: input:Search purchase no., invoice, vendor...; select; label:Rows per page 10 25 50; input:Cari...; file; select:Target account; date; input:Select or type…; input:Taken from the invoice if left empty; input; input:Search account (no. or name)…; number:Amount; input:Line description (optional); label:Date; label:Cash / bank account; label:Category; label:Party (customer / vendor / other); label:Reference (voucher / slip no.); label:Description; checkbox; label:⟨labelSimpan⟩; input:Search...; label:Rows per page
+Isian/filter: input:Search purchase no., invoice, vendor...; select; label:Rows per page 10 25 50; date; input:Select or type…; input:Taken from the invoice if left empty; input; input:Search account (no. or name)…; number:Amount; input:Line description (optional); label:Date; label:Cash / bank account; label:Category; label:Party (customer / vendor / other); label:Reference (voucher / slip no.); label:Description; input:Cari...; file; select:Target account; checkbox; label:⟨labelSimpan⟩; input:Search...; label:Rows per page
 
 ### `/transactions/bank-cash/cash-receipt` — Customer Invoices (from Sales)
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
-Judul/seksi di halaman: Customer Invoices (from Sales); Cash & Bank; Select target account; Edit … / New Cash & Bank Transaction
-Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Cash Payment; Cash Receipt; Reconciliation; Journal Preview; Exceptions; Posted
+Judul/seksi di halaman: Customer Invoices (from Sales); Cash & Bank; Edit … / New Cash & Bank Transaction; Select target account
+Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Payables; Receivables; Reconciliation; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): All statuses; Unpaid; Partially Paid; Paid; Auto; Area; Line; Column; Candle; OHLC Bar; 1,234,567.89; 1.234.567,89; Day / Month; Month / Day; Money in; Money out
-Komponen (14): CashBankTabs, RekonInfoCells, CashReceiptTrendChart, salesStyleKit, useStatementUpload, CashBankTransactionModal, StatusBadge, SalesChartCrosshair, SalesCandleLayer, InteractiveDonutChart, StatementReviewModal, BankFeedContext, ConfidenceBadge, sourceUi
-Tombol/aksi (23):
+Komponen (14): CashBankTabs, CashBankTransactionModal, RekonInfoCells, CashReceiptTrendChart, salesStyleKit, useStatementUpload, StatusBadge, SalesChartCrosshair, SalesCandleLayer, InteractiveDonutChart, StatementReviewModal, BankFeedContext, ConfidenceBadge, sourceUi
+Tombol/aksi (24):
 - Retry
+- Record Receipt
 - Previous page (bisa nonaktif sesuai kondisi)
 - [label dari data: p]
 - Next page (bisa nonaktif sesuai kondisi)
 - 01 Jan … – 31 Dec …
 - Reading... / Upload File (bisa nonaktif sesuai kondisi)
 - Add Cash/Bank Transaction
-- Reset
-- [ikon Chevron Down]
-- [label dari data: o.label]
-- Cancel
-- Upload (bisa nonaktif sesuai kondisi)
 - receipt / Cash Receipt (money in) / Cash Payment (money out) (bisa nonaktif sesuai kondisi)
 - Delete line
 - Add invoice
 - Add account (e.g. bank charges)
+- Cancel
 - Saving… / Save changes / Save as Draft (bisa nonaktif sesuai kondisi)
+- Reset
+- [ikon Chevron Down]
+- [label dari data: o.label]
+- Upload (bisa nonaktif sesuai kondisi)
 - import / Importing… (bisa nonaktif sesuai kondisi)
 - reread / Re-reading… / Re-read with these settings (bisa nonaktif sesuai kondisi)
 - all / All lines / Not verified (…)
 - Select... (bisa nonaktif sesuai kondisi)
 - [label dari data: heading]
 - Close (bisa nonaktif sesuai kondisi)
-Isian/filter: input:Search invoice no., customer, description...; select; label:Rows per page 10 25 50; input:Cari...; file; select:Target account; date; input:Select or type…; input:Taken from the invoice if left empty; input; input:Search account (no. or name)…; number:Amount; input:Line description (optional); label:Date; label:Cash / bank account; label:Category; label:Party (customer / vendor / other); label:Reference (voucher / slip no.); label:Description; checkbox; label:⟨labelSimpan⟩; input:Search...; label:Rows per page
+Isian/filter: input:Search invoice no., customer, description...; select; label:Rows per page 10 25 50; date; input:Select or type…; input:Taken from the invoice if left empty; input; input:Search account (no. or name)…; number:Amount; input:Line description (optional); label:Date; label:Cash / bank account; label:Category; label:Party (customer / vendor / other); label:Reference (voucher / slip no.); label:Description; input:Cari...; file; select:Target account; checkbox; label:⟨labelSimpan⟩; input:Search...; label:Rows per page
 
 ### `/transactions/bank-cash/exceptions` — Cash & Bank
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Cash & Bank; Exception List; Detail Exception; Select target account; Edit … / New Cash & Bank Transaction
-Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Cash Payment; Cash Receipt; Reconciliation; Journal Preview; Exceptions; Posted
+Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Payables; Receivables; Reconciliation; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): All Severity; High; Medium; Low; All Exception Types; All Sources; Classification; All Counterparties; All Assigned; Unassigned; Assigned to Me; 1,234,567.89; 1.234.567,89; Day / Month; Month / Day; Money in; Money out
 Komponen (9): CashBankTabs, CashBankExceptions, useStatementUpload, CashBankTransactionModal, FilterSelect, sourceUi, StatementReviewModal, BankFeedContext, ConfidenceBadge
 Tombol/aksi (34):
@@ -1451,7 +1475,7 @@ Isian/filter: date; text:Search ID, counterparty, or issue...; checkbox; input; 
 ### `/transactions/bank-cash/journal-preview` — Cash & Bank
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Cash & Bank; Select target account; Edit … / New Cash & Bank Transaction
-Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Cash Payment; Cash Receipt; Reconciliation; Journal Preview; Exceptions; Posted
+Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Payables; Receivables; Reconciliation; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Date; Cash / bank account; Party; Description; Reference; Source Data line; Created; Approved; 1,234,567.89; 1.234.567,89; Day / Month; Month / Day; Money in; Money out
 Komponen (8): CashBankTabs, CashBankJournalPreview, useStatementUpload, CashBankTransactionModal, sourceUi, StatementReviewModal, BankFeedContext, ConfidenceBadge
 Pembatasan hak akses di halaman ini: level 4+ (LEVEL_POST): posting ke buku besar, membatalkan/membalik (reverse) dokumen yang sudah posted
@@ -1490,7 +1514,7 @@ Isian/filter: text:Search no., party, invoice…; checkbox; file; select:Target 
 ### `/transactions/bank-cash/overview` — Pipeline
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Pipeline; Monthly Cash Flow; Balance per Account; Cash & Bank; Select target account; Edit … / New Cash & Bank Transaction
-Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Cash Payment; Cash Receipt; Reconciliation; Journal Preview; Exceptions; Posted
+Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Payables; Receivables; Reconciliation; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): 1,234,567.89; 1.234.567,89; Day / Month; Month / Day; Money in; Money out
 Komponen (7): CashBankTabs, useStatementUpload, CashBankTransactionModal, StatementReviewModal, BankFeedContext, ConfidenceBadge, sourceUi
 Tombol/aksi (21):
@@ -1521,7 +1545,7 @@ Isian/filter: select; file; select:Target account; date; input:Select or type…
 ### `/transactions/bank-cash/posted` — Cash & Bank
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Cash & Bank; Select target account; Edit … / New Cash & Bank Transaction
-Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Cash Payment; Cash Receipt; Reconciliation; Journal Preview; Exceptions; Posted
+Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Payables; Receivables; Reconciliation; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): All Directions; All Periods; All Accounts; Type; Invoice Type; Counter Account; Source; Bank Line Description; Bank Line Ref; 1,234,567.89; 1.234.567,89; Day / Month; Month / Day; Money in; Money out
 Komponen (7): CashBankTabs, sourceUi, useStatementUpload, CashBankTransactionModal, StatementReviewModal, BankFeedContext, ConfidenceBadge
 Pembatasan hak akses di halaman ini: level 4+ (LEVEL_BALIK_JURNAL): membalik jurnal yang sudah diposting (Cash & Bank)
@@ -1557,7 +1581,7 @@ Isian/filter: checkbox; text:Search journal no., counterparty, invoice, or accou
 ### `/transactions/bank-cash/reconciliation` — Reconciled History
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Reconciled History; Cash & Bank; Select target account; Edit … / New Cash & Bank Transaction
-Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Cash Payment; Cash Receipt; Reconciliation; Journal Preview; Exceptions; Posted
+Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Payables; Receivables; Reconciliation; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Debit; Credit; Any keyword is enough; All keywords must appear; 1,234,567.89; 1.234.567,89; Day / Month; Month / Day; Money in; Money out
 Komponen (12): CashBankTabs, NonInvoiceForm, BookMatchPanel, AutoRulesPanel, salesStyleKit, BankFeedContext, useStatementUpload, CashBankTransactionModal, sourceUi, InteractiveDonutChart, StatementReviewModal, ConfidenceBadge
 Tombol/aksi (51):
@@ -1618,7 +1642,7 @@ Isian/filter: checkbox; input; select; input:Search description, amount or date�
 ### `/transactions/bank-cash/source-data` — Cash & Bank
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
 Judul/seksi di halaman: Cash & Bank; Select target account; Edit … / New Cash & Bank Transaction
-Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Cash Payment; Cash Receipt; Reconciliation; Journal Preview; Exceptions; Posted
+Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Payables; Receivables; Reconciliation; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): All accounts; 1,234,567.89; 1.234.567,89; Day / Month; Month / Day; Money in; Money out
 Komponen (10): BankMappings, CashBankTabs, ConfidenceBadge, ExtractionTemplates, ReviewLineModal, sourceUi, BankFeedContext, useStatementUpload, CashBankTransactionModal, StatementReviewModal
 Tombol/aksi (34):
@@ -2095,17 +2119,17 @@ Isian/filter: input:Cari no. jurnal, pihak, deskripsi...; date; textarea; label:
 
 ### `/transactions/purchase` — Purchase
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
-Judul/seksi di halaman: Purchase; Purchase Volume Trend; Upload Purchase Data
+Judul/seksi di halaman: Purchase; Purchase Volume Trend
 Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Purchase Transaction; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Auto; Area; Line; Column; Candle; OHLC Bar
-Komponen (13): PurchaseTabs, PurchaseKpiTile, PurchaseBreakdownCards, PurchaseVendorActivityCards, PurchaseExceptionSummary, PurchaseOverviewCharts, moduleUi, ImportPurchaseModal, InteractiveDonutChart, SalesChartCrosshair, SalesCandleLayer, arapUi, JePagination
-Tombol/aksi (18):
+Komponen (11): PurchaseTabs, PurchaseKpiTile, PurchaseBreakdownCards, PurchaseVendorActivityCards, PurchaseExceptionSummary, PurchaseOverviewCharts, moduleUi, InteractiveDonutChart, SalesChartCrosshair, SalesCandleLayer, arapUi
+Tombol/aksi (17):
 - 01 Jan … – 31 Dec … (bisa nonaktif sesuai kondisi)
 - This year
 - Last year
 - All time
 - Done
-- Upload File (bisa nonaktif sesuai kondisi)
+- Uploading... / Upload File (bisa nonaktif sesuai kondisi)
 - [ikon Chevron Down]
 - [label dari data: o.label]
 - Reset
@@ -2117,9 +2141,8 @@ Tombol/aksi (18):
 - [label dari data: children] (bisa nonaktif sesuai kondisi)
 - Close
 - Reverse (bisa nonaktif sesuai kondisi)
-- [label dari data: p]
 Link ke halaman lain: Add Purchase Bill → /transactions/purchase/bill/new; View all exceptions → /transactions/purchase/exceptions; ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
-Isian/filter: date; label:From; label:To; input:Cari...; select; textarea; label:⟨label⟩ ⟨children⟩; file; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
+Isian/filter: date; file; label:From; label:To; input:Cari...; select; textarea; label:⟨label⟩ ⟨children⟩; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
 
 ### `/transactions/purchase/bill/new` — Bill Preview
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
@@ -2168,9 +2191,9 @@ Isian/filter: input:Search vendor name or code...; select; input:Optional; input
 
 ### `/transactions/purchase/exceptions` — Purchase Exception List
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
-Judul/seksi di halaman: Purchase Exception List; Exception Detail; Purchase; Upload Purchase Data
+Judul/seksi di halaman: Purchase Exception List; Exception Detail; Purchase
 Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Purchase Transaction; Journal Preview; Exceptions; Posted
-Komponen (6): PurchaseTabs, FilterSelect, moduleUi, ImportPurchaseModal, arapUi, JePagination
+Komponen (4): PurchaseTabs, FilterSelect, moduleUi, arapUi
 Tombol/aksi (20):
 - Actions
 - View detail
@@ -2184,7 +2207,7 @@ Tombol/aksi (20):
 - Last year
 - All time
 - Done
-- Upload File (bisa nonaktif sesuai kondisi)
+- Uploading... / Upload File (bisa nonaktif sesuai kondisi)
 - [ikon Chevron Down] (bisa nonaktif sesuai kondisi)
 - [label dari data: o.label]
 - Cancel
@@ -2193,14 +2216,14 @@ Tombol/aksi (20):
 - [label dari data: children] (bisa nonaktif sesuai kondisi)
 - Reverse (bisa nonaktif sesuai kondisi)
 Link ke halaman lain: Add Purchase Bill → /transactions/purchase/bill/new; ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
-Isian/filter: text:Search by purchase ID, vendor, invoice number, exception type...; select; label:Rows per page 10 25 50; date; label:From; label:To; input; textarea; label:⟨label⟩ ⟨children⟩; file; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
+Isian/filter: text:Search by purchase ID, vendor, invoice number, exception type...; select; label:Rows per page 10 25 50; date; file; label:From; label:To; input; textarea; label:⟨label⟩ ⟨children⟩; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
 
 ### `/transactions/purchase/posted` — Posted Purchase List
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
-Judul/seksi di halaman: Posted Purchase List; Purchase; Upload Purchase Data
+Judul/seksi di halaman: Posted Purchase List; Purchase
 Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Purchase Transaction; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): All Payment
-Komponen (6): PurchaseTabs, FilterSelect, moduleUi, ImportPurchaseModal, arapUi, JePagination
+Komponen (4): PurchaseTabs, FilterSelect, moduleUi, arapUi
 Tombol/aksi (25):
 - Export (bisa nonaktif sesuai kondisi)
 - Export Selected ( <selectedRows.size> )
@@ -2218,7 +2241,7 @@ Tombol/aksi (25):
 - Last year
 - All time
 - Done
-- Upload File (bisa nonaktif sesuai kondisi)
+- Uploading... / Upload File (bisa nonaktif sesuai kondisi)
 - [ikon Chevron Down] (bisa nonaktif sesuai kondisi)
 - [label dari data: o.label]
 - Cancel
@@ -2228,15 +2251,17 @@ Tombol/aksi (25):
 - Close
 - Reverse (bisa nonaktif sesuai kondisi)
 Link ke halaman lain: Add Purchase Bill → /transactions/purchase/bill/new; ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
-Isian/filter: text:Search by purchase ID, vendor, invoice number, PO number...; checkbox; select; label:Rows per page 5 10 25 50; date; label:From; label:To; input; textarea; label:⟨label⟩ ⟨children⟩; file; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
+Isian/filter: text:Search by purchase ID, vendor, invoice number, PO number...; checkbox; select; label:Rows per page 5 10 25 50; date; file; label:From; label:To; input; textarea; label:⟨label⟩ ⟨children⟩; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
 
 ### `/transactions/purchase/preview` — Purchase
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
-Judul/seksi di halaman: Purchase; Upload Purchase Data
+Judul/seksi di halaman: Purchase
 Tab di halaman (termasuk tab di panel detail): All; Pending; Approved; Posted; Other; Overview; Source Data; Purchase Transaction; Journal Preview; Exceptions
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Invoice Number; PO Number; Purchase ID; Source; Invoice Date; Total Payable; Vendor Name; Vendor ID; Category; Period; Due Date; Payment Terms; Currency; Prepared by; Approved by; Posted by; Subtotal; Discount; Input VAT; Input VAT Account; Accounts Payable Account; Accounts Payable
-Komponen (7): PurchaseTabs, SalesLoading, PreviewLayout, moduleUi, ImportPurchaseModal, arapUi, JePagination
-Tombol/aksi (22):
+Komponen (5): PurchaseTabs, SalesLoading, PreviewLayout, moduleUi, arapUi
+Tombol/aksi (23):
+- approve / Approving... / Approve All ( <bisaDiapprove.length> ) (bisa nonaktif sesuai kondisi)
+- post / Posting... / Post All ( <bisaDipost.length> ) (bisa nonaktif sesuai kondisi)
 - [label dari data: tab.label, tab.count]
 - PUR <t.purchaseId> <t.vendor>
 - Reject (bisa nonaktif sesuai kondisi)
@@ -2248,7 +2273,7 @@ Tombol/aksi (22):
 - Last year
 - All time
 - Done
-- Upload File (bisa nonaktif sesuai kondisi)
+- Uploading... / Upload File (bisa nonaktif sesuai kondisi)
 - [label dari data: header]
 - Previous page (bisa nonaktif sesuai kondisi)
 - Next page (bisa nonaktif sesuai kondisi)
@@ -2258,52 +2283,53 @@ Tombol/aksi (22):
 - [label dari data: children] (bisa nonaktif sesuai kondisi)
 - Close
 - Reverse (bisa nonaktif sesuai kondisi)
-- [label dari data: p]
 Link ke halaman lain: View Exception → /transactions/purchase/exceptions; Add Purchase Bill → /transactions/purchase/bill/new; ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
-Isian/filter: text:Search purchase ID, vendor, or invoice...; date; label:From; label:To; select; textarea; label:⟨label⟩ ⟨children⟩; file; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
+Isian/filter: text:Search purchase ID, vendor, or invoice...; date; file; label:From; label:To; select; textarea; label:⟨label⟩ ⟨children⟩; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
 
-### `/transactions/purchase/source-data` — Purchase Source Record List
+### `/transactions/purchase/source-data` — Purchase Source File List
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
-Judul/seksi di halaman: Purchase Source Record List; Purchase; Mapping Rules; Upload Purchase Data
+Judul/seksi di halaman: Purchase Source File List; Purchase; Mapping Rules
 Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Purchase Transaction; Journal Preview; Exceptions; Posted
-Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Vendor; Vendor ID; Source Date; Period; Invoice Number; PO Number; Created By; Created Date; Net Amount; Tax Amount; Total Amount
-Komponen (6): PurchaseTabs, MappingRulesModal, moduleUi, ImportPurchaseModal, arapUi, JePagination
+Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Total Rows Detected; Valid Rows; Invalid Rows
+Komponen (4): PurchaseTabs, MappingRulesModal, moduleUi, arapUi
 Tombol/aksi (22):
-- [label dari data: current?.label]
-- [label dari data: o.label]
 - Template Excel
-- Export
+- Export (bisa nonaktif sesuai kondisi)
 - Mapping Rules
-- Actions
-- View detail
+- Actions (bisa nonaktif sesuai kondisi)
+- Delete file
 - Previous page (bisa nonaktif sesuai kondisi)
 - [label dari data: p]
 - Next page (bisa nonaktif sesuai kondisi)
-- Close
+- Processing... / Create Transaction (…) (bisa nonaktif sesuai kondisi)
+- Processing …/… / Create All Transactions (bisa nonaktif sesuai kondisi)
 - 01 Jan … – 31 Dec … (bisa nonaktif sesuai kondisi)
 - This year
 - Last year
 - All time
 - Done
-- Upload File (bisa nonaktif sesuai kondisi)
+- Uploading... / Upload File (bisa nonaktif sesuai kondisi)
+- Close
 - Cancel
 - [label dari data: confirmLabel] (bisa nonaktif sesuai kondisi)
 - [label dari data: label]
 - [label dari data: children] (bisa nonaktif sesuai kondisi)
 - Reverse (bisa nonaktif sesuai kondisi)
 Link ke halaman lain: Add Purchase Bill → /transactions/purchase/bill/new; ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
-Isian/filter: input:Search...; text:Search source, invoice, PO, vendor...; select; label:Rows per page 10 25 50; date; label:From; label:To; textarea; label:⟨label⟩ ⟨children⟩; file; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
+Isian/filter: select; label:Rows per page 10 25 50; date; file; label:From; label:To; textarea; label:⟨label⟩ ⟨children⟩; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
 
 ### `/transactions/purchase/transaction` — Purchase Transaction List
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
-Judul/seksi di halaman: Purchase Transaction List; Purchase; Upload Purchase Data
+Judul/seksi di halaman: Purchase Transaction List; Purchase
 Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Purchase Transaction; Journal Preview; Exceptions; Posted
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): All Status; All Payment; Total; Pending Review; Approved; Total Amount; Invoice Number; PO Number; Invoice Date; Due Date; Payment Terms; Period; Created By; Approved By; Subtotal; Discount; Tax (Input VAT); Total Payable
-Komponen (7): PurchaseTabs, FilterSelect, PrintMenu, moduleUi, ImportPurchaseModal, arapUi, JePagination
-Tombol/aksi (26):
+Komponen (5): PurchaseTabs, FilterSelect, PrintMenu, moduleUi, arapUi
+Tombol/aksi (28):
+- Reset
 - Date Period All
 - Clear
 - Apply
+- Clear selection
 - approve / Approving… / Approve (…) (bisa nonaktif sesuai kondisi)
 - post / Posting… / Post (…) (bisa nonaktif sesuai kondisi)
 - Actions
@@ -2317,7 +2343,7 @@ Tombol/aksi (26):
 - Last year
 - All time
 - Done
-- Upload File (bisa nonaktif sesuai kondisi)
+- Uploading... / Upload File (bisa nonaktif sesuai kondisi)
 - [ikon Chevron Down] (bisa nonaktif sesuai kondisi)
 - [label dari data: o.label]
 - Preparing… (bisa nonaktif sesuai kondisi)
@@ -2328,7 +2354,7 @@ Tombol/aksi (26):
 - [label dari data: children] (bisa nonaktif sesuai kondisi)
 - Reverse (bisa nonaktif sesuai kondisi)
 Link ke halaman lain: Edit → /transactions/purchase/bill/new?id=…; Add Purchase Bill → /transactions/purchase/bill/new; ⟨cfg.party⟩ Statement → …?tab=statements&party=…; Record ⟨cfg.settle⟩ → …?party=…&invoice=…; Open in Cash & Bank → /transactions/bank-cash/posted
-Isian/filter: date; text:Search by purchase ID, vendor, invoice number, PO number...; checkbox:Select all … filtered transactions; checkbox; select; label:From; label:To; label:Rows per page 10 25 50; input; textarea; label:⟨label⟩ ⟨children⟩; file; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
+Isian/filter: date; text:Search by purchase ID, vendor, invoice number, PO number...; checkbox:Select all … filtered transactions; checkbox; select; label:From; label:To; label:Rows per page 10 25 50; file; input; textarea; label:⟨label⟩ ⟨children⟩; textarea:e.g. Recorded against the wrong customer; label:Rows per page:; label:Reversal date; label:Reason
 
 ### `/transactions/sales` — Sales
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
@@ -2336,7 +2362,7 @@ Judul/seksi di halaman: Sales; Tren Sales Bulanan; Daftar Invoice Penjualan; Daf
 Tab di halaman (termasuk tab di panel detail): Overview; Source Data; Sales Transaction; Journal Preview; Exceptions; Posted; Semua; Diproses; Siap Posting; Diposting
 Label lain yang tampil (kolom tabel, opsi filter, kartu KPI; BUKAN tab): Auto; Area; Line; Column; Candle; OHLC Bar; All Branches; Tanggal Transaksi; No. Invoice; Nama Customer; DPP (Sebelum Pajak); PPN (11%); Total Nilai; Total Baris Terdeteksi; Baris Valid; Baris Tidak Valid; Semua Customer; Semua Status (Pajak); Semua Status (Posting); Semua Project; Detail; Pembayaran; Jurnal; Riwayat; Akun Piutang Usaha; Akun Pendapatan; Akun PPN Keluaran; Akun PPh (Jika ada); Semua (Severity); High; Medium; Low; Semua (Exception Type); Semua (Assigned To); Belum Ditugaskan; Ditugaskan ke Saya; Semua Pelanggan; Status Pembayaran; Paid; Partial
 Komponen (13): SalesClient, SalesOverview, SalesSourceData, SalesTransaction, SalesJournalPreview, SalesExceptions, SalesPosted, InteractiveDonutChart, SalesChartCrosshair, SalesLoading, SalesCandleLayer, PrintMenu, PreviewLayout
-Tombol/aksi (60):
+Tombol/aksi (63):
 - 01 Jan … – 31 Dec …
 - Mengunggah... / Upload File (bisa nonaktif sesuai kondisi)
 - [ikon Chevron Down]
@@ -2352,15 +2378,16 @@ Tombol/aksi (60):
 - Aksi (bisa nonaktif sesuai kondisi)
 - Hapus file
 - Memproses... / Buat Invoice (bisa nonaktif sesuai kondisi)
+- Memproses / Buat Semua Invoice (bisa nonaktif sesuai kondisi)
 - [ikon Chevron Left] (bisa nonaktif sesuai kondisi)
 - [ikon Chevron Right] (bisa nonaktif sesuai kondisi)
 - [ikon X]
 - Batal
 - Menyimpan... / Simpan Mapping (bisa nonaktif sesuai kondisi)
 - [label dari data: current?.label]
+- [ikon Settings]
 - Periode Tanggal Semua
 - Terapkan
-- [ikon Settings]
 - Clear selection (bisa nonaktif sesuai kondisi)
 - Posting... / Post selected (…) (bisa nonaktif sesuai kondisi)
 - [ikon More Horizontal]
@@ -2370,6 +2397,8 @@ Tombol/aksi (60):
 - Post
 - Hapus
 - Menyimpan... / Simpan (bisa nonaktif sesuai kondisi)
+- Menyetujui... / Approve All ( <bisaDiapprove.length> ) (bisa nonaktif sesuai kondisi)
+- Memposting... / Post All ( <bisaDipost.length> ) (bisa nonaktif sesuai kondisi)
 - [label dari data: tab.count]
 - INV <inv.invoice_no> <inv.customer_name>
 - Lihat Dokumen
@@ -2398,7 +2427,7 @@ Tombol/aksi (60):
 - Previous page (bisa nonaktif sesuai kondisi)
 - Next page (bisa nonaktif sesuai kondisi)
 Link ke halaman lain: Add Sales Invoice → /transactions/sales/invoice/new
-Isian/filter: file; input:Cari...; select; input:Cari Invoice, deskripsi, customer, no. jurnal...; label:Baris per halaman 10 25 50; date; checkbox; text:Search Invoice...; input; number; label:Dari; label:Sampai; label:Customer; label:Cabang; label:Deskripsi; label:DPP; label:Project; text:Cari nomor invoice atau pelanggan...; text:Cari ID, nama pelanggan, atau masalah...; label:Exception Type; label:Tugaskan ke saya; label:Status; text:Cari invoice, pelanggan, atau no jurnal...; label:Baris per halaman 5 10 25 50
+Isian/filter: file; input:Cari...; select; input:Cari Invoice, deskripsi, customer, no. jurnal...; label:Baris per halaman 10 25 50; checkbox; date; text:Search Invoice...; input; number; label:Dari; label:Sampai; label:Customer; label:Cabang; label:Deskripsi; label:DPP; label:Project; text:Cari nomor invoice atau pelanggan...; text:Cari ID, nama pelanggan, atau masalah...; label:Exception Type; label:Tugaskan ke saya; label:Status; text:Cari invoice, pelanggan, atau no jurnal...; label:Baris per halaman 5 10 25 50
 
 ### `/transactions/sales/invoice/new` — Import from Product
 Tidak ada di sidebar (dibuka lewat tombol/link dari halaman lain).
