@@ -110,6 +110,7 @@ export default function CashBankExceptions() {
     const q = search.trim().toLowerCase();
     const start = dateStart ? new Date(dateStart) : null;
     const end = dateEnd ? new Date(dateEnd + 'T23:59:59') : null;
+    const PRIORITY_RANK: Record<string, number> = { High: 0, Medium: 1, Low: 2 };
     return exceptions.filter(e => {
       if (q && !(e.displayId.toLowerCase().includes(q) || e.customer.toLowerCase().includes(q) || e.exception_type.toLowerCase().includes(q))) return false;
       if (severity !== 'all' && e.priority !== severity) return false;
@@ -122,7 +123,7 @@ export default function CashBankExceptions() {
       if (start && d < start) return false;
       if (end && d > end) return false;
       return true;
-    });
+    }).sort((a, b) => (PRIORITY_RANK[a.priority] ?? 99) - (PRIORITY_RANK[b.priority] ?? 99)); // urut: High (paling darurat) -> Medium -> Low; sort stabil, urutan lama dipertahankan dalam prioritas yang sama
   }, [exceptions, search, severity, typeFilter, sourceFilter, customerFilter, assignedFilter, dateStart, dateEnd]);
 
   const [pageSize, setPageSize] = useState(10);
@@ -265,107 +266,104 @@ export default function CashBankExceptions() {
         ))}
       </div>
 
-      {/* Filters -- baris terpisah di atas tabel, sama dengan Purchase Transaction (FilterSelect elegant) */}
-      <div className="card relative px-0 pb-0 pt-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <FilterSelect
-            variant="elegant"
-            value={severity}
-            onChange={v => { setSeverity(v); setCurrentPage(1); }}
-            options={[
-              { value: 'all', label: t('All Severity') },
-              { value: 'High', label: t('High') },
-              { value: 'Medium', label: t('Medium') },
-              { value: 'Low', label: t('Low') },
-            ]}
-          />
-          <FilterSelect
-            variant="elegant"
-            value={typeFilter}
-            onChange={v => { setTypeFilter(v); setCurrentPage(1); }}
-            options={[{ value: 'all', label: t('All Exception Types') }, ...EXCEPTION_TYPES.map(type => ({ value: type, label: t(type) }))]}
-          />
-          <FilterSelect
-            variant="elegant"
-            value={sourceFilter}
-            onChange={v => { setSourceFilter(v); setCurrentPage(1); }}
-            options={[
-              { value: 'all', label: t('All Sources') },
-              { value: 'Reconciliation', label: t('Reconciliation') },
-              { value: 'Classification', label: t('Classification') },
-            ]}
-          />
-          <FilterSelect
-            variant="elegant"
-            value={customerFilter}
-            onChange={v => { setCustomerFilter(v); setCurrentPage(1); }}
-            options={[{ value: 'all', label: t('All Counterparties') }, ...CUSTOMERS.map(c => ({ value: c, label: c }))]}
-          />
-          <FilterSelect
-            variant="elegant"
-            value={assignedFilter}
-            onChange={v => { setAssignedFilter(v); setCurrentPage(1); }}
-            options={[
-              { value: 'all', label: t('All Assigned') },
-              { value: 'unassigned', label: t('Unassigned') },
-              { value: 'me', label: t('Assigned to Me') },
-            ]}
-          />
-
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowDatePicker(v => !v)}
-              aria-haspopup="dialog"
-              aria-expanded={showDatePicker}
-              className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-neutral-900 transition-colors ${showDatePicker ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}
-            >
-              <Calendar size={14} className="shrink-0 text-neutral-500" />
-              <span className="truncate max-w-[170px]">
-                {dateStart ? formatTanggalSingkat(dateStart) : t('All dates')}
-                {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
-              </span>
-            </button>
-            {showDatePicker && (
-              <div className="absolute left-0 top-full z-30 mt-1 w-64 space-y-2 rounded-[6px] border border-neutral-300 bg-white p-3 shadow-xl">
-                <div>
-                  <label className="text-[11px] font-semibold text-neutral-600">{t('From')}</label>
-                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="mt-0.5 w-full rounded-md border border-neutral-300 bg-card px-2 py-1.5 text-xs text-neutral-900 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-semibold text-neutral-600">{t('To')}</label>
-                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="mt-0.5 w-full rounded-md border border-neutral-300 bg-card px-2 py-1.5 text-xs text-neutral-900 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
-                </div>
-                <button
-                  onClick={() => { setCurrentPage(1); setShowDatePicker(false); }}
-                  className="w-full rounded-lg border border-blue-600 bg-blue-600 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
-                >
-                  {t('Apply')}
-                </button>
-              </div>
-            )}
-          </div>
-
-          <button onClick={resetFilters} className="text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:underline">{t('Reset')}</button>
-        </div>
-      </div>
-
       {/* Table + Drawer */}
       <div className="flex gap-4 !mt-1">
         {/* Table -- desain sama dengan tabel Source Data Lines (TH_CLS/TR_CLS/TD_CLS), header card sama dengan Purchase Transaction List */}
         <div className="card flex-1 min-w-0 w-full">
-          {/* Header tabel -- sama dengan Purchase Transaction List: judul + "Showing x - y of z", pencarian di kanan */}
-          <div className="flex flex-wrap items-end justify-between gap-3 px-0 pb-3 pt-1 border-b border-border">
-            <div>
-              <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">{t('Exception List')}</h3>
-              <p className="text-sm text-neutral-500 mt-0.5">
-                {filtered.length === 0
-                  ? `${t('Showing')} 0 ${t('of')} ${exceptions.length} ${t('exceptions')}`
-                  : `${t('Showing')} ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} ${t('of')} ${filtered.length} ${t('exceptions')}`}
-              </p>
+          {/* Header + filter bar -- sama dengan Purchase Transaction List: judul kiri, Reset kanan; dropdown filter kiri, kolom cari (400px) kanan */}
+          <div className="flex flex-col gap-3 px-0 py-3 border-b border-border">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">{t('Exception List')}</h3>
+                <p className="text-sm text-neutral-500 mt-0.5">
+                  {filtered.length === 0
+                    ? `${t('Showing')} 0 ${t('of')} ${exceptions.length} ${t('exceptions')}`
+                    : `${t('Showing')} ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} ${t('of')} ${filtered.length} ${t('exceptions')}`}
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button onClick={resetFilters} className="text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:underline">{t('Reset')}</button>
+              </div>
             </div>
-            <div className="ml-auto flex w-full flex-col items-end gap-1.5 sm:w-auto">
-              <div className="relative w-full sm:w-[400px]">
+            <div className="flex flex-wrap items-center gap-2">
+            <FilterSelect
+              variant="elegant"
+              value={severity}
+              onChange={v => { setSeverity(v); setCurrentPage(1); }}
+              options={[
+                { value: 'all', label: t('All Severity') },
+                { value: 'High', label: t('High') },
+                { value: 'Medium', label: t('Medium') },
+                { value: 'Low', label: t('Low') },
+              ]}
+            />
+            <FilterSelect
+              variant="elegant"
+              value={typeFilter}
+              onChange={v => { setTypeFilter(v); setCurrentPage(1); }}
+              options={[{ value: 'all', label: t('All Exception Types') }, ...EXCEPTION_TYPES.map(type => ({ value: type, label: t(type) }))]}
+            />
+            <FilterSelect
+              variant="elegant"
+              value={sourceFilter}
+              onChange={v => { setSourceFilter(v); setCurrentPage(1); }}
+              options={[
+                { value: 'all', label: t('All Sources') },
+                { value: 'Reconciliation', label: t('Reconciliation') },
+                { value: 'Classification', label: t('Classification') },
+              ]}
+            />
+            <FilterSelect
+              variant="elegant"
+              value={customerFilter}
+              onChange={v => { setCustomerFilter(v); setCurrentPage(1); }}
+              options={[{ value: 'all', label: t('All Counterparties') }, ...CUSTOMERS.map(c => ({ value: c, label: c }))]}
+            />
+            <FilterSelect
+              variant="elegant"
+              value={assignedFilter}
+              onChange={v => { setAssignedFilter(v); setCurrentPage(1); }}
+              options={[
+                { value: 'all', label: t('All Assigned') },
+                { value: 'unassigned', label: t('Unassigned') },
+                { value: 'me', label: t('Assigned to Me') },
+              ]}
+            />
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowDatePicker(v => !v)}
+                aria-haspopup="dialog"
+                aria-expanded={showDatePicker}
+                className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-neutral-900 transition-colors ${showDatePicker ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}
+              >
+                <Calendar size={14} className="shrink-0 text-neutral-500" />
+                <span className="truncate max-w-[170px]">
+                  {dateStart ? formatTanggalSingkat(dateStart) : t('All dates')}
+                  {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
+                </span>
+              </button>
+              {showDatePicker && (
+                <div className="absolute left-0 top-full z-30 mt-1 w-64 space-y-2 rounded-[6px] border border-neutral-300 bg-white p-3 shadow-xl">
+                  <div>
+                    <label className="text-[11px] font-semibold text-neutral-600">{t('From')}</label>
+                    <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="mt-0.5 w-full rounded-md border border-neutral-300 bg-card px-2 py-1.5 text-xs text-neutral-900 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-neutral-600">{t('To')}</label>
+                    <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="mt-0.5 w-full rounded-md border border-neutral-300 bg-card px-2 py-1.5 text-xs text-neutral-900 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300" />
+                  </div>
+                  <button
+                    onClick={() => { setCurrentPage(1); setShowDatePicker(false); }}
+                    className="w-full rounded-lg border border-blue-600 bg-blue-600 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+                  >
+                    {t('Apply')}
+                  </button>
+                </div>
+              )}
+            </div>
+              <div className="relative ml-auto w-full sm:w-[400px]">
                 <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
                 <input
                   type="text"

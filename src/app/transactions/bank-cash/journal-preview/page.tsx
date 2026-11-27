@@ -1,14 +1,10 @@
 'use client';
 
 import React from 'react';
-import CashBankTabs from '../components/CashBankTabs';
 import CashBankJournalPreview from '../components/CashBankJournalPreview';
 
+// Tab bar (CashBankTabs) dirender di dalam CashBankJournalPreview supaya tombol
+// Approve All / Post All bisa tampil di baris tab, sama seperti Journal Preview Purchase.
 export default function CashBankJournalPreviewPage() {
-  return (
-    <div className="space-y-5">
-      <CashBankTabs />
-      <CashBankJournalPreview />
-    </div>
-  );
+  return <CashBankJournalPreview />;
 }

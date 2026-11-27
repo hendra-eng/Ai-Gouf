@@ -305,7 +305,7 @@ export function PostedKpiTile({ label, value, sub, pct, pctLabel, icon: Icon }: 
   );
 }
 
-export function SourcePanel({ title, subtitle, leading, action, children, flush = false, onHeaderClick, open = true }: {
+export function SourcePanel({ title, subtitle, leading, action, children, flush = false, onHeaderClick, open = true, compact = false }: {
   title: string;
   subtitle?: React.ReactNode;
   leading?: React.ReactNode;
@@ -317,6 +317,8 @@ export function SourcePanel({ title, subtitle, leading, action, children, flush 
   onHeaderClick?: () => void;
   /** Hanya dipakai panel lipat: kalau false garis bawah header & isi disembunyikan. */
   open?: boolean;
+  /** true = header tipis (hanya judul), dipakai panel pengaturan yang tertutup secara default. */
+  compact?: boolean;
 }) {
   const heading = (
     <div className="flex min-w-0 items-center gap-3 text-left">
@@ -330,7 +332,7 @@ export function SourcePanel({ title, subtitle, leading, action, children, flush 
   return (
     <div className="relative flex flex-col overflow-hidden rounded-xl border border-neutral-300 bg-white shadow-sm">
       <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
-      <div className={`flex items-center justify-between gap-3 bg-neutral-50 px-4 pb-3 pt-4 ${open ? 'border-b border-neutral-300' : ''}`}>
+      <div className={`flex items-center justify-between gap-3 bg-neutral-50 px-4 ${compact ? 'py-2.5' : 'pb-3 pt-4'} ${open ? 'border-b border-neutral-300' : ''}`}>
         {onHeaderClick ? (
           <button type="button" onClick={onHeaderClick} className="min-w-0 flex-1">{heading}</button>
         ) : heading}

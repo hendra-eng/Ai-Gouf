@@ -86,7 +86,8 @@ const tabListCls = '-mb-px flex gap-1 overflow-x-auto';
 const tabCls = (active: boolean) =>
   `group flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm tracking-tight transition-colors ${active ? 'border-neutral-900 font-semibold text-neutral-900' : 'border-transparent font-medium text-neutral-500 hover:border-neutral-300 hover:text-neutral-900'}`;
 
-export default function CashBankTabs() {
+/** `actions` (opsional) = tombol aksi di baris tab sebelah kanan (mis. Approve All / Post All di Journal Preview). */
+export default function CashBankTabs({ actions }: { actions?: React.ReactNode } = {}) {
   const pathname = usePathname();
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
@@ -140,6 +141,7 @@ export default function CashBankTabs() {
             );
           })}
         </nav>
+        {actions && <div className="order-first flex shrink-0 items-center justify-end pt-1 lg:order-none lg:pt-0">{actions}</div>}
       </div>
     </div>
   );

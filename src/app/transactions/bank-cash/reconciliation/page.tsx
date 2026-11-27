@@ -3,11 +3,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { Link2, X, Zap, EyeOff, Database, FileText, Info, Scale, Wand2, Search, Sparkles } from 'lucide-react';
+import { Link2, X, Zap, EyeOff, Database, FileText, Info, Scale, Wand2, Search, Sparkles, ChevronDown } from 'lucide-react';
 import CashBankTabs from '../components/CashBankTabs';
 import NonInvoiceForm from '../components/NonInvoiceForm';
 import BookMatchPanel from '../components/BookMatchPanel';
 import AutoRulesPanel from '../components/AutoRulesPanel';
+import { SourcePanel, ICON_BTN } from '../components/sourceUi';
 import { SalesCardHeader } from '../components/salesStyleKit';
 import { formatIDR } from '../lib/formatMoney';
 import { useBankFeed } from '../context/BankFeedContext';
@@ -56,6 +57,7 @@ function AdjustmentPanel({ settings, ringkasan, akun, onSave }: {
   onSave: (enabled: boolean, limit: number, akun?: Record<string, string | null>) => Promise<unknown>;
 }) {
   const [edit, setEdit] = useState(false);
+  const [terbuka, setTerbuka] = useState(false); // panel tertutup (hanya judul) sampai diklik
   const [limit, setLimit] = useState('');
   const [pilihAkun, setPilihAkun] = useState<Record<string, string>>({});
   const [enabled, setEnabled] = useState(true);
@@ -105,22 +107,33 @@ function AdjustmentPanel({ settings, ringkasan, akun, onSave }: {
   const akunTeks = (a: BcAdjustmentSettings['accounts']['expense']) => (a ? `${kodeAkun(a.code)} · ${a.name}` : null);
 
   return (
-    <div className={`${SUM_CARD} !pt-4`}>
-      <span className={`absolute inset-x-0 top-0 h-0.5 ${akunBelum && settings.enabled ? 'bg-amber-500' : 'bg-blue-600'}`} />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Scale size={14} className="text-neutral-700" />
-          <p className={SUM_LABEL}>Small-difference adjustment</p>
+    <SourcePanel
+      compact
+      title="Small-difference adjustment"
+      leading={<Scale size={15} className="text-neutral-700" />}
+      open={terbuka}
+      onHeaderClick={() => setTerbuka((o) => !o)}
+      action={
+        <div className="flex shrink-0 items-center gap-2">
           <span className={`${PILL} ${settings.enabled ? 'border-emerald-300 bg-emerald-100 text-emerald-800' : 'border-neutral-300 bg-neutral-100 text-neutral-600'}`}>
             {settings.enabled ? 'On' : 'Off'}
           </span>
+          {settings.enabled && akunBelum && (
+            <span className={`${PILL} border-amber-300 bg-amber-50 text-amber-800`}>Setup needed</span>
+          )}
+          <button onClick={() => setTerbuka((o) => !o)} aria-label={terbuka ? 'Collapse' : 'Expand'} className={ICON_BTN}>
+            <ChevronDown size={16} className={`transition-transform ${terbuka ? 'rotate-180' : ''}`} />
+          </button>
         </div>
-        {!edit && (
+      }
+    >
+      {!edit && (
+        <div className="flex justify-end">
           <button onClick={buka} className="text-[11px] font-medium text-neutral-600 underline hover:text-neutral-900">
             Edit settings
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {edit ? (
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
@@ -203,7 +216,7 @@ function AdjustmentPanel({ settings, ringkasan, akun, onSave }: {
           Set the bank adjustment account(s) with <button onClick={buka} className="underline">Edit settings</button> — until then, matching with an adjustment is disabled for the missing type.
         </p>
       )}
-    </div>
+    </SourcePanel>
   );
 }
 
@@ -384,7 +397,12 @@ export default function ReconciliationPage() {
     [mutations, akunAktif],
   );
   const unmatchedMutations = useMemo(() => mutasiAkun.filter((m) => m.status === 'unmatched'), [mutasiAkun]);
-  const matchedMutations = useMemo(() => mutasiAkun.filter((m) => m.status === 'matched'), [mutasiAkun]);
+  // Riwayat rekonsil: tanggal paling awal (Jan) di atas sampai paling akhir (Des) di bawah.
+  const matchedMutations = useMemo(
+    () => mutasiAkun.filter((m) => m.status === 'matched')
+      .sort((x, y) => String(x.date).localeCompare(String(y.date)) || ((x.credit || x.debit) - (y.credit || y.debit))),
+    [mutasiAkun],
+  );
 
   const mutasiTerpilih = useMemo(
     () => unmatchedMutations.find((m) => m.id === selectedMutation) || null,
@@ -394,13 +412,15 @@ export default function ReconciliationPage() {
   // Pencarian baris kiri (keterangan / nominal / tanggal).
   const mutasiTampil = useMemo(() => {
     const q = cariMutasi.trim().toLowerCase();
-    if (!q) return unmatchedMutations;
     const qAngka = q.replace(/[^0-9]/g, '');
-    return unmatchedMutations.filter((m) =>
+    const hasil = !q ? [...unmatchedMutations] : unmatchedMutations.filter((m) =>
       (m.description || '').toLowerCase().includes(q)
       || String(m.date).includes(q)
       || (qAngka.length >= 3 && String(Math.round(m.credit || m.debit)).includes(qAngka)),
     );
+    // Urut nominal: terkecil di atas, terbesar di bawah (seri: tanggal lama dulu).
+    return hasil.sort((x, y) =>
+      ((x.credit || x.debit) - (y.credit || y.debit)) || String(x.date).localeCompare(String(y.date)));
   }, [unmatchedMutations, cariMutasi]);
 
   // Pilihan massal hanya berlaku untuk baris yang masih unmatched & terlihat.
@@ -469,7 +489,9 @@ export default function ReconciliationPage() {
           ? skorInvoice(r, mutasiTerpilih, rankSaran.get(r.id))
           : { skor: r.sisa > 0.005 ? 0 : -500, saran: false, pas: false, refHit: false },
       }));
-    hasil.sort((a, b) => (b.info.skor - a.info.skor) || (a.i - b.i)); // seri: urutan awal (tanggal terbaru)
+    // Ada baris kiri terpilih: invoice yang paling cocok naik ke atas. Selain itu (dan untuk skor seri):
+    // nominal terkecil di atas, terbesar di bawah.
+    hasil.sort((a, b) => (b.info.skor - a.info.skor) || (a.r.total - b.r.total) || (a.r.sisa - b.r.sisa) || (a.i - b.i));
     return hasil;
   }, [daftarInvoice, tampilLunas, cariInvoice, mutasiTerpilih, sisiBarisSesuai, rankSaran]);
 
@@ -1100,7 +1122,7 @@ export default function ReconciliationPage() {
                 </label>
               </div>
               {mutasiTerpilih && sisiBarisSesuai && (
-                <p className="mt-2 text-[11px] text-neutral-500">Sorted by best match to the selected line (suggested, exact amount, invoice no. / party name in the description).</p>
+                <p className="mt-2 text-[11px] text-neutral-500">Sorted by amount (lowest first). When a line is selected, best matches (suggested, exact amount, invoice no. / party name) move to the top.</p>
               )}
             </div>
             {mutasiTerpilih && (

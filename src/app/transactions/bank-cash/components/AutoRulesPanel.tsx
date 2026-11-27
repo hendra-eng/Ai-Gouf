@@ -10,12 +10,12 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Lightbulb, Pencil, Plus, SlidersHorizontal, Trash2, Wand2, Zap } from 'lucide-react';
+import { ChevronDown, Lightbulb, Pencil, Plus, SlidersHorizontal, Trash2, Wand2, Zap } from 'lucide-react';
 import { formatIDR } from '../lib/formatMoney';
 import type { AkunLawan } from '../lib/useBankReconciliation';
 import type { BcAutoRule, BcAutoRuleInput, BcAutoRuleKind, BcAutoRuleSuggestion, BcAutoSettings } from '@/lib/bankCashStore';
 import { kodeAkun } from '@/lib/accountCode';
-import { FilterSelect } from './sourceUi';
+import { FilterSelect, SourcePanel, ICON_BTN } from './sourceUi';
 
 const CARD = 'relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm';
 const LABEL = 'min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600';
@@ -163,6 +163,8 @@ function Saklar({ checked, onChange, disabled, judul, petunjuk, anak }: {
 export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload, pengaturan, onUbahPengaturan, mutasiTerpilih, permintaanBuka, onSave, onDelete, onToggleUpload }: Props) {
   const kartuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const [terbuka, setTerbuka] = useState(false); // panel utama: tertutup (hanya judul) sampai diklik
+  const bukaPanel = () => { setTerbuka(true); setOpen(true); };
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -188,7 +190,7 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
     } else {
       setForm({ ...KOSONG });
     }
-    setOpen(true);
+    bukaPanel();
   };
 
   // Tombol "Rule" di baris mutasi: baris sudah dipilih oleh halaman, jadi form langsung terisi dari baris itu.
@@ -223,7 +225,7 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
       maxAmount: x.max_amount != null ? String(x.max_amount) : '', counterCoaId: x.counter_coa_id,
       category: x.category, counterparty: x.counterparty ?? '',
     });
-    setOpen(true);
+    bukaPanel();
   };
 
   const mulaiUbah = (r: BcAutoRule) => {
@@ -237,7 +239,7 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
       minAmount: r.min_amount != null ? String(r.min_amount) : '', tolerance: r.amount_tolerance != null ? String(r.amount_tolerance) : '',
       priority: String(r.priority ?? 100),
     });
-    setOpen(true);
+    bukaPanel();
   };
 
   const inputDari = (f: FormState): BcAutoRuleInput | null => {
@@ -336,22 +338,29 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
   };
 
   return (
-    <div ref={kartuRef} className={`${CARD} !pt-4`}>
-      <span className="absolute inset-x-0 top-0 h-0.5 bg-blue-600" />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Wand2 size={14} className="text-neutral-700" />
-          <p className={LABEL}>Auto-reconcile — your rules &amp; controls</p>
+    <div ref={kartuRef}>
+    <SourcePanel
+      compact
+      title="Auto-reconcile — your rules & controls"
+      leading={<Wand2 size={15} className="text-neutral-700" />}
+      open={terbuka}
+      onHeaderClick={() => setTerbuka((o) => !o)}
+      action={
+        <div className="flex shrink-0 items-center gap-2">
           <span className={`${PILL} border-neutral-300 bg-neutral-100 text-neutral-700`}>{aktif} active</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={mulaiBaru} className={`${BTN_PRIMARY} inline-flex items-center gap-1`}>
-            <Plus size={12} /> {mutasiTerpilih ? 'Rule from selected line' : 'New rule'}
-          </button>
-          <button onClick={() => setOpen((o) => !o)} className="text-[11px] font-medium text-neutral-600 underline hover:text-neutral-900">
-            {open ? 'Hide' : 'Manage'}
+          <button onClick={() => setTerbuka((o) => !o)} aria-label={terbuka ? 'Collapse' : 'Expand'} className={ICON_BTN}>
+            <ChevronDown size={16} className={`transition-transform ${terbuka ? 'rotate-180' : ''}`} />
           </button>
         </div>
+      }
+    >
+      <div className="flex items-center justify-end gap-2">
+        <button onClick={mulaiBaru} className={`${BTN_PRIMARY} inline-flex items-center gap-1`}>
+          <Plus size={12} /> {mutasiTerpilih ? 'Rule from selected line' : 'New rule'}
+        </button>
+        <button onClick={() => setOpen((o) => !o)} className="text-[11px] font-medium text-neutral-600 underline hover:text-neutral-900">
+          {open ? 'Hide' : 'Manage'}
+        </button>
       </div>
 
       <p className="mt-2 text-[11px] text-neutral-600">
@@ -423,7 +432,7 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
 
       {saran.length > 0 && !open && (
         <button
-          onClick={() => setOpen(true)}
+          onClick={() => bukaPanel()}
           className="mt-2 flex w-full items-center gap-1.5 rounded-lg border border-amber-300 border-l-[3px] border-l-amber-500 bg-amber-50 px-2.5 py-1.5 text-left text-[11px] font-medium text-amber-900 hover:bg-amber-100"
         >
           <Lightbulb size={12} className="shrink-0" />
@@ -671,6 +680,7 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
           )}
         </div>
       )}
+    </SourcePanel>
     </div>
   );
 }

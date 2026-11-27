@@ -280,60 +280,65 @@ export default function PurchaseExceptionsPage() {
           )}
         </SourcePanel>
 
-        {/* Filters -- baris terpisah di atas tabel, sama dengan Sales Exceptions */}
-        <div className="card relative px-0 pb-0 pt-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <FilterSelect
-              variant="elegant"
-              value={severityFilter}
-              onChange={setSeverityFilter}
-              options={['All', 'Critical', 'High', 'Medium', 'Low'].map(v => ({ value: v, label: v === 'All' ? 'All Severity' : v }))}
-            />
-            <FilterSelect
-              variant="elegant"
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={['All', 'Open', 'Under Review', 'Requires Correction', 'Resolved', 'Ignored'].map(v => ({ value: v, label: v === 'All' ? 'All Status' : v }))}
-            />
-            <FilterSelect
-              variant="elegant"
-              value={typeFilter}
-              onChange={setTypeFilter}
-              options={exceptionTypes.map(v => ({ value: v, label: v === 'All' ? 'All Types' : v }))}
-            />
-            <FilterSelect
-              variant="elegant"
-              value={vendorFilter}
-              onChange={setVendorFilter}
-              options={uniqueVendors.map(v => ({ value: v, label: v === 'All' ? 'All Vendors' : v }))}
-            />
-          </div>
-        </div>
-
         {/* Table + Drawer */}
         <div className="flex gap-4">
           {/* Table */}
           <div className="card overflow-hidden flex-1 min-w-0">
-            <div className="flex flex-wrap items-end justify-between gap-3 px-0 pb-3 pt-1 border-b border-border">
-              <div>
-                <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">Purchase Exception List</h3>
-                <p className="text-sm text-neutral-500 mt-0.5">
-                  {filtered.length === 0
-                    ? `Showing 0 of ${purchaseExceptions.length} exceptions`
-                    : `Showing ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} of ${filtered.length} exceptions`}
-                </p>
-              </div>
-              <div className="ml-auto flex w-full flex-col items-end gap-1.5 sm:w-auto">
-                <div className="relative w-full sm:w-[400px]">
-                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    placeholder="Search by purchase ID, vendor, invoice number, exception type..."
-                    className="w-full text-xs border border-neutral-300 rounded-lg pl-9 pr-3 py-1.5 bg-card text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
-                  />
+            {/* Header + filter bar -- sama dengan Purchase Transaction List: judul kiri, Reset kanan; dropdown filter kiri, kolom cari (400px) kanan */}
+            <div className="flex flex-col gap-3 px-0 py-3 border-b border-border">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">Purchase Exception List</h3>
+                  <p className="text-sm text-neutral-500 mt-0.5">
+                    {filtered.length === 0
+                      ? `Showing 0 of ${purchaseExceptions.length} exceptions`
+                      : `Showing ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} of ${filtered.length} exceptions`}
+                  </p>
                 </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    onClick={() => { setSearch(''); setSeverityFilter('All'); setStatusFilter('All'); setTypeFilter('All'); setVendorFilter('All'); setCurrentPage(1); }}
+                    className="text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:underline"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+              <FilterSelect
+                variant="elegant"
+                value={severityFilter}
+                onChange={setSeverityFilter}
+                options={['All', 'Critical', 'High', 'Medium', 'Low'].map(v => ({ value: v, label: v === 'All' ? 'All Severity' : v }))}
+              />
+              <FilterSelect
+                variant="elegant"
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={['All', 'Open', 'Under Review', 'Requires Correction', 'Resolved', 'Ignored'].map(v => ({ value: v, label: v === 'All' ? 'All Status' : v }))}
+              />
+              <FilterSelect
+                variant="elegant"
+                value={typeFilter}
+                onChange={setTypeFilter}
+                options={exceptionTypes.map(v => ({ value: v, label: v === 'All' ? 'All Types' : v }))}
+              />
+              <FilterSelect
+                variant="elegant"
+                value={vendorFilter}
+                onChange={setVendorFilter}
+                options={uniqueVendors.map(v => ({ value: v, label: v === 'All' ? 'All Vendors' : v }))}
+              />
+                  <div className="relative ml-auto w-full sm:w-[400px]">
+                    <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      placeholder="Search by purchase ID, vendor, invoice number, exception type..."
+                      className="w-full text-xs border border-neutral-300 rounded-lg pl-9 pr-3 py-1.5 bg-card text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
+                    />
+                  </div>
               </div>
             </div>
 
