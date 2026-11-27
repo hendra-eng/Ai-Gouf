@@ -1061,9 +1061,33 @@ _RE_RINGKASAN_GABUNG = re.compile("|".join(f"(?P<{k}>{p})" for k, p in _RE_RINGK
 _RE_TOKEN_NILAI = re.compile(r"^\(?-?[\d.,]*\d[\d.,]*\)?-?$")
 
 
+# Tabel ringkasan yang terpotong antar halaman (BRI IBBIZ): label di kaki halaman N, angkanya baru di
+# halaman N+1 setelah baris kepala/kaki halaman. Cari baris angka sampai sejauh ini di bawah label.
+_JENDELA_LINTAS_HALAMAN = 12
+
+
+def _nilai_lintas_halaman(norm: List[str], i: int, label: List[str]) -> Optional[List[str]]:
+    """Baris nilai ringkasan yang terpisah dari barisnya label oleh kepala/kaki halaman (di luar jendela 1-3 baris).
+    Hanya diterima baris yang SEMUA isinya angka dengan jumlah sama dengan jumlah label (kolom non-hitungan harus
+    berbentuk nominal), dan hanya kalau di antara label & baris itu tidak ada baris lain yang memuat nominal
+    (kalau ada, itu isi tabel -- bukan ringkasan)."""
+    if any(_RE_ANGKA_BEBAS.search(x) for x in norm[i + 1: i + 4]):
+        return None
+    for j in range(i + 4, min(i + 1 + _JENDELA_LINTAS_HALAMAN, len(norm))):
+        tok = norm[j].split()
+        if len(tok) == len(label) and all(_RE_TOKEN_NILAI.match(x) for x in tok) and \
+                all(k.startswith("count") or _RE_ANGKA_BEBAS.fullmatch(x) for k, x in zip(label, tok)):
+            return tok
+        if _RE_ANGKA_BEBAS.search(norm[j]):
+            return None
+    return None
+
+
 def _baca_ringkasan_kolom(lines: List[str], fmt: str, ringkasan: Dict[str, Any]) -> None:
     """Ringkasan berbentuk blok kolom: 1 baris berisi >= 2 label tanpa angka, nilainya di
     baris (1-3 baris) di bawahnya dengan jumlah angka yang sama, urutan kiri-ke-kanan.
+    Kalau tabelnya terpotong antar halaman, nilainya dicari lewat kepala/kaki halaman
+    (lihat _nilai_lintas_halaman).
       BRI    : Saldo Awal | Total Transaksi Debet | Total Transaksi Kredit | Saldo Akhir
       Mandiri: Opening Balance | No. of Debit | Total Amount Debited"""
     norm = [re.sub(r"\s+", " ", (t or "").upper()) for t in lines]
@@ -1071,19 +1095,25 @@ def _baca_ringkasan_kolom(lines: List[str], fmt: str, ringkasan: Dict[str, Any])
         label = [m.lastgroup for m in _RE_RINGKASAN_GABUNG.finditer(t)]
         if len(label) < 2 or _RE_ANGKA_BEBAS.search(t):
             continue
+        nilai: Optional[List[str]] = None
         for j in range(i + 1, min(i + 4, len(norm))):
-            nilai = [x for x in norm[j].split() if _RE_TOKEN_NILAI.match(x)]
-            if _RE_RINGKASAN_GABUNG.search(norm[j]) or len(nilai) != len(label):
+            kandidat = [x for x in norm[j].split() if _RE_TOKEN_NILAI.match(x)]
+            if _RE_RINGKASAN_GABUNG.search(norm[j]) or len(kandidat) != len(label):
                 continue
-            for kunci, x in zip(label, nilai):
-                if kunci.startswith("count"):
-                    if x.isdigit():
-                        ringkasan.setdefault(kunci, int(x))
-                    continue
-                v, arah = parse_angka(x, fmt)
-                if v is not None:
-                    ringkasan.setdefault(kunci, -v if kunci in ("opening", "closing") and arah == "debit" else v)
+            nilai = kandidat
             break
+        if nilai is None:
+            nilai = _nilai_lintas_halaman(norm, i, label)
+        if nilai is None:
+            continue
+        for kunci, x in zip(label, nilai):
+            if kunci.startswith("count"):
+                if x.isdigit():
+                    ringkasan.setdefault(kunci, int(x))
+                continue
+            v, arah = parse_angka(x, fmt)
+            if v is not None:
+                ringkasan.setdefault(kunci, -v if kunci in ("opening", "closing") and arah == "debit" else v)
 
 
 def _baca_ringkasan(teks: str, fmt: str, ringkasan: Dict[str, Any]) -> bool:

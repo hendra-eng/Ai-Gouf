@@ -63,7 +63,7 @@ KASUS = [
     ('AADL/JULI/ESTATEMENT_05855779177_202607.pdf', 'words', '6a65c7106a217a494632febf3b4f082cb15a8570ec54ace3a2299c34087b21f0', 'verified', 45, '5855779177', '4348814.00', '4819319.00', '37868337.00', '38338842.00', '2026-07-01', '2026-07-31'),
     ('AADL/JULI/ESTATEMENT_05855820177_202607.pdf', 'words', '6a65c7106a217a494632febf3b4f082cb15a8570ec54ace3a2299c34087b21f0', 'verified', 29, '5855820177', '15426379.00', '33598789.00', '5627590.00', '23800000.00', '2026-07-01', '2026-07-31'),
     ('AADL/JULI/IBIZ_040901001771307_20260701_20260731_1785743917385813073.pdf', 'words', 'a4fb6183c395e851688fdf816e45630e7fa62b10075bc4287efed290f4aff457', 'verified', 174, '040901001771307', '39122146.80', '18717713.80', '124893866.00', '104489433.00', '2026-07-01', '2026-07-31'),
-    ('AADL/JULI/IBIZ_040901017700302_20260701_20260731_1785743927795900723.pdf', 'words', 'a4fb6183c395e851688fdf816e45630e7fa62b10075bc4287efed290f4aff457', 'verified', 45, '040901017700302', None, '642546.60', '12090029.00', '10421671.00', '2026-07-01', '2026-07-31'),
+    ('AADL/JULI/IBIZ_040901017700302_20260701_20260731_1785743927795900723.pdf', 'words', 'a4fb6183c395e851688fdf816e45630e7fa62b10075bc4287efed290f4aff457', 'verified', 45, '040901017700302', '2310904.60', '642546.60', '12090029.00', '10421671.00', '2026-07-01', '2026-07-31'),
     ('AADL/JULI/Rekap Pembayaran Patty cash Omah Soemantri - 2026 (2).xlsx', 'table', '9de012a76cbe55cd901339577493617628c05d5189328a2485dabf943a2ac26a', 'verified', 1424, None, '2290693.00', '977184.00', '327709087.00', '326395578.00', '2025-12-01', '2026-07-31'),
     ('AADL/JULI/Rekapan Pembayaran Patty Cash Putu Soemantri 2026 (2).xlsx', 'table', '908825ef9fb4d264e56d4b10df0df56da41fc731a71d9f05c7ede62634749168', 'verified', 561, None, '138368.00', '3062711.00', '112725657.00', '115650000.00', '2025-12-01', '2026-08-31'),
     ('AADL/JULI/Rekapan Pembayaran Pattycash Kost Kapu Soemantri 2026 (2).xlsx', 'table', '908825ef9fb4d264e56d4b10df0df56da41fc731a71d9f05c7ede62634749168', 'verified', 97, None, '807335.00', '882847.00', '24427118.00', '24502630.00', '2025-12-01', '2026-07-31'),
@@ -92,7 +92,7 @@ KASUS = [
     ('NBM/NBM_BCA 1350838208_202606.csv', 'table', 'f5ae1a529acbe10941098a4b0fefab521a2d1a806ecf14f1f02d660fa798bfc9', 'verified', 344, '1350838208', '19233714.86', '18907777.71', '318567713.55', '318241776.40', '2026-06-01', '2026-06-30'),
     ('NBM/NBM_BCA 1350838208_202607.csv', 'table', 'f5ae1a529acbe10941098a4b0fefab521a2d1a806ecf14f1f02d660fa798bfc9', 'verified', 389, '1350838208', '18907777.71', '9937071.76', '369309933.35', '360339227.40', '2026-07-01', '2026-07-31'),
     ('NBM/NBM_BCA 1350838208_202608.csv', 'table', 'f5ae1a529acbe10941098a4b0fefab521a2d1a806ecf14f1f02d660fa798bfc9', 'verified', 375, '1350838208', '9937071.76', '15800170.32', '398723051.44', '404586150.00', '2026-08-01', '2026-08-31'),
-    ('NBM/NBM_BRI_059001001757302_202606.pdf', 'words', 'a4fb6183c395e851688fdf816e45630e7fa62b10075bc4287efed290f4aff457', 'verified', 82, '059001001757302', None, '12058188.00', '25769232.00', '29112921.00', '2026-06-01', '2026-06-30'),
+    ('NBM/NBM_BRI_059001001757302_202606.pdf', 'words', 'a4fb6183c395e851688fdf816e45630e7fa62b10075bc4287efed290f4aff457', 'verified', 82, '059001001757302', '8714499.00', '12058188.00', '25769232.00', '29112921.00', '2026-06-01', '2026-06-30'),
     ('NBM/NBM_BRI_059001001757302_202607.csv', 'table', 'dd357869ce244a4d0db4986bf71dfe6bcfe176cb030de8d26679c8536a9fcfbf', 'verified', 86, '59001001757302', '12058188.00', '21327737.00', '23535600.00', '32805149.00', '2026-07-01', '2026-07-31'),
     ('NBM/NBM_BRI_059001001757302_202608.csv', 'table', 'dd357869ce244a4d0db4986bf71dfe6bcfe176cb030de8d26679c8536a9fcfbf', 'verified', 85, '59001001757302', '21327737.00', '13270935.00', '41032500.00', '32975698.00', '2026-08-01', '2026-08-31'),
     ('NBM/NBM__BRI_059001001642303_202606.pdf', 'words', 'a4fb6183c395e851688fdf816e45630e7fa62b10075bc4287efed290f4aff457', 'verified', 80, '059001001642303', '44315363.60', '40371281.60', '131272114.00', '127328032.00', '2026-06-01', '2026-06-30'),
@@ -192,6 +192,52 @@ def test_bri_ibbiz_bukan_mandiri():
     """BRI IBBIZ: nama bank hanya di halaman terakhir; transaksi menyebut bank lain."""
     isi, nama = _baca("AADL/JULI/IBIZ_040901001771307_20260701_20260731_1785743917385813073.pdf")
     assert bx.ekstrak_rekening_koran(isi, nama).bank == "BRI"
+
+
+def test_ringkasan_terpotong_antar_halaman_unit():
+    """BRI IBBIZ: label ringkasan di kaki halaman N, angkanya di halaman N+1 (di antaranya kepala/kaki halaman).
+    Tidak butuh dataset."""
+    kepala = ["Created By IBBIZ", "LAPORAN TRANSAKSI FINANSIAL", "STATEMENT OF FINANCIAL TRANSACTION",
+              "Halaman 4 dari 4", "Page 4 of 4"]
+    label = ["Saldo Awal Total Transaksi Debet Total Transaksi Kredit Saldo Akhir",
+             "Opening Balance Total Debit Transaction Total Credit Transaction Closing Balance"]
+    angka = "8,714,499.00 25,769,232.00 29,112,921.00 12,058,188.00"
+    r = {}
+    bx._baca_ringkasan_kolom(label + kepala + [angka, "Terbilang / In Words"], "en", r)
+    assert r == {"opening": Decimal("8714499.00"), "total_debit": Decimal("25769232.00"),
+                 "total_credit": Decimal("29112921.00"), "closing": Decimal("12058188.00")}
+
+    # bentuk lama (angka tepat di bawah label) tetap terbaca
+    r = {}
+    bx._baca_ringkasan_kolom(label + [angka], "en", r)
+    assert r["opening"] == Decimal("8714499.00") and r["closing"] == Decimal("12058188.00")
+
+    # baris lain bernominal di antara label dan baris angka -> itu isi tabel, BUKAN ringkasan
+    r = {}
+    bx._baca_ringkasan_kolom(label + kepala + ["01/07/26 03:40:15 OffUs 1 0.00 2,661,454.00 46,976,817.60", angka], "en", r)
+    assert r == {}
+
+    # baris angka terlalu jauh dari label -> tidak diambil
+    r = {}
+    bx._baca_ringkasan_kolom(label + ["Created By IBBIZ"] * 14 + [angka], "en", r)
+    assert r == {}
+
+    # baris 4 kolom angka bulat (bukan nominal) tidak dianggap ringkasan
+    r = {}
+    bx._baca_ringkasan_kolom(label + kepala + ["1 2 3 4"], "en", r)
+    assert r == {}
+
+
+def test_bri_ibbiz_ringkasan_terpotong_antar_halaman():
+    """NBM BRI 059001001757302 Juni: tabel ringkasan terpotong antar halaman 3/4 -> saldo awal & total resmi
+    harus tetap terbaca, pengecekan footer jalan, dan baris pertama tidak ditandai 'medium'."""
+    isi, nama = _baca("NBM/NBM_BRI_059001001757302_202606.pdf")
+    h = bx.ekstrak_rekening_koran(isi, nama)
+    v = h.validasi
+    assert Decimal(f"{v['opening_balance']:.2f}") == Decimal("8714499.00")
+    assert len(v["checks"]) >= 3 and all(c["ok"] for c in v["checks"])
+    assert v["rows_medium"] == 0 and v["rows_low"] == 0 and v["balance_mismatches"] == 0
+    assert not h.baris[0].catatan
 
 
 def test_pdf_terkunci_password():
