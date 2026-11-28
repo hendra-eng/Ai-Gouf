@@ -365,6 +365,9 @@ def _parse_mandiri(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         c_credit = ((w_("Credit")["x0"] + w_("Credit")["x1"]) / 2) if w_("Credit") else 460
         c_bal = ((w_("Balance")["x0"] + w_("Balance")["x1"]) / 2) if w_("Balance") else 548
         top_hd = hd[0]["top"]
+        # Footer Kopra ("For further questions, visit Kopra by Mandiri Help Center ... Page x of y") tercetak di rentang
+        # kolom Remark; tanpa ini teksnya menempel ke keterangan baris terdekat (baris terakhir tiap halaman).
+        top_footer = min((b[0]["top"] for b in baris if b and "further questions" in _teks(b).lower()), default=None)
         pusat = []  # (y, debit, credit, balance, row_dict)
         rows_halaman: List[Dict[str, Any]] = []
         for b in baris:
@@ -381,6 +384,8 @@ def _parse_mandiri(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
 
         for b in baris:
             for w in b:
+                if top_footer is not None and w["top"] >= top_footer - 1:
+                    continue  # footer halaman, bukan bagian mutasi
                 if w["top"] <= top_hd - 1 and w["x0"] >= x_remark - 5 and w["x0"] < x_ref:
                     # teks tumpahan di ATAS header = lanjutan remark baris terakhir halaman sebelumnya
                     if pusat_baris and w["top"] > 55:
