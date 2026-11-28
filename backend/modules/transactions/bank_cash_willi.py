@@ -66,7 +66,7 @@ except Exception:  # pragma: no cover -- tanpa zoneinfo, _zona_bisnis memakai of
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 
 import db_client as dbc
 from ..api_response import gagal, sukses
@@ -2314,7 +2314,8 @@ def _arah_nominal(m: Any) -> Tuple[str, Decimal]:
 
 
 def _kind(r: Any) -> str:
-    """'account' = catat ke akun lawan (tanpa invoice); 'invoice' = cocokkan ke 1 invoice AR/AP."""
+    """'account' = catat ke akun lawan (tanpa invoice); 'invoice' = cocokkan ke 1 invoice AR/AP;
+    'transfer' = transfer antar akun bank sendiri (akun lawan = akun bank/kas, sisi pasangan ditautkan)."""
     return getattr(r, "kind", None) or "account"
 
 
@@ -2345,9 +2346,13 @@ def _syarat_nominal(r: Any, nominal: Decimal) -> bool:
     if batas_bawah is not None and nominal < _dec(batas_bawah):
         return False
     daftar = _nominal_aturan(r)
-    if _kind(r) == "invoice":
+    if _kind(r) in ("invoice", "transfer"):
+        # Aturan invoice/transfer: nominal boleh dikosongkan (transfer antar rekening nilainya berubah-ubah).
         if r.max_amount is not None and nominal > _dec(r.max_amount):
             return False
+        if _kind(r) == "transfer" and daftar:
+            tol = _dec(getattr(r, "amount_tolerance", None) or 0)
+            return any(abs(nominal - a) <= max(TOLERANSI, tol) for a in daftar)
         return any(abs(nominal - a) <= TOLERANSI for a in daftar) if daftar else True
     if daftar:
         tol = _dec(getattr(r, "amount_tolerance", None) or 0)
@@ -2355,8 +2360,9 @@ def _syarat_nominal(r: Any, nominal: Decimal) -> bool:
     return r.max_amount is not None and nominal <= _dec(r.max_amount)
 
 
-def _aturan_cocok(m: Any, aturan: List[Any], kind: str):
+def _aturan_cocok(m: Any, aturan: List[Any], kind: Any):
     """Semua aturan (urut prioritas) berjenis `kind` yang cocok untuk mutasi: arah, rekening, teks, nominal."""
+    jenis_ok = (kind,) if isinstance(kind, str) else tuple(kind)
     if getattr(m, "auto_rule_skip", False):
         return   # user pernah membatalkan/menghapus/membalik baris ini: tangani manual
     arah, nominal = _arah_nominal(m)
@@ -2364,7 +2370,7 @@ def _aturan_cocok(m: Any, aturan: List[Any], kind: str):
     if nominal <= 0 or not desk:
         return
     for r in aturan:
-        if _kind(r) != kind or r.direction != arah:
+        if _kind(r) not in jenis_ok or r.direction != arah:
             continue
         if r.bank_coa_id and str(r.bank_coa_id) != str(m.bank_coa_id):
             continue
@@ -2403,7 +2409,11 @@ def _aturan_boleh_approve(r: Any) -> bool:
     (nominalnya sudah dikunci ke sisa invoice)."""
     if not getattr(r, "auto_approve", False):
         return False
-    return True if _kind(r) == "invoice" else bool(_nominal_aturan(r))
+    if _kind(r) == "invoice":
+        return True
+    if _kind(r) == "transfer":
+        return bool(getattr(r, "require_pair", True))   # hanya kalau pasangan di akun lawan pasti ada
+    return bool(_nominal_aturan(r))
 
 
 def _approve_otomatis(tx: Any, r: Any, user: Dict[str, Any]) -> bool:
@@ -2430,6 +2440,7 @@ def _aturan_dict(session, r: Any) -> Dict[str, Any]:
         "category": r.category, "counterparty": r.counterparty, "is_active": bool(r.is_active),
         "auto_approve": bool(getattr(r, "auto_approve", False)),
         "kind": _kind(r), "keyword_mode": getattr(r, "keyword_mode", None) or "any",
+        "require_pair": bool(getattr(r, "require_pair", True)),
         "exclude_keywords": getattr(r, "exclude_keywords", None),
         "reference_keywords": getattr(r, "reference_keywords", None),
         "counterparty_keywords": getattr(r, "counterparty_keywords", None),
@@ -2456,7 +2467,10 @@ class AturanRequest(BaseModel):
     # Aturan akun: hanya untuk nominal persis (amounts). Aturan invoice: boleh selalu.
     auto_approve: bool = False
     # [migration 55] jenis aturan & kondisi tambahan
-    kind: str = Field("account", pattern="^(account|invoice)$")
+    kind: str = Field("account", pattern="^(account|invoice|transfer)$")
+    # [migration 65] aturan transfer: true = hanya dicatat kalau baris pasangan di akun lawan SUDAH ada dan pasti
+    # (nominal sama, arah berlawanan, <= 5 hari, tidak ada kandidat lain yang setara). Aman dari salah-pasang.
+    require_pair: bool = True
     keyword_mode: str = Field("any", pattern="^(any|all)$")
     exclude_keywords: Optional[str] = Field(None, max_length=1000)
     reference_keywords: Optional[str] = Field(None, max_length=1000)
@@ -2484,13 +2498,29 @@ def _isi_aturan(session, kid: str, r: Any, p: AturanRequest) -> None:
         if not p.counter_coa_id:
             raise _Gagal("Choose the account this rule records to.")
         _akun(session, kid, str(p.counter_coa_id))
+    elif kind == "transfer":
+        if not (kata or ref or pihak):
+            raise _Gagal("A transfer rule needs at least one keyword, reference or counterparty, so it cannot match every line.")
+        if not p.counter_coa_id:
+            raise _Gagal("Choose the bank account this rule transfers to/from.")
+        _akun_kas(session, kid, str(p.counter_coa_id))
+        if p.bank_coa_id and str(p.bank_coa_id) == str(p.counter_coa_id):
+            raise _Gagal("The transfer account must be different from the bank account this rule is limited to.")
+        if p.auto_approve and not p.require_pair:
+            raise _Gagal("Auto-approve for a transfer rule requires 'only when the matching line exists'.")
     elif not (kata or ref or pihak):
         raise _Gagal("An invoice rule needs at least one keyword, reference or counterparty, so it cannot match every transfer.")
     if batas_bawah and p.max_amount and batas_bawah > p.max_amount:
         raise _Gagal("The minimum amount cannot be above the maximum amount.")
     if p.bank_coa_id:
         _akun_kas(session, kid, str(p.bank_coa_id))
-    r.auto_approve = bool(p.auto_approve) and (bool(nominal) if kind == "account" else True)
+    if kind == "account":
+        r.auto_approve = bool(p.auto_approve) and bool(nominal)
+    elif kind == "transfer":
+        r.auto_approve = bool(p.auto_approve) and bool(getattr(p, "require_pair", True))
+    else:
+        r.auto_approve = bool(p.auto_approve)
+    r.require_pair = bool(getattr(p, "require_pair", True))
     r.name, r.direction, r.keywords = p.name.strip(), p.direction, (p.keywords or "").strip()
     r.kind = kind
     r.keyword_mode = getattr(p, "keyword_mode", None) or "any"
@@ -2503,7 +2533,7 @@ def _isi_aturan(session, kid: str, r: Any, p: AturanRequest) -> None:
     r.amounts = [float(x) for x in nominal] or None
     r.max_amount = _dec(p.max_amount) if p.max_amount else None
     r.bank_coa_id = str(p.bank_coa_id) if p.bank_coa_id else None
-    r.counter_coa_id = str(p.counter_coa_id) if (kind == "account" and p.counter_coa_id) else None
+    r.counter_coa_id = str(p.counter_coa_id) if (kind in ("account", "transfer") and p.counter_coa_id) else None
     r.category = p.category.strip()
     r.counterparty = (p.counterparty or "").strip() or None
     r.is_active = bool(p.is_active)
@@ -2705,6 +2735,7 @@ def _putuskan(m: Any, aturan: List[Any], kandidat: Dict[str, List[Dict[str, Any]
     """Keputusan auto-match untuk 1 mutasi unmatched (tidak menulis apa pun; dipakai preview DAN eksekusi).
 
     jenis: 'invoice_rule' (aturan invoice) | 'invoice' (auto-match bawaan: nominal pas + bukti) | 'rule' (aturan akun)
+           | 'transfer_rule' (aturan transfer antar akun bank sendiri)
            | None (dilewati; `alasan` = low_confidence | invoice_off | no_match).
     `approve` = hasil boleh langsung APPROVED. Baris confidence rendah TIDAK PERNAH auto-approve.
     Urutan: aturan invoice -> auto-match invoice bawaan -> aturan akun. Mutasi yang kandidat invoicenya pasti tidak
@@ -2720,6 +2751,14 @@ def _putuskan(m: Any, aturan: List[Any], kandidat: Dict[str, List[Dict[str, Any]
         if pilihan is not None:
             return {"jenis": "invoice_rule", "rule": r, "pilihan": pilihan, "label": "auto rule",
                     "approve": boleh_approve and _aturan_boleh_approve(r) and pilihan["exact"]}
+
+    # Aturan TRANSFER: perintah eksplisit user (kata kunci + akun bank lawan), jadi didahulukan dari tebakan invoice
+    # bawaan. Memakai saklar "Apply account rules". Pasangan di akun lawan dicari saat eksekusi (butuh session).
+    if setelan["auto_match_rules"]:
+        rt = next(_aturan_cocok(m, aturan, "transfer"), None)
+        if rt is not None:
+            return {"jenis": "transfer_rule", "rule": rt, "label": "auto rule",
+                    "approve": boleh_approve and _aturan_boleh_approve(rt)}
 
     saran = _saran_mutasi(m, kandidat)
     if saran["auto_match"]:
@@ -2755,10 +2794,16 @@ def cocok_aturan_mutasi(client_id: UUID = Query(...), _u: Dict[str, Any] = Depen
         hasil = []
         for m in mutasi:
             d = _putuskan(m, aturan, kandidat, setelan, adj)
-            if d["jenis"] not in ("rule", "invoice_rule"):
+            if d["jenis"] not in ("rule", "invoice_rule", "transfer_rule"):
                 continue
             r = d["rule"]
-            if d["jenis"] == "rule":
+            if d["jenis"] == "transfer_rule":
+                akun = session.get(COA, r.counter_coa_id)
+                pasangan, _ambigu = _cari_pasangan_aturan(session, kid, m, str(r.counter_coa_id))
+                if pasangan is None and getattr(r, "require_pair", True):
+                    continue   # tidak akan dicatat saat Auto-match: pasangan belum ada / ambigu
+                kode, nama = (None, None) if akun is None else (akun.acc_no, f"Transfer · {akun.account_name}" + ("" if pasangan is not None else " (counterpart not uploaded yet)"))
+            elif d["jenis"] == "rule":
                 akun = session.get(COA, r.counter_coa_id)
                 kode, nama = (None, None) if akun is None else (akun.acc_no, akun.account_name)
             else:
@@ -2827,6 +2872,69 @@ def _terapkan_aturan_invoice(session, kid: str, m: Any, r: Any, pilihan: Dict[st
     return tx
 
 
+def _cari_pasangan_aturan(session, kid: str, m: Any, lawan_id: str) -> Tuple[Optional[Any], bool]:
+    """Pasangan SISI LAWAN untuk aturan transfer. Lebih ketat dari _cari_pasangan_transfer (yang dipakai manual):
+    hanya kembali dengan satu pasangan yang PASTI, supaya Auto-match tidak salah memasangkan transfer bernominal sama.
+
+    Pasangan = mutasi unmatched di akun lawan, nominal sama, arah berlawanan, <= JENDELA_HARI_TRANSFER hari,
+    bukan baris confidence rendah dan bukan baris yang pernah dibatalkan user.
+    Ambigu (hasil None, True) kalau: dua kandidat sama dekat, ATAU ada mutasi lain di akun ini (nominal & arah sama)
+    yang sama dekat / lebih dekat ke kandidat itu. Hasil (None, False) = tidak ada pasangan."""
+    nominal = _nominal_mutasi(m)
+    keluar = _dec(m.debit) > 0
+    kolom_lawan = MU.credit if keluar else MU.debit
+    kolom_sendiri = MU.debit if keluar else MU.credit
+    jendela = timedelta(days=JENDELA_HARI_TRANSFER)
+
+    def _kueri(bank_id: str, kolom: Any, pusat: Any) -> List[Any]:
+        return session.query(MU).join(ST, ST.id == MU.statement_id).filter(
+            MU.client_id == kid, MU.deleted_at.is_(None), ST.deleted_at.is_(None), MU.status == "unmatched",
+            MU.auto_rule_skip.is_(False), or_(MU.confidence.is_(None), MU.confidence != "low"),
+            MU.bank_coa_id == bank_id, MU.id != m.id, kolom == nominal,
+            MU.mutation_date >= pusat - jendela, MU.mutation_date <= pusat + jendela,
+        ).all()
+
+    def _jarak(a: Any, b: Any) -> int:
+        return abs((a.mutation_date - b.mutation_date).days)
+
+    kandidat = sorted(_kueri(str(lawan_id), kolom_lawan, m.mutation_date), key=lambda x: (_jarak(x, m), x.line_no or 0))
+    if not kandidat:
+        return None, False
+    if len(kandidat) > 1 and _jarak(kandidat[0], m) == _jarak(kandidat[1], m):
+        return None, True
+    pasangan = kandidat[0]
+    saingan = _kueri(str(m.bank_coa_id), kolom_sendiri, pasangan.mutation_date)
+    if any(_jarak(x, pasangan) <= _jarak(m, pasangan) for x in saingan):
+        return None, True
+    return pasangan, False
+
+
+def _terapkan_transfer(session, kid: str, m: Any, r: Any, user: Dict[str, Any]) -> Any:
+    """Aturan transfer: SATU jurnal transfer (sama dengan POST /mutations/{id}/transfer), sisi lawan ditautkan ke
+    jurnal yang sama tanpa jurnal baru. Kalau `require_pair` dan pasangan belum ada / ambigu -> _Gagal (baris
+    dilewati, tetap unmatched untuk direview manual)."""
+    if not r.counter_coa_id:
+        raise _Gagal("Transfer rule has no bank account.")
+    lawan = _akun_kas(session, kid, str(r.counter_coa_id))
+    if str(lawan.id) == str(m.bank_coa_id):
+        raise _Gagal("Choose a different bank account for the transfer.")
+    pasangan, ambigu = _cari_pasangan_aturan(session, kid, m, str(lawan.id))
+    if ambigu:
+        raise _Gagal("More than one possible counterpart line; left for manual review.")
+    if pasangan is None and getattr(r, "require_pair", True):
+        raise _Gagal("Counterpart line not found in the other bank account yet.")
+    nominal = _nominal_mutasi(m)
+    ket = f"{m.description or ''} [Auto rule: {r.name}]".strip()[:2000]
+    tx = _buat_tx_dari_mutasi(
+        session, kid, m, [BarisIn(type="account", coa_id=lawan.id, amount=float(nominal))], user,
+        kategori=KATEGORI_TRANSFER, pihak=None, deskripsi=ket)
+    if pasangan is not None:
+        _pasangkan(pasangan, tx, user)
+    r.usage_count = (r.usage_count or 0) + 1
+    r.last_used_at = _sekarang()
+    return tx
+
+
 def _jalankan_auto_match(session, kid: str, user: Dict[str, Any], bank_coa_id: Optional[str] = None) -> Dict[str, Any]:
     # [BARU] bank_coa_id (opsional): batasi ke mutasi satu akun bank (dropdown akun di tab Reconciliation).
     # Kosong = semua akun (dipakai auto-match setelah upload / setelah invoice diposting).
@@ -2843,6 +2951,8 @@ def _jalankan_auto_match(session, kid: str, user: Dict[str, Any], bank_coa_id: O
     cocok, cocok_aturan = [], []
     dilewati = disetujui = rendah_lewat = rendah_cocok = mati = 0
     for m in mutasi:
+        if m.status != "unmatched":
+            continue   # sudah ditautkan sebagai pasangan transfer oleh baris sebelumnya di putaran ini
         d = _putuskan(m, aturan, kandidat, setelan, adj)
         jenis = d["jenis"]
         if jenis is None:
@@ -2865,6 +2975,8 @@ def _jalankan_auto_match(session, kid: str, user: Dict[str, Any], bank_coa_id: O
                 elif jenis == "invoice_rule":
                     faktur = [a["invoice_no"] for a in d["pilihan"]["allocations"]]
                     tx = _terapkan_aturan_invoice(session, kid, m, d["rule"], d["pilihan"], user)
+                elif jenis == "transfer_rule":
+                    tx = _terapkan_transfer(session, kid, m, d["rule"], user)
                 else:
                     tx = _terapkan_aturan(session, kid, m, d["rule"], user)
                 setuju = bool(d["approve"]) and tx.status == "draft"
@@ -2881,7 +2993,7 @@ def _jalankan_auto_match(session, kid: str, user: Dict[str, Any], bank_coa_id: O
             cocok_aturan.append({"mutation_id": m.id, "tx_number": tx.tx_number, "rule_id": d["rule"].id,
                                  "rule_name": d["rule"].name, "kind": _kind(d["rule"]), "invoices": faktur,
                                  "auto_approved": setuju})
-        if jenis != "rule":
+        if jenis in ("invoice", "invoice_rule"):
             kandidat = _kandidat_invoice(session, kid)   # sisa tagihan berubah -> hitung ulang
     return {"matched": cocok, "rule_matched": cocok_aturan, "skipped": dilewati, "low_confidence_skipped": rendah_lewat,
             "low_confidence_matched": rendah_cocok, "skipped_by_setting": mati, "auto_approved": disetujui}
@@ -3913,4 +4025,4 @@ def overview(client_id: UUID = Query(...), year: Optional[int] = Query(None, ge=
             "mutations": {"unmatched": int(mutasi.get("unmatched", 0)), "matched": int(mutasi.get("matched", 0)),
                           "ignored": int(mutasi.get("ignored", 0))},
         }
-    return _respon(aksi)
+    return _respon(aksi)

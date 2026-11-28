@@ -443,8 +443,11 @@ export interface BcAutoRule {
   counterparty: string | null;
   is_active: boolean;
   auto_approve: boolean;
-  /** 'account' = catat ke akun lawan (tanpa invoice) | 'invoice' = cocokkan ke 1 invoice AR/AP. */
+  /** 'account' = catat ke akun lawan (tanpa invoice) | 'invoice' = cocokkan ke 1 invoice AR/AP
+   *  | 'transfer' = transfer antar akun bank sendiri (counter_coa_id = akun bank/kas lawan). */
   kind: BcAutoRuleKind;
+  /** Aturan transfer: true = hanya dicatat kalau baris pasangan di akun lawan sudah ada dan pasti. */
+  require_pair: boolean;
   /** 'any' = salah satu kata kunci cukup | 'all' = semua kata kunci harus ada. */
   keyword_mode: 'any' | 'all';
   exclude_keywords: string | null;
@@ -459,7 +462,7 @@ export interface BcAutoRule {
   last_used_at: string | null;
 }
 
-export type BcAutoRuleKind = 'account' | 'invoice';
+export type BcAutoRuleKind = 'account' | 'invoice' | 'transfer';
 
 export interface BcAutoRuleInput {
   name: string;
@@ -476,6 +479,8 @@ export interface BcAutoRuleInput {
   /** Hasil aturan langsung APPROVED (Post tetap manual). Aturan akun: hanya valid kalau `amounts` diisi. */
   auto_approve?: boolean;
   kind?: BcAutoRuleKind;
+  /** Aturan transfer: hanya catat kalau baris pasangan di akun lawan sudah ada (default true). */
+  require_pair?: boolean;
   keyword_mode?: 'any' | 'all';
   exclude_keywords?: string | null;
   reference_keywords?: string | null;

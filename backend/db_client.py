@@ -1873,7 +1873,8 @@ class BankCashAutoRule(Base):
     __table_args__ = (
         Index("idx_bank_cash_auto_rules_client", "client_id"),
         CheckConstraint("direction IN ('payment', 'receipt')", name="ck_bank_cash_auto_rule_direction"),
-        CheckConstraint("amounts IS NOT NULL OR max_amount IS NOT NULL OR kind = 'invoice'", name="ck_bank_cash_auto_rule_nominal"),
+        CheckConstraint("amounts IS NOT NULL OR max_amount IS NOT NULL OR kind IN ('invoice', 'transfer')", name="ck_bank_cash_auto_rule_nominal"),
+        CheckConstraint("kind IN ('account', 'invoice', 'transfer')", name="ck_bank_cash_auto_rule_kind"),
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -1891,7 +1892,8 @@ class BankCashAutoRule(Base):
     # [migration 54] true = hasil aturan ini langsung APPROVED (Post tetap manual). Hanya untuk `amounts` persis.
     auto_approve = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     # [migration 55] Kondisi tambahan & jenis aturan.
-    #  kind: 'account' = catat ke akun lawan (tanpa invoice) | 'invoice' = cocokkan ke 1 invoice AR/AP.
+    #  kind: 'account' = catat ke akun lawan (tanpa invoice) | 'invoice' = cocokkan ke 1 invoice AR/AP
+    #        | 'transfer' = [migration 65] transfer antar akun bank sendiri (counter_coa_id = akun bank/kas lawan).
     #  keyword_mode: 'any' = salah satu kata kunci cukup, 'all' = semua kata kunci harus ada.
     #  exclude_keywords: kalau salah satu ada di keterangan, aturan TIDAK berlaku.
     #  reference_keywords: nomor/pola referensi yang harus ada di keterangan (salah satu).
@@ -1907,6 +1909,8 @@ class BankCashAutoRule(Base):
     min_amount = Column(Numeric(24, 2), nullable=True)
     amount_tolerance = Column(Numeric(24, 2), nullable=True)
     priority = Column(Integer, nullable=False, default=100, server_default=text("100"))
+    # [migration 65] Aturan transfer: true = hanya dicatat kalau baris pasangan di akun lawan sudah ada & pasti.
+    require_pair = Column(Boolean, nullable=False, default=True, server_default=text("true"))
     usage_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
     last_used_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
@@ -9144,4 +9148,4 @@ class ManagementPayrollRun(Base):
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
     created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
-    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)

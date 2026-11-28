@@ -3,8 +3,9 @@
 // Panel "Auto-reconcile" di tab Reconciliation. Accounting mengatur sendiri apa yang di-auto-rekonsil (gaya Jurnal.id):
 //  - Saklar per jenis: match invoice uang masuk (AR), match invoice uang keluar (AP), aturan tanpa invoice,
 //    auto-approve hasil match invoice, dan baris confidence rendah.
-//  - Aturan buatan sendiri, masing-masing bisa di-on/off: aturan AKUN (biaya admin, bunga: dicatat ke akun lawan) dan
-//    aturan INVOICE (cocokkan ke 1 invoice AR/AP; syarat pihak/referensi/toleransi selisih).
+//  - Aturan buatan sendiri, masing-masing bisa di-on/off: aturan AKUN (biaya admin, bunga: dicatat ke akun lawan),
+//    aturan INVOICE (cocokkan ke 1 invoice AR/AP; syarat pihak/referensi/toleransi selisih) dan aturan TRANSFER
+//    (transfer antar rekening bank sendiri, mis. BCA -> BRI: satu jurnal, baris pasangan di akun lawan ditautkan).
 // Hasil auto-match = transaksi DRAFT, atau APPROVED kalau auto-approve menyala. POST selalu manual di Journal Preview.
 // Backend: /api/v1/transactions/bank-cash/auto-rules & /auto-settings (modules/transactions/bank_cash_willi.py).
 
@@ -57,6 +58,7 @@ interface FormState {
   isActive: boolean;
   autoApprove: boolean;
   kind: BcAutoRuleKind;
+  requirePair: boolean;
   keywordMode: 'any' | 'all';
   excludeKeywords: string;
   referenceKeywords: string;
@@ -69,7 +71,7 @@ interface FormState {
 const KOSONG: FormState = {
   name: '', direction: 'payment', keywords: '', amounts: '', maxAmount: '', bankCoaId: '', counterCoaId: '',
   category: 'Bank admin fee', counterparty: '', isActive: true, autoApprove: false,
-  kind: 'account', keywordMode: 'any', excludeKeywords: '', referenceKeywords: '', counterpartyKeywords: '',
+  kind: 'account', requirePair: true, keywordMode: 'any', excludeKeywords: '', referenceKeywords: '', counterpartyKeywords: '',
   minAmount: '', tolerance: '', priority: '100',
 };
 
@@ -117,11 +119,13 @@ const kataTeks = (t: string | null, sambung = ' or ') => daftarKata(t).map((x) =
 const nominalTeks = (r: BcAutoRule) => {
   const bagian: string[] = [];
   if (r.amounts.length) {
-    bagian.push(r.amounts.map((a) => formatIDR(a)).join(' / ') + (r.kind === 'account' && r.amount_tolerance ? ` (±${formatIDR(r.amount_tolerance)})` : ''));
+    bagian.push(r.amounts.map((a) => formatIDR(a)).join(' / ') + (r.kind !== 'invoice' && r.amount_tolerance ? ` (±${formatIDR(r.amount_tolerance)})` : ''));
   } else if (r.min_amount != null || r.max_amount != null) {
     bagian.push(`${r.min_amount != null ? `${formatIDR(r.min_amount)} ` : ''}${r.min_amount != null && r.max_amount != null ? '–' : '≤'} ${r.max_amount != null ? formatIDR(r.max_amount) : ''}`.replace(/\s+/g, ' ').trim());
   } else if (r.kind === 'invoice') {
     bagian.push('any amount that fits an invoice');
+  } else if (r.kind === 'transfer') {
+    bagian.push('any amount');
   } else {
     bagian.push('—');
   }
@@ -141,7 +145,9 @@ const syaratTeks = (r: BcAutoRule) => {
 };
 
 const tujuanTeks = (r: BcAutoRule) =>
-  r.kind === 'invoice'
+  r.kind === 'transfer'
+    ? `→ transfer ${r.direction === 'payment' ? 'to' : 'from'} ${r.counter_account_code ? kodeAkun(r.counter_account_code) : '?'} ${r.counter_account_name ?? ''}${r.require_pair ? ' (needs the counterpart line)' : ''}`
+    : r.kind === 'invoice'
     ? `→ matched to the open ${r.direction === 'payment' ? 'Purchase' : 'Sales'} invoice${r.amount_tolerance ? ` (difference up to ${formatIDR(r.amount_tolerance)} closed by adjustment)` : ''}`
     : `→ ${r.counter_account_code ? kodeAkun(r.counter_account_code) : '?'} ${r.counter_account_name ?? ''}`;
 
@@ -234,7 +240,7 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
       amounts: r.amounts.join('; '), maxAmount: r.max_amount != null ? String(r.max_amount) : '',
       bankCoaId: r.bank_coa_id ?? '', counterCoaId: r.counter_coa_id ?? '', category: r.category,
       counterparty: r.counterparty ?? '', isActive: r.is_active, autoApprove: r.auto_approve,
-      kind: r.kind ?? 'account', keywordMode: r.keyword_mode ?? 'any', excludeKeywords: r.exclude_keywords ?? '',
+      kind: r.kind ?? 'account', requirePair: r.require_pair ?? true, keywordMode: r.keyword_mode ?? 'any', excludeKeywords: r.exclude_keywords ?? '',
       referenceKeywords: r.reference_keywords ?? '', counterpartyKeywords: r.counterparty_keywords ?? '',
       minAmount: r.min_amount != null ? String(r.min_amount) : '', tolerance: r.amount_tolerance != null ? String(r.amount_tolerance) : '',
       priority: String(r.priority ?? 100),
@@ -244,6 +250,7 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
 
   const inputDari = (f: FormState): BcAutoRuleInput | null => {
     const invoice = f.kind === 'invoice';
+    const transfer = f.kind === 'transfer';
     const amounts = invoice ? [] : bacaNominal(f.amounts);
     if (amounts === null) { toast.error('Amounts could not be read. Use e.g. 2.500; 6.500'); return null; }
     const max = f.maxAmount.trim() ? bacaNominal(f.maxAmount) : [];
@@ -259,10 +266,10 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
       name: f.name.trim(), direction: f.direction, keywords: f.keywords.trim(),
       amounts: amounts.length ? amounts : null, max_amount: max.length ? max[0] : null,
       bank_coa_id: f.bankCoaId || null, counter_coa_id: invoice ? null : f.counterCoaId,
-      category: f.category.trim() || (invoice ? 'Invoice settlement' : 'Bank admin fee'), counterparty: f.counterparty.trim() || null,
+      category: transfer ? 'Transfer between accounts' : f.category.trim() || (invoice ? 'Invoice settlement' : 'Bank admin fee'), counterparty: f.counterparty.trim() || null,
       is_active: f.isActive,
-      auto_approve: invoice ? f.autoApprove : f.autoApprove && amounts.length > 0 && !max.length,
-      kind: f.kind, keyword_mode: f.keywordMode,
+      auto_approve: invoice ? f.autoApprove : transfer ? f.autoApprove && f.requirePair : f.autoApprove && amounts.length > 0 && !max.length,
+      kind: f.kind, require_pair: f.requirePair, keyword_mode: f.keywordMode,
       exclude_keywords: f.excludeKeywords.trim() || null, reference_keywords: f.referenceKeywords.trim() || null,
       counterparty_keywords: f.counterpartyKeywords.trim() || null,
       min_amount: min, amount_tolerance: tol, priority: prioritas,
@@ -278,6 +285,16 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
     if (form.kind === 'invoice' && (!form.name.trim() || !(form.keywords.trim() || form.referenceKeywords.trim() || form.counterpartyKeywords.trim()))) {
       toast.error('Name and at least one keyword, reference or counterparty are required, so the rule cannot match every transfer.');
       return;
+    }
+    if (form.kind === 'transfer') {
+      if (!form.name.trim() || !form.counterCoaId || !(form.keywords.trim() || form.referenceKeywords.trim() || form.counterpartyKeywords.trim())) {
+        toast.error('Name, the other bank account and at least one keyword, reference or counterparty are required.');
+        return;
+      }
+      if (form.bankCoaId && form.bankCoaId === form.counterCoaId) {
+        toast.error('The transfer account must be different from the bank account this rule is limited to.');
+        return;
+      }
     }
     const input = inputDari(form);
     if (!input) return;
@@ -300,7 +317,7 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
         amounts: r.amounts.length ? r.amounts : null, max_amount: r.max_amount,
         bank_coa_id: r.bank_coa_id, counter_coa_id: r.counter_coa_id, category: r.category,
         counterparty: r.counterparty, is_active: !r.is_active, auto_approve: r.auto_approve,
-        kind: r.kind, keyword_mode: r.keyword_mode, exclude_keywords: r.exclude_keywords,
+        kind: r.kind, require_pair: r.require_pair, keyword_mode: r.keyword_mode, exclude_keywords: r.exclude_keywords,
         reference_keywords: r.reference_keywords, counterparty_keywords: r.counterparty_keywords,
         min_amount: r.min_amount, amount_tolerance: r.amount_tolerance, priority: r.priority,
       }, r.id);
@@ -366,7 +383,8 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
       <p className="mt-2 text-[11px] text-neutral-600">
         You decide what is reconciled automatically. Turn each type on or off below and add your own rules:
         account rules record recurring lines without an invoice (bank admin fees such as 2.500 / 6.500, interest) to the account you choose;
-        invoice rules match a transfer to one AR/AP invoice using the customer/vendor, a reference or an allowed difference.
+        invoice rules match a transfer to one AR/AP invoice using the customer/vendor, a reference or an allowed difference;
+        transfer rules record a move between your own bank accounts (e.g. BCA → BRI) as one journal and link the matching line in the other account, so nothing is booked twice.
         Auto-match runs{autoSetelahUpload ? ' automatically after each upload and invoice posting, or when you press Auto-match' : ' when you press Auto-match'}.
         Results are saved as DRAFT journals (or APPROVED where you turned on Auto-approve); Post is always manual. Tip: press “Rule” on a line below to start a rule from it.
       </p>
@@ -408,7 +426,7 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
               checked={pengaturan.auto_match_rules}
               onChange={(v) => ubahPengaturan({ auto_match_rules: v }, v ? 'Account rules are on.' : 'Account rules are off. Lines without an invoice stay for manual review.')}
               judul="Apply account rules (lines without an invoice)"
-              petunjuk="Bank admin fees, interest, tax. Each rule below can also be turned on or off on its own."
+              petunjuk="Bank admin fees, interest, tax and transfers between your own accounts. Each rule below can also be turned on or off on its own."
             />
             <Saklar
               checked={pengaturan.auto_include_low_confidence}
@@ -486,7 +504,7 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
                         {r.direction === 'payment' ? 'Out' : 'In'}
                       </span>
                       <span className={`${PILL} ml-1 !py-0 border-neutral-300 bg-neutral-100 text-neutral-700`}>
-                        {r.kind === 'invoice' ? 'Invoice rule' : 'Account rule'}
+                        {r.kind === 'invoice' ? 'Invoice rule' : r.kind === 'transfer' ? 'Transfer rule' : 'Account rule'}
                       </span>
                       {r.auto_approve && (
                         <span className={`${PILL} ml-1 !py-0 border-amber-300 bg-amber-100 text-amber-900`}>Auto-approve</span>
@@ -516,17 +534,18 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
                   <label className={FIELD_LABEL}>What should this rule do?</label>
                   <FilterSelect
                     value={form.kind}
-                    onChange={(v) => set({ kind: v as BcAutoRuleKind, autoApprove: false })}
+                    onChange={(v) => set({ kind: v as BcAutoRuleKind, autoApprove: false, counterCoaId: '' })}
                     size="sm" className="w-full !text-xs" menuMaxWidth={640}
                     options={[
                       { value: 'account', label: 'Record the line to an account — no invoice (bank fee, interest, tax, …)' },
                       { value: 'invoice', label: 'Match the line to an AR/AP invoice (customer or vendor payments)' },
+                      { value: 'transfer', label: 'Transfer between my own bank accounts (e.g. BCA → BRI) — pairs both sides' },
                     ]}
                   />
                 </div>
                 <div>
                   <label className={FIELD_LABEL}>Rule name</label>
-                  <input className={INPUT} value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={form.kind === 'invoice' ? 'PT Sinar Jaya payments' : 'Bank admin fee'} />
+                  <input className={INPUT} value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={form.kind === 'invoice' ? 'PT Sinar Jaya payments' : form.kind === 'transfer' ? 'BCA → BRI 642303' : 'Bank admin fee'} />
                 </div>
                 <div>
                   <label className={FIELD_LABEL}>Direction</label>
@@ -535,13 +554,13 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
                     onChange={(v) => set({ direction: v as 'payment' | 'receipt' })}
                     size="sm" className="w-full !text-xs" menuMaxWidth={520}
                     options={[
-                      { value: 'payment', label: form.kind === 'invoice' ? 'Money out (debit) — Purchase invoices' : 'Money out (debit) — fees, tax' },
-                      { value: 'receipt', label: form.kind === 'invoice' ? 'Money in (credit) — Sales invoices' : 'Money in (credit) — interest' },
+                      { value: 'payment', label: form.kind === 'invoice' ? 'Money out (debit) — Purchase invoices' : form.kind === 'transfer' ? 'Money out (debit) — this account sends' : 'Money out (debit) — fees, tax' },
+                      { value: 'receipt', label: form.kind === 'invoice' ? 'Money in (credit) — Sales invoices' : form.kind === 'transfer' ? 'Money in (credit) — this account receives' : 'Money in (credit) — interest' },
                     ]}
                   />
                 </div>
                 <div>
-                  <label className={FIELD_LABEL}>Only for bank account (optional)</label>
+                  <label className={FIELD_LABEL}>{form.kind === 'transfer' ? 'From bank account (optional)' : 'Only for bank account (optional)'}</label>
                   <FilterSelect
                     value={form.bankCoaId}
                     onChange={(v) => set({ bankCoaId: v })}
@@ -556,9 +575,9 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div className="sm:col-span-2">
                     <label className={FIELD_LABEL}>
-                      Keywords in the description (separate with , or ;){form.kind === 'invoice' ? ' — optional' : ''}
+                      Keywords in the description (separate with , or ;){form.kind !== 'account' ? ' — optional' : ''}
                     </label>
-                    <input className={INPUT} value={form.keywords} onChange={(e) => set({ keywords: e.target.value })} placeholder="biaya adm; adm fee" />
+                    <input className={INPUT} value={form.keywords} onChange={(e) => set({ keywords: e.target.value })} placeholder={form.kind === 'transfer' ? 'bri 642303; pemindahbukuan' : 'biaya adm; adm fee'} />
                   </div>
                   <div>
                     <label className={FIELD_LABEL}>Keyword match</label>
@@ -574,9 +593,9 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
                   </div>
                   <div className="sm:col-span-2">
                     <label className={FIELD_LABEL}>
-                      {form.kind === 'invoice' ? 'Customer / vendor name (only invoices of this party are matched)' : 'Counterparty name in the description (optional)'}
+                      {form.kind === 'invoice' ? 'Customer / vendor name (only invoices of this party are matched)' : form.kind === 'transfer' ? 'Name / account no. of the other account in the description (optional)' : 'Counterparty name in the description (optional)'}
                     </label>
-                    <input className={INPUT} value={form.counterpartyKeywords} onChange={(e) => set({ counterpartyKeywords: e.target.value })} placeholder={form.kind === 'invoice' ? 'sinar jaya' : 'e.g. bca'} />
+                    <input className={INPUT} value={form.counterpartyKeywords} onChange={(e) => set({ counterpartyKeywords: e.target.value })} placeholder={form.kind === 'invoice' ? 'sinar jaya' : form.kind === 'transfer' ? '642303' : 'e.g. bca'} />
                   </div>
                   <div>
                     <label className={FIELD_LABEL}>Reference no. in the description (optional)</label>
@@ -586,9 +605,9 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
                     <label className={FIELD_LABEL}>Never apply when the description contains (optional)</label>
                     <input className={INPUT} value={form.excludeKeywords} onChange={(e) => set({ excludeKeywords: e.target.value })} placeholder="reversal; koreksi" />
                   </div>
-                  {form.kind === 'account' && (
+                  {form.kind !== 'invoice' && (
                     <div>
-                      <label className={FIELD_LABEL}>Exact amounts (e.g. 2.500; 6.500)</label>
+                      <label className={FIELD_LABEL}>Exact amounts (e.g. 2.500; 6.500){form.kind === 'transfer' ? ' — optional' : ''}</label>
                       <input className={INPUT} value={form.amounts} onChange={(e) => set({ amounts: e.target.value })} placeholder="2.500; 6.500" />
                     </div>
                   )}
@@ -606,7 +625,34 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
               <div className="space-y-2 rounded-md border border-neutral-200 bg-white p-2.5">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-600">…then</p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  {form.kind === 'account' ? (
+                  {form.kind === 'transfer' ? (
+                    <>
+                      <div className="sm:col-span-2">
+                        <label className={FIELD_LABEL}>{form.direction === 'payment' ? 'Transfer to bank account' : 'Transfer from bank account'}</label>
+                        <FilterSelect
+                          value={form.counterCoaId}
+                          onChange={(v) => set({ counterCoaId: v })}
+                          size="sm" className="w-full !text-xs" menuMaxWidth={520}
+                          options={[{ value: '', label: 'Select bank account…' }, ...akunBank.filter((a) => a.id !== form.bankCoaId).map((a) => ({ value: a.id, label: label(a) }))]}
+                        />
+                      </div>
+                      <div>
+                        <label className={FIELD_LABEL}>Amount tolerance ± (optional)</label>
+                        <input className={INPUT} value={form.tolerance} onChange={(e) => set({ tolerance: e.target.value })} placeholder="Applies to exact amounts" />
+                      </div>
+                      <div className="sm:col-span-3">
+                        <label className="flex items-start gap-1.5 text-[11px] text-neutral-800">
+                          <input type="checkbox" className="mt-0.5" checked={form.requirePair} onChange={(e) => set({ requirePair: e.target.checked, autoApprove: e.target.checked ? form.autoApprove : false })} />
+                          <span>
+                            Only record when the matching line already exists in the other account (recommended).
+                            <span className="block text-neutral-500">
+                              Same amount, opposite direction, within 5 days, and no other line that fits equally well. Otherwise the line stays for manual review, so a transfer is never paired wrongly. Untick it to record the transfer even before the other statement is uploaded (the other side is then paired when you upload it).
+                            </span>
+                          </span>
+                        </label>
+                      </div>
+                    </>
+                  ) : form.kind === 'account' ? (
                     <>
                       <div className="sm:col-span-2">
                         <label className={FIELD_LABEL}>Record to account</label>
@@ -652,7 +698,7 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
                 )}
               </div>
               {(() => {
-                const nominalPersis = form.kind === 'invoice' || ((bacaNominal(form.amounts) ?? []).length > 0 && !form.maxAmount.trim());
+                const nominalPersis = form.kind === 'invoice' || (form.kind === 'transfer' ? form.requirePair : (bacaNominal(form.amounts) ?? []).length > 0 && !form.maxAmount.trim());
                 return (
                   <label className={`flex items-start gap-1.5 text-[11px] ${nominalPersis ? 'text-neutral-800' : 'text-neutral-400'}`}>
                     <input
@@ -663,14 +709,15 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
                     <span>
                       Auto-approve results of this rule (skip the Approve step; Post stays manual).
                       {form.kind === 'invoice' && ' Not applied when the line needed an adjustment.'}
-                      {!nominalPersis && ' Only available with exact amounts and no maximum amount.'}
+                      {form.kind === 'transfer' && ' Only applied when the counterpart line was found.'}
+                      {!nominalPersis && (form.kind === 'transfer' ? ' Only available when the counterpart line is required.' : ' Only available with exact amounts and no maximum amount.')}
                     </span>
                   </label>
                 );
               })()}
               <p className="text-[11px] text-neutral-500">
                 A line matches only when its direction, conditions and amount all fit.
-                {form.kind === 'account' ? ' Exact amounts (or a maximum) are required so the rule can never swallow a large transaction.' : ' At least one keyword, reference or customer/vendor name is required.'}
+                {form.kind === 'account' ? ' Exact amounts (or a maximum) are required so the rule can never swallow a large transaction.' : form.kind === 'transfer' ? ' At least one keyword, reference or account name/number is required. A transfer is one journal; the other account’s line is linked to it, not booked again.' : ' At least one keyword, reference or customer/vendor name is required.'}
               </p>
               <div className="flex justify-end gap-2">
                 <button onClick={() => setForm(null)} disabled={saving} className={BTN}>Cancel</button>
