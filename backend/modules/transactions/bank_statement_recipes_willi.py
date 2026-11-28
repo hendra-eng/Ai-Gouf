@@ -376,6 +376,120 @@ def _petty_expense(dok: Dokumen) -> Optional[TabelKandidat]:
 
 
 # ============================================================
+# 4) BNI "Account Statement" (BNIDirect, PDF)
+# ============================================================
+# Kenapa resep: angka di PDF BNI tercetak dengan karakter "0" bayangan yang bertumpuk tepat di posisi
+# karakter asli, jadi pembacaan kata biasa menghasilkan "6,613,3406..0000" dan 0 baris terbaca. Selain itu
+# tiap baris adalah sel tabel (kotak) dengan keterangan beberapa baris yang rata-tengah vertikal dan
+# kolom Db/Cr "D"/"K" (K = kredit/uang masuk). Batas baris diambil dari kotak kolom "No" di PDF.
+
+_BNI_HEADERS = ["No", "Post Date", "Branch", "Journal No.", "Description", "Amount", "Db/Cr", "Balance"]
+_BNI_ROLES = ["ignore", "date", "ignore", "reference", "description", "amount", "ignore", "balance"]
+_RE_BNI_TGL = re.compile(r"^\d{2}/\d{2}/\d{4}$")
+
+
+def _bni_bersihkan_chars(page: Any) -> List[Dict[str, Any]]:
+    """Buang karakter '0' bayangan: bila beberapa karakter berbeda menumpuk di titik yang sama, '0' dibuang."""
+    per_posisi: Dict[Tuple[float, float], List[Dict[str, Any]]] = {}
+    for c in page.chars:
+        per_posisi.setdefault((round(float(c["x0"]), 1), round(float(c["top"]), 1)), []).append(c)
+    bersih: List[Dict[str, Any]] = []
+    for cs in per_posisi.values():
+        if len({c["text"] for c in cs}) > 1:
+            cs = [c for c in cs if c["text"] != "0"] or cs
+        bersih.append(cs[0])
+    return bersih
+
+
+def _bni_statement(isi: bytes, teks_awal: str) -> Optional[TabelKandidat]:
+    t = teks_awal.upper()
+    if "ACCOUNT STATEMENT" not in t or "JOURNAL NO" not in t or "DB/CR" not in t or "BNI" not in t.replace("BNIDIRECT", "BNI"):
+        return None
+    import pdfplumber
+    from pdfplumber.utils import extract_words
+
+    rows: List[List[str]] = []
+    hal: List[Optional[int]] = []
+    ringkasan: List[str] = []
+    no_rek: Optional[str] = None
+    periode: Tuple[Optional[date], Optional[date]] = (None, None)
+    with pdfplumber.open(io.BytesIO(isi)) as pdf:
+        for page in pdf.pages:
+            try:
+                kata = extract_words(_bni_bersihkan_chars(page), x_tolerance=1.5, y_tolerance=2)
+                kata = [{"text": w["text"], "x0": float(w["x0"]), "x1": float(w["x1"]),
+                         "top": float(w["top"]), "bottom": float(w["bottom"])} for w in kata]
+                rects = [(float(r["x0"]), float(r["x1"]), float(r["top"]), float(r["bottom"]),
+                          r.get("non_stroking_color")) for r in page.rects]
+            finally:
+                page.flush_cache()
+            teks_hal = " ".join(w["text"] for w in kata)
+            if no_rek is None:
+                m = re.search(r"(?<!\d)(\d{6,20})\s*/\s*[A-Za-z]", teks_hal)
+                if m:
+                    no_rek = m.group(1)
+            if periode[0] is None:
+                m = re.search(r"(\d{1,2} [A-Za-z]{3} \d{4})\s*-\s*(\d{1,2} [A-Za-z]{3} \d{4})", teks_hal)
+                if m:
+                    periode = (_tanggal(m.group(1)), _tanggal(m.group(2)))
+            if not ringkasan:
+                for label, kunci in (("Beginning Balance", "OPENING BALANCE"), ("Closing Balance", "CLOSING BALANCE"),
+                                     ("Total Debit", "TOTAL DEBIT"), ("Total Credit", "TOTAL CREDIT")):
+                    m = re.search(re.escape(label) + r"(?: \(Records\))?\s+(\d{1,3}(?:,\d{3})*\.\d{2})", teks_hal)
+                    if m:
+                        nilai, _ = parse_angka(m.group(1))
+                        ringkasan.append(f"{kunci} {_angka_teks(nilai)}")
+            # kotak header abu-abu = batas kolom; kotak putih selebar kolom 'No' = batas baris
+            hdr = [r for r in rects if r[4] is not None and len(r[4]) == 3 and abs(r[4][0] - 0.81) < 0.05 and r[3] - r[2] < 60]
+            if len(hdr) < 7:
+                continue
+            y_hdr = max(h[3] for h in hdr)
+            kol = sorted({(round(h[0]), round(h[1])) for h in hdr})
+            if len(kol) < 8:
+                continue
+            kol = kol[:8]
+            no_x0, no_x1 = kol[0]
+            baris_rect = sorted({(round(r[2], 1), round(r[3], 1)) for r in rects
+                                 if abs(r[0] - no_x0) <= 2 and abs(r[1] - no_x1) <= 2 and r[2] >= y_hdr - 1})
+            for top, bottom in baris_rect:
+                isi_baris = [w for w in kata if top - 0.5 <= (w["top"] + w["bottom"]) / 2 <= bottom + 0.5]
+                per_kol: List[List[Dict[str, Any]]] = [[] for _ in kol]
+                for w in isi_baris:
+                    for i, (a, b) in enumerate(kol):
+                        if a - 1 <= w["x0"] < b - 1 or (i == len(kol) - 1 and w["x0"] >= a - 1):
+                            per_kol[i].append(w)
+                            break
+                def _teks_kol(i: int) -> str:
+                    ws = sorted(per_kol[i], key=lambda w: (round(w["top"]), w["x0"]))
+                    return " ".join(w["text"] for w in ws)
+                tgl_kata = [w for w in per_kol[1] if _RE_BNI_TGL.match(w["text"])]
+                nominal = [w for w in per_kol[5] if _RE_NOMINAL.match(w["text"])]
+                arah = _teks_kol(6).strip().upper()
+                if not tgl_kata or not nominal or arah not in ("D", "K"):
+                    continue
+                jam = next((w["text"] for w in per_kol[1] if re.fullmatch(r"\d{2}\.\d{2}\.\d{2}", w["text"])), "")
+                nilai, _ = parse_angka(nominal[0]["text"])
+                saldo_kata = [w for w in per_kol[7] if _RE_NOMINAL.match(w["text"])]
+                saldo, _ = parse_angka(saldo_kata[0]["text"]) if saldo_kata else (None, None)
+                rows.append([
+                    _teks_kol(0), _tgl_teks(_tanggal(tgl_kata[0]["text"])), _teks_kol(2), _teks_kol(3),
+                    " ".join(_teks_kol(4).split()), _angka_teks(nilai), arah, _angka_teks(saldo),
+                ])
+                hal.append(page.page_number)
+    if not rows:
+        return None
+    # kolom Amount tunggal + Db/Cr: pecah jadi debit/kredit supaya arah pasti (D = keluar, K = masuk)
+    headers = ["No", "Post Date", "Branch", "Journal No.", "Description", "Debit", "Credit", "Balance"]
+    roles = ["ignore", "date", "ignore", "reference", "description", "debit", "credit", "balance"]
+    baru: List[List[str]] = []
+    for r in rows:
+        nilai, arah = r[5], r[6]
+        baru.append([r[0], r[1], r[2], r[3], r[4], nilai if arah == "D" else "", nilai if arah == "K" else "", r[7]])
+    return _kandidat("bni_statement", headers, roles, baru, ringkasan, "BNI", periode, no_rek, hal)
+
+
+
+# ============================================================
 # Titik masuk
 # ============================================================
 
@@ -383,7 +497,7 @@ def kandidat_resep(dok: Dokumen, isi: bytes) -> List[TabelKandidat]:
     """Semua resep yang cocok dengan bentuk dokumen (biasanya 0 atau 1)."""
     hasil: List[TabelKandidat] = []
     if dok.file_type == "PDF":
-        for fn in (_permata_inquiry, _permata_me):
+        for fn in (_permata_inquiry, _permata_me, _bni_statement):
             k = fn(isi, dok.teks_awal)
             if k is not None and k.baris:
                 hasil.append(k)
