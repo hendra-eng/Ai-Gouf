@@ -14,6 +14,14 @@ import { STORE_REVIEW, idbAmbilSemua, idbHapus, idbSimpan, metaDari, pulihkanFil
 /** Pilihan akun "Auto-detect": akun tujuan dari mapping bank (nomor rekening / judul dokumen / template). */
 export const AUTO = '';
 
+/**
+ * true  = SETIAP file yang diupload selalu menanyakan akun tujuan (dropdown "Select target account"),
+ *         tidak ada Auto-detect. Berguna kalau beberapa rekening memakai format file yang sama
+ *         (mis. dua rekening BRI dengan CSV core banking identik) sehingga tebakan otomatis bisa salah.
+ * false = perilaku lama: Auto-detect via bank mapping, dialog akun hanya muncul bila akun tak terdeteksi.
+ */
+export const SELALU_PILIH_AKUN = true;
+
 export type HasilImport = { data: BcUploadResult; message: string };
 
 export function toastImport({ data, message }: HasilImport) {
@@ -116,8 +124,13 @@ export function buatHandlerBank(clientId: string): BatchHandler {
   return {
     // Rekening koran yang sama dideteksi backend (already_uploaded_on) dan masuk ke modal review,
     // jadi aman mengirim ulang file yang terputus saat refresh.
-    ulangiYangTerputus: true,
+    ulangiYangTerputus: !SELALU_PILIH_AKUN,
     proses: async (file, { total }): Promise<HasilFile> => {
+      if (SELALU_PILIH_AKUN) {
+        // Tanpa Auto-detect: file masuk antrian, dialog pilih akun tampil satu per satu setelah semua file dipilih.
+        tambahAntrian(clientId, [{ jenis: 'akun', file, pesan: 'Choose the bank / cash account this file belongs to.' }]);
+        return { ok: false, stats: { antri: 1 } };
+      }
       try {
         const r = await cobaFileBank(clientId, file, AUTO);
         if (r.status === 'imported') {
@@ -138,7 +151,7 @@ export function buatHandlerBank(clientId: string): BatchHandler {
       if (r.total > 1) {
         const baris: string[] = [];
         if (r.berhasil) baris.push(`Auto-match: ${r.stats.matched ?? 0} matched to invoices, ${r.stats.byRule ?? 0} recorded by auto rules (DRAFT), ${r.stats.skipped ?? 0} line(s) still need matching in the Reconciliation tab.`);
-        if (r.stats.antri) baris.push(`${r.stats.antri} file(s) need your review — they will open one by one.`);
+        if (r.stats.antri) baris.push(SELALU_PILIH_AKUN ? `${r.stats.antri} file(s) are waiting for you to choose the target account — they will open one by one.` : `${r.stats.antri} file(s) need your review — they will open one by one.`);
         const gagal = r.catatan.filter((c) => c.jenis === 'gagal').map((c) => c.teks);
         baris.push(...gagal);
         const judul = `${r.berhasil} of ${r.total} file(s) imported.`;
