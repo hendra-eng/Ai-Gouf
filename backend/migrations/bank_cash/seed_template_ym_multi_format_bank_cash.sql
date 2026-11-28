@@ -40,9 +40,8 @@
 --   = 5d86c2154a2a7229b5e9986cfda92b0d6592e347c8c5c2fc3a6a7fed35504c18
 --
 -- AKUN COA: 10002 'Bank BNI' dan 10012 'Bank Mandiri' (sheet 'COA YM' di dataset/COA/COA_Clients_GOUF.xlsx).
--- PERLU: seed COA YM belum ada di migrations/coa/ (baru ada nbm, npi, sau). Tambahkan YM ke KLIEN di
--- migrations/generate_seed_coa.py (mis. "YM": ["YM", "PT YONISO MASIKARA", "PT. YONISO MANASIKARA"]) lalu jalankan,
--- dan jalankan seed COA-nya SEBELUM seed ini.
+-- COA YM: akun dicari lewat KODE TAMPILAN = coalesce(source_acc_no, acc_no) (pola sama dengan seed NBM/NPI/Birawa/UBD).
+-- Di VPS, COA YM sudah ada dari import (acc_no 120001 / 120002 dengan source_acc_no 10002 / 10012), jadi TIDAK perlu seed COA.
 -- Klien dicari lewat nama_client = 'PT YONISO MASIKARA' (sesuai data klien di VPS);
 -- GAGAL jelas kalau klien atau akun COA belum ada. client_id / coa id TIDAK di-hardcode.
 --
@@ -80,11 +79,11 @@ BEGIN
         RAISE EXCEPTION 'Klien YM belum ada di management_clients (dicari nama_client = ''PT YONISO MASIKARA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
-    SELECT id INTO v_coa_bni     FROM management_client_coa WHERE client_id = v_client_id AND acc_no = '10002' AND deleted_at IS NULL LIMIT 1;
-    SELECT id INTO v_coa_mandiri FROM management_client_coa WHERE client_id = v_client_id AND acc_no = '10012' AND deleted_at IS NULL LIMIT 1;
+    SELECT id INTO v_coa_bni     FROM management_client_coa WHERE client_id = v_client_id AND lower(coalesce(source_acc_no, acc_no)) = '10002' AND deleted_at IS NULL LIMIT 1;
+    SELECT id INTO v_coa_mandiri FROM management_client_coa WHERE client_id = v_client_id AND lower(coalesce(source_acc_no, acc_no)) = '10012' AND deleted_at IS NULL LIMIT 1;
 
     IF v_coa_bni IS NULL OR v_coa_mandiri IS NULL THEN
-        RAISE EXCEPTION 'Akun COA YM 10002 (Bank BNI) / 10012 (Bank Mandiri) belum lengkap -- jalankan dulu seed COA YM (seed_coa_ym.sql, dihasilkan generate_seed_coa.py dari sheet COA YM).';
+        RAISE EXCEPTION 'Akun COA YM 10002 (Bank BNI) / 10012 (Bank Mandiri) belum lengkap -- pastikan COA YM sudah ada di management_client_coa (dicari lewat kode tampilan = source_acc_no, kosong -> acc_no).';
     END IF;
 
     INSERT INTO financial_transaction_bank_cash_import_templates (
